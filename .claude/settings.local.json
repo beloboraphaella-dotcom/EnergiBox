@@ -42,7 +42,30 @@
       "Bash(node diagnose_create_home.js)",
       "Bash(node verify_expired_token_fix.js)",
       "Bash(grep -i \"\\\\.py$\")",
-      "PowerShell(& \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\python3.11.exe\" \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Admin-Desktop-EnergiBox\\\\c3012c48-572e-4071-945d-a34f3af818de\\\\scratchpad\\\\cleanup_diag_users.py\")"
+      "PowerShell(& \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\python3.11.exe\" \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Admin-Desktop-EnergiBox\\\\c3012c48-572e-4071-945d-a34f3af818de\\\\scratchpad\\\\cleanup_diag_users.py\")",
+      "Bash(node verify_onboarding_fixes.js)",
+      "PowerShell(& \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\python3.11.exe\" \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Admin-Desktop-EnergiBox\\\\c3012c48-572e-4071-945d-a34f3af818de\\\\scratchpad\\\\cleanup_fix_tester.py\")",
+      "Bash(node -e ' *)",
+      "PowerShell(& \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\python3.11.exe\" \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Admin-Desktop-EnergiBox\\\\c3012c48-572e-4071-945d-a34f3af818de\\\\scratchpad\\\\cleanup_mac_tester.py\")",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(curl -s http://localhost:5173 -o /dev/null -w \"frontend status: %{http_code}\\\\n\")",
+      "Bash(node verify_rooms_page.js)",
+      "PowerShell(Get-Command python, py -ErrorAction SilentlyContinue)",
+      "Bash(where.exe python *)",
+      "Bash(where.exe py *)",
+      "Bash(curl -s -X POST \"http://localhost:8000/auth/login\" -H \"Content-Type: application/x-www-form-urlencoded\" --data-urlencode \"email=admin123@energibox.com\" --data-urlencode \"password=admin123\")",
+      "Bash(curl -s -X POST \"http://localhost:8000/auth/login?email=admin123@energibox.com&password=admin123\")",
+      "Bash(curl -s http://localhost:8000/admin/users -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2IiwiZW1haWwiOiJhZG1pbjEyM0BlbmVyZ2lib3guY29tIiwicm9sZSI6ImFkbWluIiwiZXhwIjoxNzg0MDQ4MzQ3fQ.31Rc13Zc-vGMPpSsGT8iuzwRBjbfUk8wmjpqPEi2imM')",
+      "Bash(command -v mysql)",
+      "Bash(command -v node)",
+      "Bash(\"/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql\" -u root -p'belobo2008@' energibox -e \"DELETE FROM energiboxes WHERE mac_address = 'AA:11:22:33:44:99'; SELECT ROW_COUNT\\(\\);\")",
+      "Bash(rm -f \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Admin-Desktop-EnergiBox\\\\c3012c48-572e-4071-945d-a34f3af818de\\\\scratchpad\\\\rooms_0\"*.png)",
+      "Bash(node verify_new_home_rooms.js)",
+      "Bash(\"/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql\" -u root -p'belobo2008@' energibox -e \"DELETE FROM energiboxes WHERE mac_address IN \\('AA:22:33:44:55:66'\\);\")",
+      "Bash(node verify_room_guards.js)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Admin\\AppData\\Local\\Temp\\claude\\c--Users-Admin-Desktop-EnergiBox\\c3012c48-572e-4071-945d-a34f3af818de\\scratchpad"
     ]
   }
 }

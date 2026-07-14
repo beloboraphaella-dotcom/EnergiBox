@@ -6,6 +6,7 @@ import {
 } from "recharts";
 import Profile from "./Profile";
 import Devices from "./Devices";
+import Rooms from "./Rooms";
 import Admin from "./Admin";
 
 const API = "http://localhost:8000";
@@ -39,6 +40,7 @@ export default function Dashboard({
   const [schedules, setSchedules] = useState([]);
   const [overviewData, setOverviewData] = useState(null);
   const [roomsData, setRoomsData] = useState([]);
+  const [showRooms, setShowRooms] = useState(false);
 
   // History state
   const [historyMode, setHistoryMode] = useState("Month");
@@ -279,7 +281,7 @@ export default function Dashboard({
               color: activeTab === tab.id ? "#3b82f6" : "#666",
               borderLeft: activeTab === tab.id ? "3px solid #3b82f6" : "3px solid transparent",
               fontWeight: activeTab === tab.id ? "600" : "400",
-            }} onClick={() => setTab(tab.id)}>
+            }} onClick={() => { setTab(tab.id); setShowRooms(false); }}>
               <span style={s.navIcon}>{tab.icon}</span>
               <span>{tab.label}</span>
             </button>
@@ -295,7 +297,10 @@ export default function Dashboard({
         ) : (
           <>
         {/* ── HOME TAB ── */}
-{activeTab === "home" && dashboard && (
+{activeTab === "home" && showRooms && (
+  <Rooms token={token} homeId={activeHomeId} onBack={() => setShowRooms(false)} />
+)}
+{activeTab === "home" && !showRooms && dashboard && (
   <div>
     {/* Header */}
 <div style={s.homeHeader}>
@@ -351,12 +356,17 @@ export default function Dashboard({
     </div>
 
     {/* My Rooms */}
-    {roomsData.length > 0 && (
-      <div style={s.section}>
-        <div style={s.sectionHeader}>
-          <h2 style={s.sectionTitle}>My Rooms</h2>
-          <button style={s.viewAllBtn} onClick={() => setTab("devices")}>View All →</button>
+    <div style={s.section}>
+      <div style={s.sectionHeader}>
+        <h2 style={s.sectionTitle}>My Rooms</h2>
+        <button style={s.viewAllBtn} onClick={() => setShowRooms(true)}>See Rooms →</button>
+      </div>
+      {roomsData.length === 0 ? (
+        <div style={s.emptyCard}>
+          <p style={{ color: "#aaa", marginBottom: "12px" }}>No rooms yet in this home</p>
+          <button style={s.addBtnSmall} onClick={() => setShowRooms(true)}>+ Add your first room</button>
         </div>
+      ) : (
         <div style={s.roomsRow}>
           {roomsData.map((room, i) => (
             <div key={i} style={{
@@ -372,8 +382,8 @@ export default function Dashboard({
             </div>
           ))}
         </div>
-      </div>
-    )}
+      )}
+    </div>
 
     {/* AI Recommendation banner */}
     {suggestions.filter(s2 => s2.status === "pending").length > 0 && (
@@ -896,6 +906,7 @@ const s = {
   modalSaveBtn: { width:"100%", padding:"12px", borderRadius:"10px", background:"#3b82f6", color:"#fff", border:"none", cursor:"pointer", fontWeight:"700", fontSize:"14px" },
   emptyCard: { background:"#fff", borderRadius:"16px", padding:"48px 24px", textAlign:"center", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid #f1f5f9" },
   addBtn: { padding:"10px 20px", background:"#3b82f6", color:"#fff", border:"none", borderRadius:"10px", cursor:"pointer", fontWeight:"600", fontSize:"14px" },
+  addBtnSmall: { padding:"10px 18px", borderRadius:"10px", background:"#3b82f6", color:"#fff", border:"none", cursor:"pointer", fontWeight:"600", fontSize:"13px" },
   chartCardHeader: { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px" },
   // Home header
 homeHeader: { display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"24px" },

@@ -2,7 +2,16 @@ import { useState } from "react";
 import axios from "axios";
 
 const API = "http://localhost:8000";
-const MAC_REGEX = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/;
+
+// Accepts colon, hyphen, dot or no separator (e.g. Windows "-", Cisco ".", raw
+// hex) and normalizes to the canonical AA:BB:CC:DD:EE:FF form the EnergiBox
+// firmware and MQTT topics actually use — otherwise a differently-formatted
+// but valid MAC would be stored and silently never match the real device.
+function normalizeMac(input) {
+  const hex = input.replace(/[^0-9A-Fa-f]/g, "");
+  if (hex.length !== 12) return null;
+  return hex.toUpperCase().match(/.{2}/g).join(":");
+}
 
 const STEPS = ["Home", "Rooms", "Appliances", "Done"];
 
@@ -59,19 +68,24 @@ export default function Onboarding({ token, onComplete }) {
   };
 
   const addRoom = async () => {
-    if (!newRoomName.trim()) return;
+    const trimmed = newRoomName.trim();
+    if (!trimmed) return;
+    if (rooms.some((r) => r.name.toLowerCase() === trimmed.toLowerCase())) {
+      setError(`A room named "${trimmed}" already exists in this home.`);
+      return;
+    }
     setSaving(true);
     setError("");
     try {
       const res = await axios.post(
-        `${API}/rooms?name=${encodeURIComponent(newRoomName)}&home_id=${homeId}`,
+        `${API}/rooms?name=${encodeURIComponent(trimmed)}&home_id=${homeId}`,
         null,
         authHeaders
       );
       setRooms((r) => [...r, res.data]);
       setNewRoomName("");
     } catch (err) {
-      setError("Could not add room.");
+      setError(err.response?.data?.detail || "Could not add room.");
     }
     setSaving(false);
   };
@@ -82,15 +96,16 @@ export default function Onboarding({ token, onComplete }) {
       setError("Room, name and MAC address are required.");
       return;
     }
-    if (!MAC_REGEX.test(mac.trim())) {
-      setError("MAC address must look like AA:BB:CC:DD:EE:FF.");
+    const normalizedMac = normalizeMac(mac.trim());
+    if (!normalizedMac) {
+      setError("Enter a valid MAC address — 12 hex digits, e.g. AA:BB:CC:DD:EE:FF.");
       return;
     }
     setSaving(true);
     setError("");
     try {
       const res = await axios.post(
-        `${API}/monitored_points?room_id=${room_id}&name=${encodeURIComponent(name)}&type=${type}&mac_address=${encodeURIComponent(mac)}`,
+        `${API}/monitored_points?room_id=${room_id}&name=${encodeURIComponent(name)}&type=${type}&mac_address=${encodeURIComponent(normalizedMac)}`,
         null,
         authHeaders
       );

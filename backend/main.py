@@ -12,7 +12,17 @@ import pymysql
 import re
 
 EMAIL_REGEX = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
-MAC_REGEX = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
+
+def normalize_mac(raw: str):
+    """Accepts colon, hyphen, dot or no separator and normalizes to the
+    canonical AA:BB:CC:DD:EE:FF form the EnergiBox firmware and MQTT topics
+    actually use. Returns None if raw isn't 12 hex digits once separators
+    are stripped."""
+    hex_only = re.sub(r"[^0-9A-Fa-f]", "", raw)
+    if len(hex_only) != 12:
+        return None
+    hex_only = hex_only.upper()
+    return ":".join(hex_only[i:i + 2] for i in range(0, 12, 2))
 
 Base.metadata.create_all(bind=engine)
 mqtt_client = start_mqtt()
@@ -348,13 +358,48 @@ def get_rooms(home_id: int, authorization: str = Header(...)):
 def create_room(name: str, home_id: int, authorization: str = Header(...)):
     """Add a room to one of the caller's homes"""
     _scoped_user(authorization, home_id)
+    if not name.strip():
+        raise HTTPException(status_code=400, detail="Room name cannot be empty")
+
     conn = get_raw_db()
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO rooms (home_id, name) VALUES (%s, %s)", (home_id, name))
+    cursor.execute(
+        "SELECT id FROM rooms WHERE home_id = %s AND LOWER(name) = LOWER(%s)",
+        (home_id, name.strip())
+    )
+    if cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"A room named \"{name.strip()}\" already exists in this home")
+
+    cursor.execute("INSERT INTO rooms (home_id, name) VALUES (%s, %s)", (home_id, name.strip()))
     conn.commit()
     room_id = cursor.lastrowid
     conn.close()
-    return {"id": room_id, "name": name}
+    return {"id": room_id, "name": name.strip()}
+
+@app.put("/rooms/{room_id}")
+def update_room(room_id: int, name: str, authorization: str = Header(...)):
+    """Rename a room"""
+    user_id = _user_id_from_header(authorization)
+    home_id = _room_home_id(room_id)
+    _verify_home_ownership(user_id, home_id)
+    if not name.strip():
+        raise HTTPException(status_code=400, detail="Room name cannot be empty")
+
+    conn = get_raw_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id FROM rooms WHERE home_id = %s AND LOWER(name) = LOWER(%s) AND id != %s",
+        (home_id, name.strip(), room_id)
+    )
+    if cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"A room named \"{name.strip()}\" already exists in this home")
+
+    cursor.execute("UPDATE rooms SET name = %s WHERE id = %s", (name.strip(), room_id))
+    conn.commit()
+    conn.close()
+    return {"id": room_id, "name": name.strip()}
 
 @app.delete("/rooms/{room_id}")
 def delete_room(room_id: int, authorization: str = Header(...)):
@@ -390,8 +435,9 @@ def create_monitored_point(
     it comes online automatically the first time it publishes over MQTT."""
     if type not in ("appliance", "socket"):
         raise HTTPException(status_code=400, detail="type must be 'appliance' or 'socket'")
-    if not MAC_REGEX.match(mac_address):
-        raise HTTPException(status_code=400, detail="MAC address must look like AA:BB:CC:DD:EE:FF")
+    mac_address = normalize_mac(mac_address)
+    if not mac_address:
+        raise HTTPException(status_code=400, detail="Enter a valid MAC address — 12 hex digits, e.g. AA:BB:CC:DD:EE:FF")
 
     user_id = _user_id_from_header(authorization)
     _verify_home_ownership(user_id, _room_home_id(room_id))
@@ -484,7 +530,7 @@ def get_devices(home_id: int, authorization: str = Header(...)):
     conn = get_raw_db()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT mp.id, mp.name, r.name, e.mac_address, e.status, latest.watts, latest.timestamp, mp.type
+        SELECT mp.id, mp.name, r.name, e.mac_address, e.status, latest.watts, latest.timestamp, mp.type, r.id
         FROM monitored_points mp
         JOIN rooms r ON mp.room_id = r.id
         JOIN energiboxes e ON mp.energibox_id = e.id
@@ -509,6 +555,7 @@ def get_devices(home_id: int, authorization: str = Header(...)):
             "is_on": bool(row[5] and row[5] > 1),
             "last_seen": str(row[6]) if row[6] else None,
             "type": row[7],
+            "room_id": row[8],
         }
         for row in rows
     ]

@@ -3,7 +3,16 @@ import axios from "axios";
 import { LineChart, Line, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 
 const API = "http://localhost:8000";
-const MAC_REGEX = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/;
+
+// Accepts colon, hyphen, dot or no separator and normalizes to the canonical
+// AA:BB:CC:DD:EE:FF form the EnergiBox firmware and MQTT topics actually use —
+// otherwise a differently-formatted but valid MAC would be stored and
+// silently never match the real device.
+function normalizeMac(input) {
+  const hex = input.replace(/[^0-9A-Fa-f]/g, "");
+  if (hex.length !== 12) return null;
+  return hex.toUpperCase().match(/.{2}/g).join(":");
+}
 
 function getIcon(name = "", type = "appliance") {
   if (type === "socket") return "🔌";
@@ -42,11 +51,7 @@ export default function Devices({ token, homeId }) {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [selectedMac, setSelectedMac] = useState(null);
-  const [addMenuOpen, setAddMenuOpen] = useState(false);
-  const [activeModal, setActiveModal] = useState(null); // "room" | "device" | "manage-rooms"
-
-  const [newRoomName, setNewRoomName] = useState("");
-  const [roomError, setRoomError] = useState("");
+  const [activeModal, setActiveModal] = useState(null); // "device"
 
   const [newDevice, setNewDevice] = useState({ room_id: "", name: "", type: "appliance", mac: "" });
   const [deviceError, setDeviceError] = useState("");
@@ -100,31 +105,8 @@ export default function Devices({ token, homeId }) {
 
   const closeModals = () => {
     setActiveModal(null);
-    setAddMenuOpen(false);
-    setRoomError("");
     setDeviceError("");
-    setNewRoomName("");
     setNewDevice({ room_id: "", name: "", type: "appliance", mac: "" });
-  };
-
-  const submitNewRoom = async () => {
-    if (!newRoomName.trim()) return;
-    try {
-      await axios.post(`${API}/rooms?name=${encodeURIComponent(newRoomName)}&home_id=${homeId}`, null, authHeaders);
-      await fetchRooms();
-      closeModals();
-    } catch (err) {
-      setRoomError("Could not create room. Try again.");
-    }
-  };
-
-  const deleteRoom = async (roomId) => {
-    try {
-      await axios.delete(`${API}/rooms/${roomId}`, authHeaders);
-      fetchRooms();
-    } catch (err) {
-      setRoomError(err.response?.data?.detail || "Could not delete room.");
-    }
   };
 
   const submitNewDevice = async () => {
@@ -133,15 +115,16 @@ export default function Devices({ token, homeId }) {
       setDeviceError("Room, name and MAC address are required.");
       return;
     }
-    if (!MAC_REGEX.test(mac.trim())) {
-      setDeviceError("MAC address must look like AA:BB:CC:DD:EE:FF.");
+    const normalizedMac = normalizeMac(mac.trim());
+    if (!normalizedMac) {
+      setDeviceError("Enter a valid MAC address — 12 hex digits, e.g. AA:BB:CC:DD:EE:FF.");
       return;
     }
     setSaving(true);
     setDeviceError("");
     try {
       await axios.post(
-        `${API}/monitored_points?room_id=${room_id}&name=${encodeURIComponent(name)}&type=${type}&mac_address=${encodeURIComponent(mac)}`,
+        `${API}/monitored_points?room_id=${room_id}&name=${encodeURIComponent(name)}&type=${type}&mac_address=${encodeURIComponent(normalizedMac)}`,
         null, authHeaders
       );
       await fetchDevices();
@@ -159,16 +142,7 @@ export default function Devices({ token, homeId }) {
           <h1 style={s.pageTitle}>Devices</h1>
           <p style={s.pageSub}>Monitor and control your home devices</p>
         </div>
-        <div style={{ position: "relative" }}>
-          <button style={s.addBtn} onClick={() => setAddMenuOpen((v) => !v)}>+</button>
-          {addMenuOpen && (
-            <div style={s.addMenu}>
-              <button style={s.addMenuItem} onClick={() => { setActiveModal("room"); setAddMenuOpen(false); }}>🏠 Add Room</button>
-              <button style={s.addMenuItem} onClick={() => { setActiveModal("device"); setAddMenuOpen(false); }}>🔌 Add Appliance / Socket</button>
-              <button style={s.addMenuItem} onClick={() => { setActiveModal("manage-rooms"); setAddMenuOpen(false); }}>🗂 Manage Rooms</button>
-            </div>
-          )}
-        </div>
+        <button style={s.addBtn} onClick={() => setActiveModal("device")} title="Add Appliance / Socket">+</button>
       </div>
 
       <div style={s.filterRow}>
@@ -239,21 +213,6 @@ export default function Devices({ token, homeId }) {
         ))
       )}
 
-      {/* ── Add Room modal ── */}
-      {activeModal === "room" && (
-        <Modal title="Add Room" onClose={closeModals}>
-          <label style={s.label}>Room Name</label>
-          <input
-            style={s.input}
-            placeholder="e.g. Living Room"
-            value={newRoomName}
-            onChange={(e) => setNewRoomName(e.target.value)}
-          />
-          {roomError && <p style={s.errorText}>{roomError}</p>}
-          <button style={s.saveBtn} onClick={submitNewRoom}>Create Room</button>
-        </Modal>
-      )}
-
       {/* ── Add Device modal ── */}
       {activeModal === "device" && (
         <Modal title="Add Appliance or Socket" onClose={closeModals}>
@@ -267,7 +226,7 @@ export default function Devices({ token, homeId }) {
             {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
           {rooms.length === 0 && (
-            <p style={s.infoTextMuted}>No rooms yet — add a room first.</p>
+            <p style={s.infoTextMuted}>No rooms yet — go to Home → See Rooms to add one first.</p>
           )}
 
           <label style={s.label}>Name</label>
@@ -311,23 +270,6 @@ export default function Devices({ token, homeId }) {
           <button style={s.saveBtn} onClick={submitNewDevice} disabled={saving}>
             {saving ? "Adding..." : "Add Device"}
           </button>
-        </Modal>
-      )}
-
-      {/* ── Manage Rooms modal ── */}
-      {activeModal === "manage-rooms" && (
-        <Modal title="Manage Rooms" onClose={closeModals}>
-          {rooms.length === 0 ? (
-            <p style={s.infoTextMuted}>No rooms yet.</p>
-          ) : (
-            rooms.map((r) => (
-              <div key={r.id} style={s.roomManageRow}>
-                <span>{r.name}</span>
-                <button style={s.deleteBtn} onClick={() => deleteRoom(r.id)}>🗑</button>
-              </div>
-            ))
-          )}
-          {roomError && <p style={s.errorText}>{roomError}</p>}
         </Modal>
       )}
     </div>
