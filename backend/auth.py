@@ -165,6 +165,24 @@ def set_user_suspended(user_id: int, suspended: bool):
     conn.commit()
     conn.close()
 
+def admin_set_password(user_id: int, new_password: str):
+    """Directly set a user's password (admin recovery for lost/forgotten
+    credentials) — unlike change_password, this does not require knowing
+    the current password."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+    if not cursor.fetchone():
+        conn.close()
+        return False, "User not found"
+    cursor.execute(
+        "UPDATE users SET password_hash = %s WHERE id = %s",
+        (hash_password(new_password), user_id)
+    )
+    conn.commit()
+    conn.close()
+    return True, None
+
 def delete_user(user_id: int):
     """Permanently delete a user account and their home/rooms/devices"""
     conn = get_db()

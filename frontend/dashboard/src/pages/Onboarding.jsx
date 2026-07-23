@@ -128,11 +128,11 @@ export default function Onboarding({ token, onComplete }) {
         <div style={s.steps}>
           {STEPS.map((label, i) => (
             <div key={label} style={s.stepItem}>
-              <div style={{ ...s.stepDot, background: i <= step ? "#3b82f6" : "#e2e8f0", color: i <= step ? "#fff" : "#94a3b8" }}>
+              <div style={{ ...s.stepDot, background: i <= step ? "#3b82f6" : "var(--app-border-strong)", color: i <= step ? "#fff" : "var(--app-text-muted)" }}>
                 {i < step ? "✓" : i + 1}
               </div>
-              <span style={{ ...s.stepLabel, color: i <= step ? "#0f172a" : "#94a3b8" }}>{label}</span>
-              {i < STEPS.length - 1 && <div style={{ ...s.stepLine, background: i < step ? "#3b82f6" : "#e2e8f0" }} />}
+              <span style={{ ...s.stepLabel, color: i <= step ? "var(--app-text-primary)" : "var(--app-text-muted)" }}>{label}</span>
+              {i < STEPS.length - 1 && <div style={{ ...s.stepLine, background: i < step ? "#3b82f6" : "var(--app-border-strong)" }} />}
             </div>
           ))}
         </div>
@@ -213,7 +213,7 @@ export default function Onboarding({ token, onComplete }) {
               {["appliance", "socket"].map((t) => (
                 <button
                   key={t}
-                  style={{ ...s.typeChoice, background: newDevice.type === t ? "#3b82f6" : "#f1f5f9", color: newDevice.type === t ? "#fff" : "#64748b" }}
+                  style={{ ...s.typeChoice, background: newDevice.type === t ? "#3b82f6" : "var(--app-border)", color: newDevice.type === t ? "#fff" : "var(--app-text-secondary)" }}
                   onClick={() => setNewDevice({ ...newDevice, type: t })}
                 >
                   {t === "appliance" ? "Appliance" : "Socket"}
@@ -257,8 +257,8 @@ export default function Onboarding({ token, onComplete }) {
 }
 
 const s = {
-  page: { minHeight: "100vh", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Segoe UI', sans-serif", padding: "20px" },
-  card: { background: "#fff", borderRadius: "24px", padding: "36px", width: "440px", maxWidth: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.08)" },
+  page: { minHeight: "100vh", background: "var(--app-page-bg)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Segoe UI', sans-serif", padding: "20px" },
+  card: { background: "var(--app-surface-bg)", borderRadius: "24px", padding: "36px", width: "440px", maxWidth: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.08)" },
   header: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "28px" },
   logo: { fontSize: "22px" },
   brand: { fontSize: "18px", fontWeight: "700", color: "#1e40af", margin: 0 },
@@ -269,18 +269,18 @@ const s = {
   stepLabel: { fontSize: "11px", fontWeight: "600", marginLeft: "6px", whiteSpace: "nowrap" },
   stepLine: { flex: 1, height: "2px", margin: "0 8px" },
 
-  title: { fontSize: "20px", fontWeight: "700", color: "#0f172a", margin: "0 0 6px" },
-  subtitle: { fontSize: "13px", color: "#94a3b8", margin: "0 0 20px", lineHeight: "1.5" },
-  label: { display: "block", fontSize: "12px", fontWeight: "600", color: "#64748b", margin: "0 0 6px" },
-  input: { width: "100%", boxSizing: "border-box", padding: "11px 14px", borderRadius: "10px", border: "1px solid #e2e8f0", fontSize: "14px", marginBottom: "14px", outline: "none" },
+  title: { fontSize: "20px", fontWeight: "700", color: "var(--app-text-primary)", margin: "0 0 6px" },
+  subtitle: { fontSize: "13px", color: "var(--app-text-muted)", margin: "0 0 20px", lineHeight: "1.5" },
+  label: { display: "block", fontSize: "12px", fontWeight: "600", color: "var(--app-text-secondary)", margin: "0 0 6px" },
+  input: { width: "100%", boxSizing: "border-box", padding: "11px 14px", borderRadius: "10px", border: "1px solid var(--app-border-strong)", fontSize: "14px", marginBottom: "14px", outline: "none", background: "var(--app-surface-bg)", color: "var(--app-text-primary)" },
   errorText: { color: "#ef4444", fontSize: "12px", margin: "-6px 0 12px" },
   primaryBtn: { width: "100%", padding: "13px", borderRadius: "10px", background: "#3b82f6", color: "#fff", border: "none", cursor: "pointer", fontWeight: "700", fontSize: "14px" },
   addBtn: { padding: "11px 18px", borderRadius: "10px", background: "#eff6ff", color: "#3b82f6", border: "none", cursor: "pointer", fontWeight: "600", fontSize: "13px", whiteSpace: "nowrap" },
   navRow: { display: "flex", gap: "10px", alignItems: "stretch" },
-  backBtn: { padding: "13px 18px", borderRadius: "10px", background: "#f1f5f9", color: "#64748b", border: "none", cursor: "pointer", fontWeight: "600", fontSize: "14px", whiteSpace: "nowrap" },
+  backBtn: { padding: "13px 18px", borderRadius: "10px", background: "var(--app-border)", color: "var(--app-text-secondary)", border: "none", cursor: "pointer", fontWeight: "600", fontSize: "14px", whiteSpace: "nowrap" },
   inlineRow: { display: "flex", gap: "8px", marginBottom: "14px", alignItems: "center" },
   chipRow: { display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "16px" },
-  chip: { background: "#f1f5f9", color: "#374151", padding: "6px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600" },
+  chip: { background: "var(--app-border)", color: "var(--app-text-primary)", padding: "6px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "600" },
   typeRow: { display: "flex", gap: "8px", marginBottom: "14px" },
   typeChoice: { flex: 1, padding: "10px", borderRadius: "10px", border: "none", cursor: "pointer", fontSize: "13px", fontWeight: "600" },
 };

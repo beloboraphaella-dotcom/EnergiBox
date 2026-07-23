@@ -8,6 +8,7 @@ import Profile from "./Profile";
 import Devices from "./Devices";
 import Rooms from "./Rooms";
 import Admin from "./Admin";
+import { useLanguage } from "../context/LanguageContext";
 
 const API = "http://localhost:8000";
 const COLORS = ["#6366f1", "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
@@ -32,6 +33,7 @@ export default function Dashboard({
   token, user, onLogout, onUpdateUser,
   homes = [], activeHomeId, onSwitchHome, onHomesChanged,
 }) {
+  const { t } = useLanguage();
   const isAdmin = user?.role === "admin";
   const [activeTab, setTab] = useState(isAdmin ? "admin" : "home");
   const [dashboard, setDashboard] = useState(null);
@@ -245,13 +247,13 @@ export default function Dashboard({
   };
 
   const navTabs = isAdmin
-    ? [{ id: "admin", icon: "🛡", label: "Admin" }]
+    ? [{ id: "admin", icon: "🛡", label: t("nav.admin") }]
     : [
-        { id: "home",    icon: "⚡", label: "Home" },
-        { id: "devices", icon: "🔌", label: "Devices" },
-        { id: "history", icon: "📊", label: "History" },
-        { id: "alerts",  icon: "🔔", label: "Alerts" },
-        { id: "profile", icon: "👤", label: "Profile" },
+        { id: "home",    icon: "⚡", label: t("nav.home") },
+        { id: "devices", icon: "🔌", label: t("nav.devices") },
+        { id: "history", icon: "📊", label: t("nav.history") },
+        { id: "alerts",  icon: "🔔", label: t("nav.alerts") },
+        { id: "profile", icon: "👤", label: t("nav.profile") },
       ];
 
   return (
@@ -287,7 +289,7 @@ export default function Dashboard({
             </button>
           ))}
         </nav>
-        <button style={s.logoutBtn} onClick={onLogout}>🚪 Logout</button>
+        <button style={s.logoutBtn} onClick={onLogout}>🚪 {t("nav.logout")}</button>
       </div>
 
       {/* MAIN */}
@@ -306,8 +308,8 @@ export default function Dashboard({
 <div style={s.homeHeader}>
   <div>
     <p style={s.greeting}>
-      {new Date().getHours() < 12 ? "Good Morning," :
-       new Date().getHours() < 18 ? "Good Afternoon," : "Good Evening,"}
+      {new Date().getHours() < 12 ? t("home.goodMorning") :
+       new Date().getHours() < 18 ? t("home.goodAfternoon") : t("home.goodEvening")}
     </p>
     <h1 style={s.greetingName}>
       {user?.name?.split(" ")[0] || "User"}
@@ -328,12 +330,12 @@ export default function Dashboard({
       <div style={s.heroLeft}>
         <div style={s.heroTopRow}>
           <div>
-            <p style={s.heroLabel}>⚡ Current Consumption</p>
+            <p style={s.heroLabel}>⚡ {t("home.currentConsumption")}</p>
             <p style={s.heroWatts}>
               {(dashboard.appliances.reduce((sum, a) => sum + a.watts, 0) / 1000).toFixed(2)} <span style={{fontSize:"18px", fontWeight:"400"}}>kW</span>
             </p>
           </div>
-          <span style={s.liveBadge}>● Live</span>
+          <span style={s.liveBadge}>● {t("home.live")}</span>
         </div>
         {/* Mini line chart */}
         <div style={s.miniChartWrap}>
@@ -346,11 +348,11 @@ export default function Dashboard({
       </div>
       <div style={s.heroDivider}/>
       <div style={s.heroRight}>
-        <p style={s.heroLabel}>📋 Estimated Bill</p>
+        <p style={s.heroLabel}>📋 {t("home.estimatedBill")}</p>
         <p style={s.heroBill}>{dashboard.bill.estimated_fcfa.toLocaleString()} FCFA</p>
-        <p style={s.heroMonth}>This Month</p>
+        <p style={s.heroMonth}>{t("home.thisMonth")}</p>
         <div style={s.projectedBadge}>
-          📈 Projected: {overviewData?.month?.projected_fcfa?.toLocaleString() || "—"} FCFA
+          📈 {t("home.projected")}: {overviewData?.month?.projected_fcfa?.toLocaleString() || "—"} FCFA
         </div>
       </div>
     </div>
@@ -358,13 +360,13 @@ export default function Dashboard({
     {/* My Rooms */}
     <div style={s.section}>
       <div style={s.sectionHeader}>
-        <h2 style={s.sectionTitle}>My Rooms</h2>
-        <button style={s.viewAllBtn} onClick={() => setShowRooms(true)}>See Rooms →</button>
+        <h2 style={s.sectionTitle}>{t("home.myRooms")}</h2>
+        <button style={s.viewAllBtn} onClick={() => setShowRooms(true)}>{t("home.seeRooms")}</button>
       </div>
       {roomsData.length === 0 ? (
         <div style={s.emptyCard}>
-          <p style={{ color: "#aaa", marginBottom: "12px" }}>No rooms yet in this home</p>
-          <button style={s.addBtnSmall} onClick={() => setShowRooms(true)}>+ Add your first room</button>
+          <p style={{ color: "var(--app-text-muted)", marginBottom: "12px" }}>{t("home.noRoomsYet")}</p>
+          <button style={s.addBtnSmall} onClick={() => setShowRooms(true)}>{t("home.addFirstRoom")}</button>
         </div>
       ) : (
         <div style={s.roomsRow}>
@@ -391,21 +393,21 @@ export default function Dashboard({
         <div style={s.aiBannerLeft}>
           <span style={{fontSize:"28px"}}>🤖</span>
           <div>
-            <p style={s.aiBannerTitle}>AI Recommendation</p>
+            <p style={s.aiBannerTitle}>{t("home.aiRecommendation")}</p>
             <p style={s.aiBannerText}>
-              You can save up to{" "}
+              {t("home.saveUpTo")}{" "}
               <strong>
                 {suggestions
                   .filter(s2 => s2.status === "pending")
                   .reduce((sum, s2) => sum + s2.estimated_saving_fcfa, 0)
                   .toLocaleString()} FCFA
               </strong>{" "}
-              this month with these actions.
+              {t("home.withActions")}
             </p>
           </div>
         </div>
         <button style={s.aiBannerBtn} onClick={() => setTab("alerts")}>
-          View Recommendations →
+          {t("home.viewRecommendations")}
         </button>
       </div>
     )}
@@ -414,8 +416,8 @@ export default function Dashboard({
     {alerts.length > 0 && (
       <div style={s.section}>
         <div style={s.sectionHeader}>
-          <h2 style={s.sectionTitle}>Recent Alerts</h2>
-          <button style={s.viewAllBtn} onClick={() => setTab("alerts")}>View All →</button>
+          <h2 style={s.sectionTitle}>{t("home.recentAlerts")}</h2>
+          <button style={s.viewAllBtn} onClick={() => setTab("alerts")}>{t("home.viewAll")}</button>
         </div>
         {alerts.slice(0, 2).map((a, i) => (
           <div key={i} style={s.recentAlertCard}>
@@ -445,10 +447,10 @@ export default function Dashboard({
     {overviewData && (
       <div style={s.bottomBar}>
         {[
-          { icon:"🔌", value:overviewData.devices.total, label:"Total Devices", sub:"Online", subColor:"#16a34a" },
-          { icon:"📶", value:overviewData.devices.online, label:"Online Devices", sub:null },
-          { icon:"🛡", value:overviewData.devices.active_alerts, label:"Alerts", sub:"Active", subColor:"#ef4444" },
-          { icon:"🌿", value:`${overviewData.month.kwh} kWh`, label:"This Month", sub:`▲ ${overviewData.month.change_vs_last_month}%`, subColor:"#16a34a" },
+          { icon:"🔌", value:overviewData.devices.total, label:t("home.totalDevices"), sub:t("devices.online"), subColor:"#16a34a" },
+          { icon:"📶", value:overviewData.devices.online, label:t("home.onlineDevices"), sub:null },
+          { icon:"🛡", value:overviewData.devices.active_alerts, label:t("home.alertsLabel"), sub:t("home.active"), subColor:"#ef4444" },
+          { icon:"🌿", value:`${overviewData.month.kwh} kWh`, label:t("home.thisMonthKwh"), sub:`▲ ${overviewData.month.change_vs_last_month}%`, subColor:"#16a34a" },
         ].map((item, i) => (
           <div key={i} style={s.bottomBarItem}>
             <span style={s.bottomBarIcon}>{item.icon}</span>
@@ -726,6 +728,7 @@ export default function Dashboard({
 }
 
 function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHomesChanged, token }) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
@@ -760,7 +763,7 @@ function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHomesChanged, token
         <span style={s.sidebarLogo}>⚡</span>
         <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
           <p style={s.switcherHomeName}>{activeHome?.name || "EnergiBox"}</p>
-          <p style={s.switcherHint}>Switch home ▾</p>
+          <p style={s.switcherHint}>{t("nav.switchHome")} ▾</p>
         </div>
       </button>
 
@@ -801,125 +804,125 @@ function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHomesChanged, token
 }
 
 const s = {
-  page: { display:"flex", minHeight:"100vh", background:"#f8fafc", fontFamily:"'Segoe UI', sans-serif" },
-  sidebar: { width:"220px", background:"#fff", borderRight:"1px solid #e2e8f0", display:"flex", flexDirection:"column", flexShrink:0, boxShadow:"2px 0 8px rgba(0,0,0,0.04)" },
-  sidebarHeader: { display:"flex", alignItems:"center", gap:"10px", padding:"24px 20px", borderBottom:"1px solid #f1f5f9" },
+  page: { display:"flex", minHeight:"100vh", background:"var(--app-page-bg)", fontFamily:"'Segoe UI', sans-serif" },
+  sidebar: { width:"220px", background:"var(--app-surface-bg)", borderRight:"1px solid var(--app-border-strong)", display:"flex", flexDirection:"column", flexShrink:0, boxShadow:"2px 0 8px rgba(0,0,0,0.04)" },
+  sidebarHeader: { display:"flex", alignItems:"center", gap:"10px", padding:"24px 20px", borderBottom:"1px solid var(--app-border)" },
   sidebarLogo: { fontSize:"22px" },
   sidebarBrand: { fontSize:"18px", fontWeight:"700", color:"#1e40af" },
 
-  switcherWrap: { borderBottom:"1px solid #f1f5f9", position:"relative" },
+  switcherWrap: { borderBottom:"1px solid var(--app-border)", position:"relative" },
   switcherTrigger: { width:"100%", display:"flex", alignItems:"center", gap:"10px", padding:"20px", border:"none", background:"transparent", cursor:"pointer" },
-  switcherHomeName: { fontSize:"15px", fontWeight:"700", color:"#0f172a", margin:0, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" },
-  switcherHint: { fontSize:"11px", color:"#94a3b8", margin:0 },
+  switcherHomeName: { fontSize:"15px", fontWeight:"700", color:"var(--app-text-primary)", margin:0, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" },
+  switcherHint: { fontSize:"11px", color:"var(--app-text-muted)", margin:0 },
   switcherOverlay: { position:"fixed", inset:0, background:"rgba(15,23,42,0.35)", zIndex:1000, display:"flex", alignItems:"flex-start", justifyContent:"flex-start" },
-  switcherSheet: { background:"#fff", borderRadius:"16px", margin:"14px", width:"280px", boxShadow:"0 20px 50px rgba(0,0,0,0.25)", padding:"14px", maxHeight:"80vh", overflowY:"auto" },
-  switcherTitle: { fontSize:"11px", fontWeight:"700", color:"#94a3b8", textTransform:"uppercase", letterSpacing:"0.5px", margin:"4px 0 10px" },
+  switcherSheet: { background:"var(--app-surface-bg)", borderRadius:"16px", margin:"14px", width:"280px", boxShadow:"0 20px 50px rgba(0,0,0,0.25)", padding:"14px", maxHeight:"80vh", overflowY:"auto" },
+  switcherTitle: { fontSize:"11px", fontWeight:"700", color:"var(--app-text-muted)", textTransform:"uppercase", letterSpacing:"0.5px", margin:"4px 0 10px" },
   switcherRow: { width:"100%", display:"flex", alignItems:"center", gap:"10px", padding:"10px", border:"none", borderRadius:"10px", background:"transparent", cursor:"pointer", marginBottom:"2px" },
   switcherRowIcon: { fontSize:"18px" },
-  switcherRowName: { fontSize:"13px", fontWeight:"700", color:"#0f172a", margin:0 },
-  switcherRowSub: { fontSize:"11px", color:"#94a3b8", margin:0 },
+  switcherRowName: { fontSize:"13px", fontWeight:"700", color:"var(--app-text-primary)", margin:0 },
+  switcherRowSub: { fontSize:"11px", color:"var(--app-text-muted)", margin:0 },
   switcherCheck: { color:"#3b82f6", fontWeight:"700" },
-  switcherAddBtn: { width:"100%", padding:"10px", borderRadius:"10px", border:"1px dashed #cbd5e1", background:"transparent", color:"#3b82f6", cursor:"pointer", fontWeight:"600", fontSize:"13px", marginTop:"6px" },
-  switcherAddForm: { marginTop:"8px", padding:"10px", background:"#f8fafc", borderRadius:"10px" },
-  switcherInput: { width:"100%", boxSizing:"border-box", padding:"9px 12px", borderRadius:"8px", border:"1px solid #e2e8f0", fontSize:"13px", marginBottom:"8px", outline:"none" },
+  switcherAddBtn: { width:"100%", padding:"10px", borderRadius:"10px", border:"1px dashed var(--app-border-strong)", background:"transparent", color:"#3b82f6", cursor:"pointer", fontWeight:"600", fontSize:"13px", marginTop:"6px" },
+  switcherAddForm: { marginTop:"8px", padding:"10px", background:"var(--app-page-bg)", borderRadius:"10px" },
+  switcherInput: { width:"100%", boxSizing:"border-box", padding:"9px 12px", borderRadius:"8px", border:"1px solid var(--app-border-strong)", fontSize:"13px", marginBottom:"8px", outline:"none", background:"var(--app-surface-bg)", color:"var(--app-text-primary)" },
   switcherCreateBtn: { width:"100%", padding:"9px", borderRadius:"8px", background:"#3b82f6", color:"#fff", border:"none", cursor:"pointer", fontWeight:"600", fontSize:"13px" },
   nav: { flex:1, padding:"12px 0", display:"flex", flexDirection:"column", gap:"2px" },
   navBtn: { display:"flex", alignItems:"center", gap:"12px", padding:"11px 20px", border:"none", cursor:"pointer", fontSize:"14px", textAlign:"left", transition:"all .15s", borderRadius:"0" },
   navIcon: { fontSize:"18px", flexShrink:0 },
-  logoutBtn: { padding:"16px 20px", border:"none", borderTop:"1px solid #f1f5f9", background:"transparent", cursor:"pointer", color:"#ef4444", fontSize:"14px", fontWeight:"500", textAlign:"left" },
+  logoutBtn: { padding:"16px 20px", border:"none", borderTop:"1px solid var(--app-border)", background:"transparent", cursor:"pointer", color:"#ef4444", fontSize:"14px", fontWeight:"500", textAlign:"left" },
   main: { flex:1, padding:"32px", overflowY:"auto" },
   pageHeader: { display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"24px" },
-  pageTitle: { fontSize:"26px", fontWeight:"700", color:"#0f172a", margin:"0 0 4px" },
-  pageSub: { fontSize:"14px", color:"#94a3b8", margin:0 },
+  pageTitle: { fontSize:"26px", fontWeight:"700", color:"var(--app-text-primary)", margin:"0 0 4px" },
+  pageSub: { fontSize:"14px", color:"var(--app-text-muted)", margin:0 },
   alertPill: { background:"#fef3c7", color:"#d97706", padding:"8px 16px", borderRadius:"20px", fontSize:"13px", fontWeight:"600", border:"1px solid #fde68a" },
   billCard: { background:"linear-gradient(135deg, #3b82f6, #1d4ed8)", borderRadius:"20px", padding:"28px 32px", marginBottom:"24px", display:"flex", justifyContent:"space-between", alignItems:"center", boxShadow:"0 8px 32px rgba(59,130,246,0.3)" },
   billLabel: { color:"rgba(255,255,255,0.8)", fontSize:"13px", margin:"0 0 8px" },
   billAmt: { color:"#fff", fontSize:"40px", fontWeight:"700", margin:"0 0 4px" },
   billSub: { color:"rgba(255,255,255,0.7)", fontSize:"13px", margin:0 },
-  sectionTitle: { fontSize:"17px", fontWeight:"600", color:"#0f172a", marginBottom:"14px" },
+  sectionTitle: { fontSize:"17px", fontWeight:"600", color:"var(--app-text-primary)", marginBottom:"14px" },
   grid: { display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(220px, 1fr))", gap:"16px", marginBottom:"24px" },
-  appCard: { background:"#fff", borderRadius:"16px", padding:"20px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid #f1f5f9" },
+  appCard: { background:"var(--app-surface-bg)", borderRadius:"16px", padding:"20px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid var(--app-border)" },
   appTop: { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"12px" },
   appIconBox: { fontSize:"24px", width:"44px", height:"44px", background:"#eff6ff", borderRadius:"12px", display:"flex", alignItems:"center", justifyContent:"center" },
   statusPill: { padding:"4px 10px", borderRadius:"20px", fontSize:"11px", fontWeight:"700" },
-  appName: { fontSize:"13px", color:"#64748b", margin:"0 0 4px", fontWeight:"500" },
-  appWatts: { fontSize:"24px", fontWeight:"700", color:"#0f172a", margin:"0 0 2px" },
-  appTime: { fontSize:"11px", color:"#cbd5e1", margin:"0 0 14px" },
+  appName: { fontSize:"13px", color:"var(--app-text-secondary)", margin:"0 0 4px", fontWeight:"500" },
+  appWatts: { fontSize:"24px", fontWeight:"700", color:"var(--app-text-primary)", margin:"0 0 2px" },
+  appTime: { fontSize:"11px", color:"var(--app-text-muted)", margin:"0 0 14px" },
   toggleRow: { display:"flex", gap:"8px" },
   onBtn: { flex:1, padding:"8px", borderRadius:"8px", background:"#dcfce7", color:"#16a34a", border:"none", cursor:"pointer", fontWeight:"700", fontSize:"13px" },
   offBtn: { flex:1, padding:"8px", borderRadius:"8px", background:"#fee2e2", color:"#ef4444", border:"none", cursor:"pointer", fontWeight:"700", fontSize:"13px" },
-  modeSelector: { display:"flex", background:"#fff", borderRadius:"12px", padding:"4px", marginBottom:"20px", width:"fit-content", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid #f1f5f9" },
+  modeSelector: { display:"flex", background:"var(--app-surface-bg)", borderRadius:"12px", padding:"4px", marginBottom:"20px", width:"fit-content", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid var(--app-border)" },
   modeBtn: { padding:"8px 20px", border:"none", borderRadius:"10px", cursor:"pointer", fontSize:"14px", fontWeight:"500", transition:"all .15s" },
   periodNav: { display:"flex", alignItems:"center", gap:"16px", marginBottom:"20px" },
-  navArrow: { width:"36px", height:"36px", borderRadius:"8px", border:"1px solid #e2e8f0", background:"#fff", cursor:"pointer", fontSize:"18px", display:"flex", alignItems:"center", justifyContent:"center" },
-  periodLabel: { fontSize:"16px", fontWeight:"600", color:"#0f172a", minWidth:"200px", textAlign:"center" },
+  navArrow: { width:"36px", height:"36px", borderRadius:"8px", border:"1px solid var(--app-border-strong)", background:"var(--app-surface-bg)", cursor:"pointer", fontSize:"18px", display:"flex", alignItems:"center", justifyContent:"center" },
+  periodLabel: { fontSize:"16px", fontWeight:"600", color:"var(--app-text-primary)", minWidth:"200px", textAlign:"center" },
   statsRow: { display:"grid", gridTemplateColumns:"1fr 1fr", gap:"16px", marginBottom:"20px" },
-  statCard: { background:"#fff", borderRadius:"16px", padding:"20px", display:"flex", alignItems:"center", gap:"14px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid #f1f5f9" },
+  statCard: { background:"var(--app-surface-bg)", borderRadius:"16px", padding:"20px", display:"flex", alignItems:"center", gap:"14px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid var(--app-border)" },
   statIcon: { width:"44px", height:"44px", borderRadius:"12px", background:"#fef3c7", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"20px", flexShrink:0 },
-  statLabel: { fontSize:"12px", color:"#94a3b8", margin:"0 0 4px", fontWeight:"500" },
-  statValue: { fontSize:"20px", fontWeight:"700", color:"#0f172a", margin:"0 0 2px" },
+  statLabel: { fontSize:"12px", color:"var(--app-text-muted)", margin:"0 0 4px", fontWeight:"500" },
+  statValue: { fontSize:"20px", fontWeight:"700", color:"var(--app-text-primary)", margin:"0 0 2px" },
   statChange: { fontSize:"12px", margin:0, fontWeight:"500" },
-  chartCard: { background:"#fff", borderRadius:"16px", padding:"20px", marginBottom:"20px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid #f1f5f9" },
-  chartTitle: { fontSize:"15px", fontWeight:"600", color:"#0f172a", margin:"0 0 16px" },
+  chartCard: { background:"var(--app-surface-bg)", borderRadius:"16px", padding:"20px", marginBottom:"20px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid var(--app-border)" },
+  chartTitle: { fontSize:"15px", fontWeight:"600", color:"var(--app-text-primary)", margin:"0 0 16px" },
   applianceRow: { display:"flex", alignItems:"center", gap:"12px", marginBottom:"14px" },
   applianceDot: { width:"10px", height:"10px", borderRadius:"50%", flexShrink:0 },
-  applianceName: { fontSize:"13px", color:"#374151", fontWeight:"500", width:"120px", flexShrink:0 },
-  progressWrap: { flex:1, height:"8px", background:"#f1f5f9", borderRadius:"4px", overflow:"hidden" },
+  applianceName: { fontSize:"13px", color:"var(--app-text-primary)", fontWeight:"500", width:"120px", flexShrink:0 },
+  progressWrap: { flex:1, height:"8px", background:"var(--app-border)", borderRadius:"4px", overflow:"hidden" },
   progressBar: { height:"100%", borderRadius:"4px", transition:"width .5s" },
-  applianceKwh: { fontSize:"13px", color:"#374151", fontWeight:"600", width:"70px", textAlign:"right", flexShrink:0 },
-  appliancePct: { fontSize:"12px", color:"#94a3b8", width:"40px", textAlign:"right", flexShrink:0 },
-  costCard: { background:"#fff", borderRadius:"16px", padding:"20px", marginBottom:"20px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid #f1f5f9" },
+  applianceKwh: { fontSize:"13px", color:"var(--app-text-primary)", fontWeight:"600", width:"70px", textAlign:"right", flexShrink:0 },
+  appliancePct: { fontSize:"12px", color:"var(--app-text-muted)", width:"40px", textAlign:"right", flexShrink:0 },
+  costCard: { background:"var(--app-surface-bg)", borderRadius:"16px", padding:"20px", marginBottom:"20px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid var(--app-border)" },
   costHeader: { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px" },
   fcfaBadge: { background:"#eff6ff", color:"#3b82f6", padding:"4px 10px", borderRadius:"8px", fontSize:"12px", fontWeight:"700" },
   costRow: { display:"grid", gridTemplateColumns:"1fr 1fr", gap:"16px" },
-  costLabel: { fontSize:"12px", color:"#94a3b8", margin:"0 0 6px" },
-  costValue: { fontSize:"22px", fontWeight:"700", color:"#0f172a", margin:0 },
-  alertCard: { background:"#fff", borderRadius:"14px", padding:"16px 20px", marginBottom:"12px", borderLeft:"4px solid #ef4444", boxShadow:"0 2px 8px rgba(0,0,0,0.05)" },
+  costLabel: { fontSize:"12px", color:"var(--app-text-muted)", margin:"0 0 6px" },
+  costValue: { fontSize:"22px", fontWeight:"700", color:"var(--app-text-primary)", margin:0 },
+  alertCard: { background:"var(--app-surface-bg)", borderRadius:"14px", padding:"16px 20px", marginBottom:"12px", borderLeft:"4px solid #ef4444", boxShadow:"0 2px 8px rgba(0,0,0,0.05)" },
   alertTop: { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"8px" },
-  alertAppliance: { fontSize:"14px", fontWeight:"700", color:"#0f172a" },
+  alertAppliance: { fontSize:"14px", fontWeight:"700", color:"var(--app-text-primary)" },
   alertBadge: { padding:"3px 10px", borderRadius:"20px", fontSize:"11px", fontWeight:"600", textTransform:"capitalize" },
-  alertMsg: { fontSize:"13px", color:"#64748b", margin:"0 0 6px" },
-  alertTime: { fontSize:"11px", color:"#cbd5e1", margin:0 },
-  suggCard: { background:"#fff", borderRadius:"14px", padding:"16px 20px", marginBottom:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.05)", border:"1px solid #f1f5f9" },
+  alertMsg: { fontSize:"13px", color:"var(--app-text-secondary)", margin:"0 0 6px" },
+  alertTime: { fontSize:"11px", color:"var(--app-text-muted)", margin:0 },
+  suggCard: { background:"var(--app-surface-bg)", borderRadius:"14px", padding:"16px 20px", marginBottom:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.05)", border:"1px solid var(--app-border)" },
   suggTop: { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"8px" },
-  suggAppliance: { fontSize:"14px", fontWeight:"700", color:"#0f172a" },
-  suggText: { fontSize:"13px", color:"#64748b", margin:"0 0 8px", lineHeight:"1.5" },
-  suggSaving: { fontSize:"13px", fontWeight:"600", color:"#0f172a", margin:"0 0 12px" },
+  suggAppliance: { fontSize:"14px", fontWeight:"700", color:"var(--app-text-primary)" },
+  suggText: { fontSize:"13px", color:"var(--app-text-secondary)", margin:"0 0 8px", lineHeight:"1.5" },
+  suggSaving: { fontSize:"13px", fontWeight:"600", color:"var(--app-text-primary)", margin:"0 0 12px" },
   suggBtns: { display:"flex", gap:"8px" },
   acceptBtn: { padding:"8px 16px", borderRadius:"8px", background:"#3b82f6", color:"#fff", border:"none", cursor:"pointer", fontSize:"13px", fontWeight:"600" },
-  ignoreBtn: { padding:"8px 16px", borderRadius:"8px", background:"#f1f5f9", color:"#64748b", border:"1px solid #e2e8f0", cursor:"pointer", fontSize:"13px", fontWeight:"600" },
-  scheduleCard: { background:"#fff", borderRadius:"14px", padding:"16px 20px", marginBottom:"12px", display:"flex", alignItems:"center", justifyContent:"space-between", boxShadow:"0 2px 8px rgba(0,0,0,0.05)", border:"1px solid #f1f5f9" },
+  ignoreBtn: { padding:"8px 16px", borderRadius:"8px", background:"var(--app-border)", color:"var(--app-text-secondary)", border:"1px solid var(--app-border-strong)", cursor:"pointer", fontSize:"13px", fontWeight:"600" },
+  scheduleCard: { background:"var(--app-surface-bg)", borderRadius:"14px", padding:"16px 20px", marginBottom:"12px", display:"flex", alignItems:"center", justifyContent:"space-between", boxShadow:"0 2px 8px rgba(0,0,0,0.05)", border:"1px solid var(--app-border)" },
   scheduleLeft: { display:"flex", flexDirection:"column", gap:"4px" },
-  scheduleAppliance: { fontSize:"14px", fontWeight:"700", color:"#0f172a", margin:0 },
-  scheduleTimes: { fontSize:"13px", color:"#64748b", margin:0 },
+  scheduleAppliance: { fontSize:"14px", fontWeight:"700", color:"var(--app-text-primary)", margin:0 },
+  scheduleTimes: { fontSize:"13px", color:"var(--app-text-secondary)", margin:0 },
   deleteBtn: { background:"#fee2e2", border:"none", borderRadius:"8px", padding:"8px 12px", cursor:"pointer", fontSize:"16px" },
   editScheduleBtn: { background:"#eff6ff", color:"#3b82f6", border:"none", borderRadius:"8px", padding:"8px 12px", cursor:"pointer", fontSize:"14px" },
 
   overlay: { position:"fixed", inset:0, background:"rgba(15,23,42,0.45)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:"20px" },
-  modal: { background:"#fff", borderRadius:"18px", width:"380px", maxWidth:"100%", maxHeight:"85vh", overflowY:"auto", boxShadow:"0 20px 60px rgba(0,0,0,0.25)" },
-  modalHeader: { display:"flex", justifyContent:"space-between", alignItems:"center", padding:"18px 20px", borderBottom:"1px solid #f1f5f9" },
-  modalTitle: { fontSize:"16px", fontWeight:"700", color:"#0f172a", margin:0 },
-  modalClose: { border:"none", background:"#f1f5f9", borderRadius:"8px", width:"28px", height:"28px", cursor:"pointer", color:"#64748b" },
+  modal: { background:"var(--app-surface-bg)", borderRadius:"18px", width:"380px", maxWidth:"100%", maxHeight:"85vh", overflowY:"auto", boxShadow:"0 20px 60px rgba(0,0,0,0.25)" },
+  modalHeader: { display:"flex", justifyContent:"space-between", alignItems:"center", padding:"18px 20px", borderBottom:"1px solid var(--app-border)" },
+  modalTitle: { fontSize:"16px", fontWeight:"700", color:"var(--app-text-primary)", margin:0 },
+  modalClose: { border:"none", background:"var(--app-border)", borderRadius:"8px", width:"28px", height:"28px", cursor:"pointer", color:"var(--app-text-secondary)" },
   modalBody: { padding:"20px" },
-  modalLabel: { display:"block", fontSize:"12px", fontWeight:"600", color:"#64748b", margin:"0 0 6px" },
-  modalInput: { width:"100%", boxSizing:"border-box", padding:"10px 14px", borderRadius:"10px", border:"1px solid #e2e8f0", fontSize:"14px", marginBottom:"16px", outline:"none" },
+  modalLabel: { display:"block", fontSize:"12px", fontWeight:"600", color:"var(--app-text-secondary)", margin:"0 0 6px" },
+  modalInput: { width:"100%", boxSizing:"border-box", padding:"10px 14px", borderRadius:"10px", border:"1px solid var(--app-border-strong)", fontSize:"14px", marginBottom:"16px", outline:"none", background:"var(--app-surface-bg)", color:"var(--app-text-primary)" },
   modalSaveBtn: { width:"100%", padding:"12px", borderRadius:"10px", background:"#3b82f6", color:"#fff", border:"none", cursor:"pointer", fontWeight:"700", fontSize:"14px" },
-  emptyCard: { background:"#fff", borderRadius:"16px", padding:"48px 24px", textAlign:"center", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid #f1f5f9" },
+  emptyCard: { background:"var(--app-surface-bg)", borderRadius:"16px", padding:"48px 24px", textAlign:"center", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid var(--app-border)" },
   addBtn: { padding:"10px 20px", background:"#3b82f6", color:"#fff", border:"none", borderRadius:"10px", cursor:"pointer", fontWeight:"600", fontSize:"14px" },
   addBtnSmall: { padding:"10px 18px", borderRadius:"10px", background:"#3b82f6", color:"#fff", border:"none", cursor:"pointer", fontWeight:"600", fontSize:"13px" },
   chartCardHeader: { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px" },
   // Home header
 homeHeader: { display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"24px" },
-greeting: { fontSize:"14px", color:"#94a3b8", margin:"0 0 2px" },
-greetingName: { fontSize:"28px", fontWeight:"700", color:"#0f172a", margin:"0 0 2px" },
-greetingSubtitle: { fontSize:"13px", color:"#94a3b8", margin:0 },
+greeting: { fontSize:"14px", color:"var(--app-text-muted)", margin:"0 0 2px" },
+greetingName: { fontSize:"28px", fontWeight:"700", color:"var(--app-text-primary)", margin:"0 0 2px" },
+greetingSubtitle: { fontSize:"13px", color:"var(--app-text-muted)", margin:0 },
 headerRight: { display:"flex", alignItems:"center", gap:"12px" },
 bellWrap: { position:"relative", cursor:"pointer" },
 bellIcon: { fontSize:"24px" },
 bellBadge: { position:"absolute", top:"-4px", right:"-4px", background:"#ef4444", color:"#fff", fontSize:"10px", fontWeight:"700", width:"16px", height:"16px", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center" },
-weatherCard: { display:"flex", alignItems:"center", gap:"8px", background:"#fff", padding:"8px 14px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid #f1f5f9" },
-weatherTemp: { fontSize:"14px", fontWeight:"700", color:"#0f172a", margin:0 },
-weatherCity: { fontSize:"11px", color:"#94a3b8", margin:0 },
+weatherCard: { display:"flex", alignItems:"center", gap:"8px", background:"var(--app-surface-bg)", padding:"8px 14px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid var(--app-border)" },
+weatherTemp: { fontSize:"14px", fontWeight:"700", color:"var(--app-text-primary)", margin:0 },
+weatherCity: { fontSize:"11px", color:"var(--app-text-muted)", margin:0 },
 
 // Hero card
 heroCard: { background:"linear-gradient(135deg, #1d4ed8, #3b82f6)", borderRadius:"20px", padding:"24px", marginBottom:"20px", display:"flex", gap:"24px", boxShadow:"0 8px 32px rgba(59,130,246,0.3)", color:"#fff" },
@@ -938,10 +941,10 @@ projectedBadge: { background:"rgba(255,255,255,0.15)", color:"#fff", padding:"6p
 
 // 4 stat cards
 statsGrid: { display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:"12px", marginBottom:"24px" },
-statMiniCard: { background:"#fff", borderRadius:"14px", padding:"16px", boxShadow:"0 2px 8px rgba(0,0,0,0.05)", border:"1px solid #f1f5f9", textAlign:"center" },
+statMiniCard: { background:"var(--app-surface-bg)", borderRadius:"14px", padding:"16px", boxShadow:"0 2px 8px rgba(0,0,0,0.05)", border:"1px solid var(--app-border)", textAlign:"center" },
 statMiniIcon: { fontSize:"22px", marginBottom:"8px" },
-statMiniLabel: { fontSize:"11px", color:"#94a3b8", margin:"0 0 4px", fontWeight:"500" },
-statMiniValue: { fontSize:"16px", fontWeight:"700", color:"#0f172a", margin:"0 0 4px" },
+statMiniLabel: { fontSize:"11px", color:"var(--app-text-muted)", margin:"0 0 4px", fontWeight:"500" },
+statMiniValue: { fontSize:"16px", fontWeight:"700", color:"var(--app-text-primary)", margin:"0 0 4px" },
 statMiniChange: { fontSize:"11px", margin:0, fontWeight:"500" },
 
 // Rooms
@@ -949,13 +952,13 @@ section: { marginBottom:"24px" },
 sectionHeader: { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"14px" },
 viewAllBtn: { background:"none", border:"none", color:"#3b82f6", cursor:"pointer", fontSize:"13px", fontWeight:"600" },
 roomsRow: { display:"flex", gap:"14px", overflowX:"auto", paddingBottom:"8px" },
-roomCard: { background:"#fff", borderRadius:"14px", padding:"16px", minWidth:"150px", boxShadow:"0 2px 8px rgba(0,0,0,0.05)", border:"1px solid #f1f5f9", flexShrink:0 },
+roomCard: { background:"var(--app-surface-bg)", borderRadius:"14px", padding:"16px", minWidth:"150px", boxShadow:"0 2px 8px rgba(0,0,0,0.05)", border:"1px solid var(--app-border)", flexShrink:0 },
 roomTop: { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"12px" },
 roomIcon: { fontSize:"22px" },
-roomToggle: { background:"#f1f5f9", border:"none", borderRadius:"8px", padding:"4px 8px", cursor:"pointer", fontSize:"14px" },
+roomToggle: { background:"var(--app-border)", border:"none", borderRadius:"8px", padding:"4px 8px", cursor:"pointer", fontSize:"14px" },
 roomName: { fontSize:"14px", fontWeight:"700", margin:"0 0 4px" },
-roomKw: { fontSize:"18px", fontWeight:"700", color:"#0f172a", margin:"0 0 2px" },
-roomDevices: { fontSize:"11px", color:"#94a3b8", margin:0 },
+roomKw: { fontSize:"18px", fontWeight:"700", color:"var(--app-text-primary)", margin:"0 0 2px" },
+roomDevices: { fontSize:"11px", color:"var(--app-text-muted)", margin:0 },
 
 // AI Banner
 aiBanner: { background:"linear-gradient(135deg, #eff6ff, #dbeafe)", borderRadius:"16px", padding:"20px 24px", marginBottom:"24px", display:"flex", justifyContent:"space-between", alignItems:"center", border:"1px solid #bfdbfe" },
@@ -965,17 +968,17 @@ aiBannerText: { fontSize:"14px", color:"#1e40af", margin:0 },
 aiBannerBtn: { background:"#3b82f6", color:"#fff", border:"none", borderRadius:"10px", padding:"10px 18px", cursor:"pointer", fontSize:"13px", fontWeight:"600", whiteSpace:"nowrap" },
 
 // Recent alerts
-recentAlertCard: { background:"#fff", borderRadius:"12px", padding:"14px 16px", marginBottom:"10px", display:"flex", alignItems:"center", gap:"14px", boxShadow:"0 2px 8px rgba(0,0,0,0.05)", border:"1px solid #f1f5f9" },
+recentAlertCard: { background:"var(--app-surface-bg)", borderRadius:"12px", padding:"14px 16px", marginBottom:"10px", display:"flex", alignItems:"center", gap:"14px", boxShadow:"0 2px 8px rgba(0,0,0,0.05)", border:"1px solid var(--app-border)" },
 recentAlertIcon: { width:"40px", height:"40px", borderRadius:"10px", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"18px", flexShrink:0 },
 recentAlertText: { flex:1 },
-recentAlertTitle: { fontSize:"13px", fontWeight:"600", color:"#0f172a", margin:"0 0 3px" },
-recentAlertTime: { fontSize:"11px", color:"#94a3b8", margin:0 },
+recentAlertTitle: { fontSize:"13px", fontWeight:"600", color:"var(--app-text-primary)", margin:"0 0 3px" },
+recentAlertTime: { fontSize:"11px", color:"var(--app-text-muted)", margin:0 },
 
 // Bottom bar
-bottomBar: { background:"#fff", borderRadius:"16px", padding:"16px", display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:"8px", boxShadow:"0 2px 8px rgba(0,0,0,0.05)", border:"1px solid #f1f5f9", marginBottom:"24px" },
+bottomBar: { background:"var(--app-surface-bg)", borderRadius:"16px", padding:"16px", display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:"8px", boxShadow:"0 2px 8px rgba(0,0,0,0.05)", border:"1px solid var(--app-border)", marginBottom:"24px" },
 bottomBarItem: { textAlign:"center", padding:"8px" },
 bottomBarIcon: { fontSize:"24px" },
-bottomBarValue: { fontSize:"18px", fontWeight:"700", color:"#0f172a", margin:"4px 0 2px" },
-bottomBarLabel: { fontSize:"11px", color:"#94a3b8", margin:"0 0 2px" },
+bottomBarValue: { fontSize:"18px", fontWeight:"700", color:"var(--app-text-primary)", margin:"4px 0 2px" },
+bottomBarLabel: { fontSize:"11px", color:"var(--app-text-muted)", margin:"0 0 2px" },
 bottomBarSub: { fontSize:"11px", fontWeight:"600", margin:0 },
 };

@@ -4,6 +4,8 @@ import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Onboarding from "./pages/Onboarding";
+import { ThemeProvider } from "./context/ThemeContext";
+import { LanguageProvider } from "./context/LanguageContext";
 
 const API = "http://localhost:8000";
 
@@ -30,6 +32,16 @@ axios.interceptors.response.use(
 );
 
 function App() {
+  return (
+    <ThemeProvider>
+      <LanguageProvider>
+        <AppInner />
+      </LanguageProvider>
+    </ThemeProvider>
+  );
+}
+
+function AppInner() {
   const [token, setToken] = useState(localStorage.getItem("token"));
   const [user, setUser] = useState(
     JSON.parse(localStorage.getItem("user") || "null")

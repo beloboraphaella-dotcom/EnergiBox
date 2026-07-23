@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { LineChart, Line, ResponsiveContainer, Tooltip, XAxis } from "recharts";
+import { useLanguage } from "../context/LanguageContext";
 
 const API = "http://localhost:8000";
 
@@ -46,6 +47,7 @@ function Modal({ title, onClose, children }) {
 }
 
 export default function Devices({ token, homeId }) {
+  const { t } = useLanguage();
   const [devices, setDevices] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -139,24 +141,24 @@ export default function Devices({ token, homeId }) {
     <div>
       <div style={s.pageHeader}>
         <div>
-          <h1 style={s.pageTitle}>Devices</h1>
-          <p style={s.pageSub}>Monitor and control your home devices</p>
+          <h1 style={s.pageTitle}>{t("devices.title")}</h1>
+          <p style={s.pageSub}>{t("devices.subtitle")}</p>
         </div>
         <button style={s.addBtn} onClick={() => setActiveModal("device")} title="Add Appliance / Socket">+</button>
       </div>
 
       <div style={s.filterRow}>
         {[
-          { id: "all", label: `All Devices (${devices.length})` },
-          { id: "online", label: "Online" },
-          { id: "offline", label: "Offline" },
+          { id: "all", label: `${t("devices.all")} (${devices.length})` },
+          { id: "online", label: t("devices.online") },
+          { id: "offline", label: t("devices.offline") },
         ].map((f) => (
           <button
             key={f.id}
             style={{
               ...s.filterBtn,
-              background: filter === f.id ? "#3b82f6" : "#f1f5f9",
-              color: filter === f.id ? "#fff" : "#64748b",
+              background: filter === f.id ? "#3b82f6" : "var(--app-border)",
+              color: filter === f.id ? "#fff" : "var(--app-text-secondary)",
             }}
             onClick={() => setFilter(f.id)}
           >
@@ -166,18 +168,18 @@ export default function Devices({ token, homeId }) {
       </div>
 
       <div style={s.listHeader}>
-        <h2 style={s.listTitle}>My Home</h2>
+        <h2 style={s.listTitle}>{t("devices.myHome")}</h2>
         <p style={s.powerUse}>
-          Power Use: <span style={s.powerUseVal}>{totalKw.toFixed(2)} kW</span>
+          {t("devices.powerUse")} <span style={s.powerUseVal}>{totalKw.toFixed(2)} kW</span>
         </p>
       </div>
 
       {loading ? (
-        <div style={s.emptyCard}><p style={{ color: "#aaa" }}>Loading devices...</p></div>
+        <div style={s.emptyCard}><p style={{ color: "var(--app-text-muted)" }}>{t("devices.loading")}</p></div>
       ) : filtered.length === 0 ? (
         <div style={s.emptyCard}>
-          <p style={{ color: "#aaa", marginBottom: "12px" }}>No devices in this view</p>
-          <button style={s.addBtnSmall} onClick={() => setActiveModal("device")}>+ Add your first device</button>
+          <p style={{ color: "var(--app-text-muted)", marginBottom: "12px" }}>{t("devices.noDevices")}</p>
+          <button style={s.addBtnSmall} onClick={() => setActiveModal("device")}>{t("devices.addFirstDevice")}</button>
         </div>
       ) : (
         filtered.map((d) => (
@@ -190,7 +192,7 @@ export default function Devices({ token, homeId }) {
               </div>
               <p style={s.deviceRoom}>{d.room}</p>
               <p style={{ ...s.deviceStatus, color: d.status === "online" ? "#16a34a" : "#ef4444" }}>
-                {d.status === "online" ? "Online" : "Offline"}
+                {d.status === "online" ? t("devices.online") : t("devices.offline")}
               </p>
             </div>
             <div style={s.deviceRight}>
@@ -244,8 +246,8 @@ export default function Devices({ token, homeId }) {
                 key={t}
                 style={{
                   ...s.typeChoice,
-                  background: newDevice.type === t ? "#3b82f6" : "#f1f5f9",
-                  color: newDevice.type === t ? "#fff" : "#64748b",
+                  background: newDevice.type === t ? "#3b82f6" : "var(--app-border)",
+                  color: newDevice.type === t ? "#fff" : "var(--app-text-secondary)",
                 }}
                 onClick={() => setNewDevice({ ...newDevice, type: t })}
               >
@@ -277,6 +279,7 @@ export default function Devices({ token, homeId }) {
 }
 
 function DeviceDetail({ mac, rooms, token, homeId, onBack }) {
+  const { t } = useLanguage();
   const [device, setDevice] = useState(null);
   const [schedules, setSchedules] = useState([]);
   const [alerts, setAlerts] = useState([]);
@@ -375,7 +378,7 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack }) {
 
   return (
     <div>
-      <button style={s.backBtn} onClick={onBack}>‹ Back to Devices</button>
+      <button style={s.backBtn} onClick={onBack}>{t("devices.backToDevices")}</button>
 
       <div style={s.detailHeader}>
         <span style={s.detailIcon}>{getIcon(device.name, device.type)}</span>
@@ -392,7 +395,7 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack }) {
           background: device.status === "online" ? "#dcfce7" : "#fee2e2",
           color: device.status === "online" ? "#16a34a" : "#ef4444",
         }}>
-          {device.status === "online" ? "Online" : "Offline"}
+          {device.status === "online" ? t("devices.online") : t("devices.offline")}
         </span>
       </div>
 
@@ -403,7 +406,7 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack }) {
           <p style={s.powerWatts}>{device.watts} <span style={{ fontSize: "16px", fontWeight: 400 }}>W</span></p>
         </div>
         <button
-          style={{ ...s.powerToggle, background: device.is_on ? "#3b82f6" : "#e2e8f0" }}
+          style={{ ...s.powerToggle, background: device.is_on ? "#3b82f6" : "var(--app-border-strong)" }}
           onClick={togglePower}
           disabled={toggling}
         >
@@ -454,8 +457,8 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack }) {
                 <p style={s.scheduleTimes}>ON {sc.on_time} → OFF {sc.off_time}</p>
                 <span style={{
                   ...s.sourceTag,
-                  background: sc.source === "ai" ? "#eff6ff" : "#f1f5f9",
-                  color: sc.source === "ai" ? "#3b82f6" : "#64748b",
+                  background: sc.source === "ai" ? "#eff6ff" : "var(--app-border)",
+                  color: sc.source === "ai" ? "#3b82f6" : "var(--app-text-secondary)",
                 }}>{sc.source}</span>
               </div>
               <button style={s.deleteBtn} onClick={() => deleteSchedule(sc.id)}>🗑</button>
@@ -464,7 +467,7 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack }) {
         )}
         <div style={s.addScheduleRow}>
           <input type="time" style={s.timeInput} value={onTime} onChange={(e) => setOnTime(e.target.value)} />
-          <span style={{ color: "#94a3b8" }}>→</span>
+          <span style={{ color: "var(--app-text-muted)" }}>→</span>
           <input type="time" style={s.timeInput} value={offTime} onChange={(e) => setOffTime(e.target.value)} />
           <button style={s.addScheduleBtn} onClick={addSchedule}>+ Add</button>
         </div>
@@ -514,8 +517,8 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack }) {
                 key={t}
                 style={{
                   ...s.typeChoice,
-                  background: editType === t ? "#3b82f6" : "#f1f5f9",
-                  color: editType === t ? "#fff" : "#64748b",
+                  background: editType === t ? "#3b82f6" : "var(--app-border)",
+                  color: editType === t ? "#fff" : "var(--app-text-secondary)",
                 }}
                 onClick={() => setEditType(t)}
               >
@@ -533,30 +536,30 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack }) {
 
 const s = {
   pageHeader: { marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" },
-  pageTitle: { fontSize: "26px", fontWeight: "700", color: "#0f172a", margin: "0 0 4px" },
-  pageSub: { fontSize: "14px", color: "#94a3b8", margin: 0 },
+  pageTitle: { fontSize: "26px", fontWeight: "700", color: "var(--app-text-primary)", margin: "0 0 4px" },
+  pageSub: { fontSize: "14px", color: "var(--app-text-muted)", margin: 0 },
 
   addBtn: { width: "40px", height: "40px", borderRadius: "12px", background: "#3b82f6", color: "#fff", border: "none", fontSize: "22px", fontWeight: "600", cursor: "pointer", lineHeight: 1, boxShadow: "0 4px 14px rgba(59,130,246,0.35)" },
   addBtnSmall: { padding: "10px 18px", borderRadius: "10px", background: "#3b82f6", color: "#fff", border: "none", cursor: "pointer", fontWeight: "600", fontSize: "13px" },
-  addMenu: { position: "absolute", top: "48px", right: 0, background: "#fff", borderRadius: "12px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", border: "1px solid #f1f5f9", overflow: "hidden", zIndex: 20, minWidth: "220px" },
-  addMenuItem: { display: "block", width: "100%", textAlign: "left", padding: "12px 16px", border: "none", background: "transparent", cursor: "pointer", fontSize: "13px", fontWeight: "500", color: "#0f172a", borderBottom: "1px solid #f8fafc" },
+  addMenu: { position: "absolute", top: "48px", right: 0, background: "var(--app-surface-bg)", borderRadius: "12px", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", border: "1px solid var(--app-border)", overflow: "hidden", zIndex: 20, minWidth: "220px" },
+  addMenuItem: { display: "block", width: "100%", textAlign: "left", padding: "12px 16px", border: "none", background: "transparent", cursor: "pointer", fontSize: "13px", fontWeight: "500", color: "var(--app-text-primary)", borderBottom: "1px solid var(--app-border)" },
 
   typeTag: { fontSize: "10px", fontWeight: "700", padding: "2px 8px", borderRadius: "10px", background: "#eff6ff", color: "#3b82f6", textTransform: "uppercase", letterSpacing: "0.3px" },
 
   overlay: { position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px" },
-  modal: { background: "#fff", borderRadius: "18px", width: "380px", maxWidth: "100%", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.25)" },
-  modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 20px", borderBottom: "1px solid #f1f5f9" },
-  modalTitle: { fontSize: "16px", fontWeight: "700", color: "#0f172a", margin: 0 },
-  modalClose: { border: "none", background: "#f1f5f9", borderRadius: "8px", width: "28px", height: "28px", cursor: "pointer", color: "#64748b" },
+  modal: { background: "var(--app-surface-bg)", borderRadius: "18px", width: "380px", maxWidth: "100%", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.25)" },
+  modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 20px", borderBottom: "1px solid var(--app-border)" },
+  modalTitle: { fontSize: "16px", fontWeight: "700", color: "var(--app-text-primary)", margin: 0 },
+  modalClose: { border: "none", background: "var(--app-border)", borderRadius: "8px", width: "28px", height: "28px", cursor: "pointer", color: "var(--app-text-secondary)" },
   modalBody: { padding: "20px" },
-  label: { display: "block", fontSize: "12px", fontWeight: "600", color: "#64748b", margin: "0 0 6px" },
-  input: { width: "100%", boxSizing: "border-box", padding: "10px 14px", borderRadius: "10px", border: "1px solid #e2e8f0", fontSize: "14px", marginBottom: "16px", outline: "none", background: "#fff" },
+  label: { display: "block", fontSize: "12px", fontWeight: "600", color: "var(--app-text-secondary)", margin: "0 0 6px" },
+  input: { width: "100%", boxSizing: "border-box", padding: "10px 14px", borderRadius: "10px", border: "1px solid var(--app-border-strong)", fontSize: "14px", marginBottom: "16px", outline: "none", background: "var(--app-surface-bg)", color: "var(--app-text-primary)" },
   errorText: { color: "#ef4444", fontSize: "12px", margin: "-8px 0 12px" },
-  infoTextMuted: { fontSize: "12px", color: "#94a3b8", margin: "-8px 0 16px" },
+  infoTextMuted: { fontSize: "12px", color: "var(--app-text-muted)", margin: "-8px 0 16px" },
   saveBtn: { width: "100%", padding: "12px", borderRadius: "10px", background: "#3b82f6", color: "#fff", border: "none", cursor: "pointer", fontWeight: "700", fontSize: "14px" },
   typeRow: { display: "flex", flexDirection: "column", gap: "8px", marginBottom: "16px" },
   typeChoice: { padding: "10px 14px", borderRadius: "10px", border: "none", cursor: "pointer", fontSize: "13px", fontWeight: "600", textAlign: "left" },
-  roomManageRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #f1f5f9" },
+  roomManageRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--app-border)" },
 
   editDeleteRow: { display: "flex", gap: "10px", marginBottom: "24px" },
   editBtn: { flex: 1, padding: "12px", borderRadius: "10px", background: "#eff6ff", color: "#3b82f6", border: "none", cursor: "pointer", fontWeight: "600", fontSize: "13px" },
@@ -566,14 +569,14 @@ const s = {
   filterBtn: { padding: "8px 16px", borderRadius: "20px", border: "none", cursor: "pointer", fontSize: "13px", fontWeight: "600" },
 
   listHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" },
-  listTitle: { fontSize: "17px", fontWeight: "700", color: "#0f172a", margin: 0 },
-  powerUse: { fontSize: "13px", color: "#64748b", margin: 0 },
+  listTitle: { fontSize: "17px", fontWeight: "700", color: "var(--app-text-primary)", margin: 0 },
+  powerUse: { fontSize: "13px", color: "var(--app-text-secondary)", margin: 0 },
   powerUseVal: { fontWeight: "700", color: "#3b82f6" },
 
   deviceRow: {
     width: "100%", display: "flex", alignItems: "center", gap: "14px",
-    background: "#fff", borderRadius: "14px", padding: "14px 16px", marginBottom: "10px",
-    border: "1px solid #f1f5f9", boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+    background: "var(--app-surface-bg)", borderRadius: "14px", padding: "14px 16px", marginBottom: "10px",
+    border: "1px solid var(--app-border)", boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
     cursor: "pointer", textAlign: "left",
   },
   deviceIconBox: {
@@ -581,20 +584,20 @@ const s = {
     display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", flexShrink: 0,
   },
   deviceInfo: { flex: 1, minWidth: 0 },
-  deviceName: { fontSize: "14px", fontWeight: "700", color: "#0f172a", margin: "0 0 2px" },
-  deviceRoom: { fontSize: "12px", color: "#94a3b8", margin: "0 0 2px" },
+  deviceName: { fontSize: "14px", fontWeight: "700", color: "var(--app-text-primary)", margin: "0 0 2px" },
+  deviceRoom: { fontSize: "12px", color: "var(--app-text-muted)", margin: "0 0 2px" },
   deviceStatus: { fontSize: "11px", fontWeight: "600", margin: 0 },
   deviceRight: { textAlign: "right", flexShrink: 0 },
-  deviceKw: { fontSize: "14px", fontWeight: "700", color: "#0f172a", margin: "0 0 6px" },
+  deviceKw: { fontSize: "14px", fontWeight: "700", color: "var(--app-text-primary)", margin: "0 0 6px" },
   statePill: { padding: "4px 12px", borderRadius: "20px", fontSize: "11px", fontWeight: "700" },
-  chevron: { fontSize: "20px", color: "#cbd5e1", flexShrink: 0 },
-  emptyCard: { background: "#fff", borderRadius: "16px", padding: "48px 24px", textAlign: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #f1f5f9" },
+  chevron: { fontSize: "20px", color: "var(--app-text-muted)", flexShrink: 0 },
+  emptyCard: { background: "var(--app-surface-bg)", borderRadius: "16px", padding: "48px 24px", textAlign: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid var(--app-border)" },
 
   backBtn: { border: "none", background: "none", color: "#3b82f6", fontSize: "14px", fontWeight: "600", cursor: "pointer", padding: 0, marginBottom: "16px" },
   detailHeader: { display: "flex", alignItems: "center", gap: "14px", marginBottom: "20px" },
   detailIcon: { fontSize: "36px" },
-  detailName: { fontSize: "22px", fontWeight: "700", color: "#0f172a", margin: "0 0 2px" },
-  detailRoom: { fontSize: "13px", color: "#94a3b8", margin: 0 },
+  detailName: { fontSize: "22px", fontWeight: "700", color: "var(--app-text-primary)", margin: "0 0 2px" },
+  detailRoom: { fontSize: "13px", color: "var(--app-text-muted)", margin: 0 },
 
   powerCard: {
     background: "linear-gradient(135deg, #1d4ed8, #3b82f6)", borderRadius: "18px", padding: "22px 24px",
@@ -604,32 +607,32 @@ const s = {
   powerLabel: { fontSize: "12px", color: "rgba(255,255,255,0.75)", margin: "0 0 4px" },
   powerWatts: { fontSize: "30px", fontWeight: "700", margin: 0 },
   powerToggle: { width: "52px", height: "28px", borderRadius: "20px", border: "none", position: "relative", cursor: "pointer" },
-  powerToggleThumb: { width: "22px", height: "22px", borderRadius: "50%", background: "#fff", position: "absolute", top: "3px", transition: "left .15s" },
+  powerToggleThumb: { width: "22px", height: "22px", borderRadius: "50%", background: "var(--app-surface-bg)", position: "absolute", top: "3px", transition: "left .15s" },
 
-  chartCard: { background: "#fff", borderRadius: "16px", padding: "16px 16px 4px", marginBottom: "20px", border: "1px solid #f1f5f9", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" },
-  chartTitle: { fontSize: "13px", fontWeight: "600", color: "#64748b", margin: "0 0 4px" },
+  chartCard: { background: "var(--app-surface-bg)", borderRadius: "16px", padding: "16px 16px 4px", marginBottom: "20px", border: "1px solid var(--app-border)", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" },
+  chartTitle: { fontSize: "13px", fontWeight: "600", color: "var(--app-text-secondary)", margin: "0 0 4px" },
 
-  sectionLabel: { fontSize: "12px", fontWeight: "600", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 10px" },
+  sectionLabel: { fontSize: "12px", fontWeight: "600", color: "var(--app-text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 10px" },
   runtimeRow: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px", marginBottom: "20px" },
-  runtimeCard: { background: "#fff", borderRadius: "14px", padding: "14px", textAlign: "center", border: "1px solid #f1f5f9", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" },
-  runtimeLabel: { fontSize: "11px", color: "#94a3b8", margin: "0 0 4px" },
-  runtimeValue: { fontSize: "18px", fontWeight: "700", color: "#0f172a", margin: 0 },
+  runtimeCard: { background: "var(--app-surface-bg)", borderRadius: "14px", padding: "14px", textAlign: "center", border: "1px solid var(--app-border)", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" },
+  runtimeLabel: { fontSize: "11px", color: "var(--app-text-muted)", margin: "0 0 4px" },
+  runtimeValue: { fontSize: "18px", fontWeight: "700", color: "var(--app-text-primary)", margin: 0 },
 
-  card: { background: "#fff", borderRadius: "16px", padding: "8px 18px", marginBottom: "20px", border: "1px solid #f1f5f9", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" },
+  card: { background: "var(--app-surface-bg)", borderRadius: "16px", padding: "8px 18px", marginBottom: "20px", border: "1px solid var(--app-border)", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" },
   emptyText: { color: "#aaa", fontSize: "13px", padding: "14px 0" },
-  scheduleRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid #f1f5f9" },
-  scheduleTimes: { fontSize: "13px", fontWeight: "600", color: "#0f172a", margin: "0 0 4px" },
+  scheduleRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid var(--app-border)" },
+  scheduleTimes: { fontSize: "13px", fontWeight: "600", color: "var(--app-text-primary)", margin: "0 0 4px" },
   sourceTag: { fontSize: "10px", fontWeight: "700", padding: "2px 8px", borderRadius: "10px", textTransform: "capitalize" },
   deleteBtn: { background: "#fee2e2", border: "none", borderRadius: "8px", padding: "6px 10px", cursor: "pointer", fontSize: "14px" },
   addScheduleRow: { display: "flex", alignItems: "center", gap: "8px", padding: "14px 0" },
-  timeInput: { flex: 1, padding: "8px 10px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "13px" },
+  timeInput: { flex: 1, padding: "8px 10px", borderRadius: "8px", border: "1px solid var(--app-border-strong)", fontSize: "13px", background: "var(--app-surface-bg)", color: "var(--app-text-primary)" },
   addScheduleBtn: { padding: "8px 14px", borderRadius: "8px", background: "#3b82f6", color: "#fff", border: "none", cursor: "pointer", fontWeight: "600", fontSize: "13px", whiteSpace: "nowrap" },
 
-  alertRow: { padding: "12px 0", borderBottom: "1px solid #f1f5f9" },
-  alertMsg: { fontSize: "13px", color: "#374151", margin: "0 0 4px" },
-  alertTime: { fontSize: "11px", color: "#94a3b8", margin: 0 },
+  alertRow: { padding: "12px 0", borderBottom: "1px solid var(--app-border)" },
+  alertMsg: { fontSize: "13px", color: "var(--app-text-primary)", margin: "0 0 4px" },
+  alertTime: { fontSize: "11px", color: "var(--app-text-muted)", margin: 0 },
 
-  infoRow: { display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: "1px solid #f1f5f9" },
-  infoLabel: { fontSize: "13px", color: "#94a3b8" },
-  infoValue: { fontSize: "13px", fontWeight: "600", color: "#0f172a" },
+  infoRow: { display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: "1px solid var(--app-border)" },
+  infoLabel: { fontSize: "13px", color: "var(--app-text-muted)" },
+  infoValue: { fontSize: "13px", fontWeight: "600", color: "var(--app-text-primary)" },
 };

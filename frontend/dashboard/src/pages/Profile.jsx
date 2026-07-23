@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import axios from "axios";
+import { useTheme } from "../context/ThemeContext";
+import { useLanguage } from "../context/LanguageContext";
 
 const API = "http://localhost:8000";
 
@@ -34,19 +36,20 @@ function Row({ icon, label, value, danger, onClick }) {
       <span style={{ ...s.rowIconBox, background: danger ? "#fef2f2" : "#eff6ff" }}>
         {icon}
       </span>
-      <span style={{ ...s.rowLabel, color: danger ? "#ef4444" : "#0f172a" }}>{label}</span>
+      <span style={{ ...s.rowLabel, color: danger ? "#ef4444" : "var(--app-text-primary)" }}>{label}</span>
       {value && <span style={s.rowValue}>{value}</span>}
       {!danger && <span style={s.rowArrow}>→</span>}
     </button>
   );
 }
 
-export default function Profile({ user, token, homeId, onLogout, onUpdateUser }) {
+export default function Profile({ user, token, onLogout, onUpdateUser }) {
+  const { theme, setTheme } = useTheme();
+  const { language, setLanguage, t } = useLanguage();
   const [activeModal, setActiveModal] = useState(null);
   const [notifEnabled, setNotifEnabled] = useState(
     localStorage.getItem("notificationsEnabled") !== "false"
   );
-  const [tariff, setTariff] = useState(null);
 
   const [nameInput, setNameInput] = useState(user?.name || "");
   const [profileMsg, setProfileMsg] = useState("");
@@ -57,15 +60,6 @@ export default function Profile({ user, token, homeId, onLogout, onUpdateUser })
   const [confirmPw, setConfirmPw] = useState("");
   const [pwMsg, setPwMsg] = useState("");
   const [pwSaving, setPwSaving] = useState(false);
-
-  useEffect(() => {
-    if (activeModal === "tariff" && !tariff && homeId) {
-      axios
-        .get(`${API}/bill/estimate?home_id=${homeId}`, { headers: { Authorization: `Bearer ${token}` } })
-        .then((res) => setTariff(res.data))
-        .catch(() => {});
-    }
-  }, [activeModal]);
 
   const closeModal = () => {
     setActiveModal(null);
@@ -130,8 +124,8 @@ export default function Profile({ user, token, homeId, onLogout, onUpdateUser })
   return (
     <div>
       <div style={s.pageHeader}>
-        <h1 style={s.pageTitle}>Profile</h1>
-        <p style={s.pageSub}>Manage your account and preferences</p>
+        <h1 style={s.pageTitle}>{t("profile.title")}</h1>
+        <p style={s.pageSub}>{t("profile.subtitle")}</p>
       </div>
 
       {/* Profile card */}
@@ -144,132 +138,153 @@ export default function Profile({ user, token, homeId, onLogout, onUpdateUser })
       </div>
 
       {/* Account */}
-      <p style={s.sectionLabel}>Account</p>
+      <p style={s.sectionLabel}>{t("profile.account")}</p>
       <div style={s.card}>
-        <Row icon="👤" label="Manage Profile" onClick={() => setActiveModal("profile")} />
-        <Row icon="🔒" label="Password & Security" onClick={() => setActiveModal("password")} />
+        <Row icon="👤" label={t("profile.manageProfile")} onClick={() => setActiveModal("profile")} />
+        <Row icon="🔒" label={t("profile.passwordSecurity")} onClick={() => setActiveModal("password")} />
         <Row
           icon="🔔"
-          label="Notifications"
+          label={t("profile.notifications")}
           value={<Toggle checked={notifEnabled} onChange={toggleNotif} />}
         />
-        <Row icon="🌐" label="Language" value="English" onClick={() => setActiveModal("language")} />
+        <Row
+          icon="🌐"
+          label={t("profile.language")}
+          value={language === "fr" ? "Français" : "English"}
+          onClick={() => setActiveModal("language")}
+        />
       </div>
 
       {/* Preferences */}
-      <p style={s.sectionLabel}>Preferences</p>
+      <p style={s.sectionLabel}>{t("profile.preferences")}</p>
       <div style={s.card}>
-        <Row icon="🎨" label="Theme" value="Light" onClick={() => setActiveModal("theme")} />
-        <Row icon="💰" label="Energy Tariff" onClick={() => setActiveModal("tariff")} />
+        <Row
+          icon={theme === "dark" ? "🌙" : "🎨"}
+          label={t("profile.theme")}
+          value={theme === "dark" ? t("profile.themeDark") : t("profile.themeLight")}
+          onClick={() => setActiveModal("theme")}
+        />
       </div>
 
       {/* Support */}
-      <p style={s.sectionLabel}>Support</p>
+      <p style={s.sectionLabel}>{t("profile.support")}</p>
       <div style={s.card}>
-        <Row icon="❓" label="Help Center" onClick={() => setActiveModal("help")} />
-        <Row icon="ℹ️" label="About Us" onClick={() => setActiveModal("about")} />
+        <Row icon="❓" label={t("profile.helpCenter")} onClick={() => setActiveModal("help")} />
+        <Row icon="ℹ️" label={t("profile.aboutUs")} onClick={() => setActiveModal("about")} />
       </div>
 
       {/* Log out */}
       <div style={s.card}>
-        <Row icon="🚪" label="Log Out" danger onClick={onLogout} />
+        <Row icon="🚪" label={t("profile.logOut")} danger onClick={onLogout} />
       </div>
 
       {/* ── Manage Profile modal ── */}
       {activeModal === "profile" && (
-        <Modal title="Manage Profile" onClose={closeModal}>
-          <label style={s.label}>Full Name</label>
+        <Modal title={t("profile.manageProfile")} onClose={closeModal}>
+          <label style={s.label}>{t("profile.fullName")}</label>
           <input
             style={s.input}
             value={nameInput}
             onChange={(e) => setNameInput(e.target.value)}
           />
-          <label style={s.label}>Email</label>
-          <input style={{ ...s.input, color: "#94a3b8" }} value={user?.email || ""} disabled />
-          {profileMsg === "error" && <p style={s.errorText}>Could not save changes. Try again.</p>}
-          {profileMsg === "success" && <p style={s.successText}>Profile updated ✓</p>}
+          <label style={s.label}>{t("profile.email")}</label>
+          <input style={{ ...s.input, color: "var(--app-text-muted)" }} value={user?.email || ""} disabled />
+          {profileMsg === "error" && <p style={s.errorText}>{t("profile.couldNotSave")}</p>}
+          {profileMsg === "success" && <p style={s.successText}>{t("profile.profileUpdated")}</p>}
           <button style={s.saveBtn} onClick={saveProfile} disabled={profileSaving}>
-            {profileSaving ? "Saving..." : "Save Changes"}
+            {profileSaving ? t("profile.saving") : t("profile.saveChanges")}
           </button>
         </Modal>
       )}
 
       {/* ── Password modal ── */}
       {activeModal === "password" && (
-        <Modal title="Password & Security" onClose={closeModal}>
-          <label style={s.label}>Current Password</label>
+        <Modal title={t("profile.passwordSecurity")} onClose={closeModal}>
+          <label style={s.label}>{t("profile.currentPassword")}</label>
           <input
             type="password"
             style={s.input}
             value={currentPw}
             onChange={(e) => setCurrentPw(e.target.value)}
           />
-          <label style={s.label}>New Password</label>
+          <label style={s.label}>{t("profile.newPassword")}</label>
           <input
             type="password"
             style={s.input}
             value={newPw}
             onChange={(e) => setNewPw(e.target.value)}
           />
-          <label style={s.label}>Confirm New Password</label>
+          <label style={s.label}>{t("profile.confirmNewPassword")}</label>
           <input
             type="password"
             style={s.input}
             value={confirmPw}
             onChange={(e) => setConfirmPw(e.target.value)}
           />
-          {pwMsg === "mismatch" && <p style={s.errorText}>New passwords don't match.</p>}
-          {pwMsg === "error" && <p style={s.errorText}>Current password is incorrect.</p>}
-          {pwMsg === "success" && <p style={s.successText}>Password updated ✓</p>}
+          {pwMsg === "mismatch" && <p style={s.errorText}>{t("profile.passwordsDontMatch")}</p>}
+          {pwMsg === "error" && <p style={s.errorText}>{t("profile.currentPasswordIncorrect")}</p>}
+          {pwMsg === "success" && <p style={s.successText}>{t("profile.passwordUpdated")}</p>}
           <button style={s.saveBtn} onClick={savePassword} disabled={pwSaving}>
-            {pwSaving ? "Updating..." : "Update Password"}
+            {pwSaving ? t("profile.updating") : t("profile.updatePassword")}
           </button>
         </Modal>
       )}
 
       {/* ── Language modal ── */}
       {activeModal === "language" && (
-        <Modal title="Language" onClose={closeModal}>
-          <p style={s.infoText}>EnergiBox currently supports <strong>English</strong> only.</p>
-          <p style={s.infoTextMuted}>More languages are coming soon.</p>
+        <Modal title={t("profile.language")} onClose={closeModal}>
+          <p style={s.infoText}>{t("profile.chooseLanguage")}</p>
+          <div style={s.choiceRow}>
+            {[
+              { code: "en", label: "English", flag: "🇬🇧" },
+              { code: "fr", label: "Français", flag: "🇫🇷" },
+            ].map((opt) => (
+              <button
+                key={opt.code}
+                style={{
+                  ...s.choiceBtn,
+                  background: language === opt.code ? "#3b82f6" : "var(--app-page-bg)",
+                  color: language === opt.code ? "#fff" : "var(--app-text-primary)",
+                }}
+                onClick={() => setLanguage(opt.code)}
+              >
+                <span style={{ marginRight: "8px" }}>{opt.flag}</span>{opt.label}
+                {language === opt.code && <span style={{ marginLeft: "8px" }}>✓</span>}
+              </button>
+            ))}
+          </div>
         </Modal>
       )}
 
       {/* ── Theme modal ── */}
       {activeModal === "theme" && (
-        <Modal title="Theme" onClose={closeModal}>
-          <p style={s.infoText}>EnergiBox currently uses the <strong>Light</strong> theme.</p>
-          <p style={s.infoTextMuted}>Dark mode is coming soon.</p>
-        </Modal>
-      )}
-
-      {/* ── Tariff modal ── */}
-      {activeModal === "tariff" && (
-        <Modal title="Energy Tariff" onClose={closeModal}>
-          {tariff ? (
-            <>
-              <div style={s.tariffRow}>
-                <span style={s.infoTextMuted}>Rate per kWh</span>
-                <span style={s.tariffValue}>{tariff.tariff_per_kwh} FCFA</span>
-              </div>
-              <div style={s.tariffRow}>
-                <span style={s.infoTextMuted}>Consumed this month</span>
-                <span style={s.tariffValue}>{tariff.kwh_consumed} kWh</span>
-              </div>
-              <div style={s.tariffRow}>
-                <span style={s.infoTextMuted}>Estimated bill</span>
-                <span style={s.tariffValue}>{tariff.estimated_bill_fcfa?.toLocaleString()} FCFA</span>
-              </div>
-            </>
-          ) : (
-            <p style={s.infoTextMuted}>Loading tariff info...</p>
-          )}
+        <Modal title={t("profile.theme")} onClose={closeModal}>
+          <p style={s.infoText}>{t("profile.chooseTheme")}</p>
+          <div style={s.choiceRow}>
+            {[
+              { code: "light", label: t("profile.themeLight"), icon: "☀️" },
+              { code: "dark", label: t("profile.themeDark"), icon: "🌙" },
+            ].map((opt) => (
+              <button
+                key={opt.code}
+                style={{
+                  ...s.choiceBtn,
+                  background: theme === opt.code ? "#3b82f6" : "var(--app-page-bg)",
+                  color: theme === opt.code ? "#fff" : "var(--app-text-primary)",
+                }}
+                onClick={() => setTheme(opt.code)}
+              >
+                <span style={{ marginRight: "8px" }}>{opt.icon}</span>{opt.label}
+                {theme === opt.code && <span style={{ marginLeft: "8px" }}>✓</span>}
+              </button>
+            ))}
+          </div>
         </Modal>
       )}
 
       {/* ── Help modal ── */}
       {activeModal === "help" && (
-        <Modal title="Help Center" onClose={closeModal}>
+        <Modal title={t("profile.helpCenter")} onClose={closeModal}>
           <p style={s.infoText}><strong>Alerts</strong> notify you when an appliance spikes or runs longer than usual.</p>
           <p style={s.infoText}><strong>AI Suggestions</strong> recommend schedules to help you save on your bill.</p>
           <p style={s.infoText}><strong>History</strong> lets you track consumption by day, week, month or year.</p>
@@ -279,7 +294,7 @@ export default function Profile({ user, token, homeId, onLogout, onUpdateUser })
 
       {/* ── About modal ── */}
       {activeModal === "about" && (
-        <Modal title="About EnergiBox" onClose={closeModal}>
+        <Modal title={t("profile.aboutUs")} onClose={closeModal}>
           <p style={s.infoText}>
             <strong>EnergiBox</strong> is a smart home energy monitoring system that tracks
             appliance consumption in real time, estimates your bill, and uses AI to suggest
@@ -294,13 +309,13 @@ export default function Profile({ user, token, homeId, onLogout, onUpdateUser })
 
 const s = {
   pageHeader: { marginBottom: "24px" },
-  pageTitle: { fontSize: "26px", fontWeight: "700", color: "#0f172a", margin: "0 0 4px" },
-  pageSub: { fontSize: "14px", color: "#94a3b8", margin: 0 },
+  pageTitle: { fontSize: "26px", fontWeight: "700", color: "var(--app-text-primary)", margin: "0 0 4px" },
+  pageSub: { fontSize: "14px", color: "var(--app-text-muted)", margin: 0 },
 
   profileCard: {
-    background: "#fff", borderRadius: "16px", padding: "20px", marginBottom: "24px",
+    background: "var(--app-surface-bg)", borderRadius: "16px", padding: "20px", marginBottom: "24px",
     display: "flex", alignItems: "center", gap: "16px",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #f1f5f9",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid var(--app-border)",
   },
   avatar: {
     width: "56px", height: "56px", borderRadius: "50%", flexShrink: 0,
@@ -308,25 +323,25 @@ const s = {
     display: "flex", alignItems: "center", justifyContent: "center",
     fontSize: "18px", fontWeight: "700",
   },
-  profileName: { fontSize: "16px", fontWeight: "700", color: "#0f172a", margin: "0 0 2px" },
-  profileEmail: { fontSize: "13px", color: "#94a3b8", margin: 0 },
+  profileName: { fontSize: "16px", fontWeight: "700", color: "var(--app-text-primary)", margin: "0 0 2px" },
+  profileEmail: { fontSize: "13px", color: "var(--app-text-muted)", margin: 0 },
 
-  sectionLabel: { fontSize: "12px", fontWeight: "600", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 10px" },
+  sectionLabel: { fontSize: "12px", fontWeight: "600", color: "var(--app-text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 10px" },
   card: {
-    background: "#fff", borderRadius: "16px", marginBottom: "20px",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid #f1f5f9", overflow: "hidden",
+    background: "var(--app-surface-bg)", borderRadius: "16px", marginBottom: "20px",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid var(--app-border)", overflow: "hidden",
   },
   row: {
     width: "100%", display: "flex", alignItems: "center", gap: "12px",
-    padding: "14px 18px", border: "none", borderBottom: "1px solid #f1f5f9",
+    padding: "14px 18px", border: "none", borderBottom: "1px solid var(--app-border)",
     background: "transparent", cursor: "pointer", textAlign: "left",
   },
   rowIconBox: {
     width: "34px", height: "34px", borderRadius: "10px", flexShrink: 0,
     display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px",
   },
-  rowLabel: { flex: 1, fontSize: "14px", fontWeight: "500" },
-  rowValue: { fontSize: "13px", color: "#94a3b8", marginRight: "4px" },
+  rowLabel: { flex: 1, fontSize: "14px", fontWeight: "500", color: "var(--app-text-primary)" },
+  rowValue: { fontSize: "13px", color: "var(--app-text-muted)", marginRight: "4px" },
   rowArrow: { fontSize: "14px", color: "#cbd5e1" },
 
   toggleTrack: { width: "40px", height: "22px", borderRadius: "20px", position: "relative", cursor: "pointer", transition: "background .15s" },
@@ -337,21 +352,22 @@ const s = {
     display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px",
   },
   modal: {
-    background: "#fff", borderRadius: "18px", width: "380px", maxWidth: "100%",
+    background: "var(--app-surface-bg)", borderRadius: "18px", width: "380px", maxWidth: "100%",
     maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
   },
   modalHeader: {
     display: "flex", justifyContent: "space-between", alignItems: "center",
-    padding: "18px 20px", borderBottom: "1px solid #f1f5f9",
+    padding: "18px 20px", borderBottom: "1px solid var(--app-border)",
   },
-  modalTitle: { fontSize: "16px", fontWeight: "700", color: "#0f172a", margin: 0 },
-  modalClose: { border: "none", background: "#f1f5f9", borderRadius: "8px", width: "28px", height: "28px", cursor: "pointer", color: "#64748b" },
+  modalTitle: { fontSize: "16px", fontWeight: "700", color: "var(--app-text-primary)", margin: 0 },
+  modalClose: { border: "none", background: "var(--app-border)", borderRadius: "8px", width: "28px", height: "28px", cursor: "pointer", color: "var(--app-text-secondary)" },
   modalBody: { padding: "20px" },
 
-  label: { display: "block", fontSize: "12px", fontWeight: "600", color: "#64748b", margin: "0 0 6px" },
+  label: { display: "block", fontSize: "12px", fontWeight: "600", color: "var(--app-text-secondary)", margin: "0 0 6px" },
   input: {
     width: "100%", boxSizing: "border-box", padding: "10px 14px", borderRadius: "10px",
-    border: "1px solid #e2e8f0", fontSize: "14px", marginBottom: "16px", outline: "none",
+    border: "1px solid var(--app-border-strong)", fontSize: "14px", marginBottom: "16px", outline: "none",
+    background: "var(--app-surface-bg)", color: "var(--app-text-primary)",
   },
   saveBtn: {
     width: "100%", padding: "12px", borderRadius: "10px", background: "#3b82f6", color: "#fff",
@@ -359,8 +375,11 @@ const s = {
   },
   errorText: { color: "#ef4444", fontSize: "12px", margin: "-8px 0 12px" },
   successText: { color: "#16a34a", fontSize: "12px", margin: "-8px 0 12px" },
-  infoText: { fontSize: "14px", color: "#374151", lineHeight: "1.6", margin: "0 0 12px" },
-  infoTextMuted: { fontSize: "13px", color: "#94a3b8", margin: 0 },
-  tariffRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #f1f5f9" },
-  tariffValue: { fontSize: "14px", fontWeight: "700", color: "#0f172a" },
+  infoText: { fontSize: "14px", color: "var(--app-text-secondary)", lineHeight: "1.6", margin: "0 0 12px" },
+  infoTextMuted: { fontSize: "13px", color: "var(--app-text-muted)", margin: 0 },
+  choiceRow: { display: "flex", flexDirection: "column", gap: "8px" },
+  choiceBtn: {
+    display: "flex", alignItems: "center", padding: "12px 14px", borderRadius: "10px",
+    border: "none", cursor: "pointer", fontSize: "14px", fontWeight: "600", textAlign: "left",
+  },
 };

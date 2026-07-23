@@ -1,28 +1,30 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform
-} from 'react-native';
-import axios from 'axios';
+} from "react-native";
+import { api } from "../api";
 
-const API = 'http://192.168.1.121:8000'; // We will update this with your real IP
-
-export default function LoginScreen({ onLogin }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+export default function LoginScreen({ onLogin, onGoToSignup }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
+    if (!email.trim() || !password) {
+      setError("Enter your email and password.");
+      return;
+    }
     setLoading(true);
-    setError('');
+    setError("");
     try {
-      const res = await axios.post(
-        `${API}/auth/login?email=${email}&password=${password}`
+      const res = await api.post(
+        `/auth/login?email=${encodeURIComponent(email.trim())}&password=${encodeURIComponent(password)}`
       );
-      onLogin(res.data.access_token);
+      onLogin(res.data.access_token, res.data.user);
     } catch (err) {
-      setError('Invalid email or password');
+      setError(err.response?.data?.detail || "Invalid email or password");
     }
     setLoading(false);
   };
@@ -30,7 +32,7 @@ export default function LoginScreen({ onLogin }) {
   return (
     <KeyboardAvoidingView
       style={styles.page}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <View style={styles.card}>
         <Text style={styles.logo}>⚡</Text>
@@ -74,6 +76,12 @@ export default function LoginScreen({ onLogin }) {
             : <Text style={styles.buttonText}>LOGIN</Text>
           }
         </TouchableOpacity>
+
+        <TouchableOpacity style={styles.signupLink} onPress={onGoToSignup}>
+          <Text style={styles.signupLinkText}>
+            Don't have an account? <Text style={styles.signupLinkBold}>Sign up</Text>
+          </Text>
+        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
@@ -82,20 +90,19 @@ export default function LoginScreen({ onLogin }) {
 const styles = StyleSheet.create({
   page: {
     flex: 1,
-    background: 'linear-gradient(135deg, #00b09b, #0d7a6a)',
-    backgroundColor: '#0d7a6a',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#0d7a6a",
+    justifyContent: "center",
+    alignItems: "center",
     padding: 24,
   },
   card: {
-    backgroundColor: 'rgba(255,255,255,0.97)',
+    backgroundColor: "rgba(255,255,255,0.97)",
     borderRadius: 24,
     padding: 32,
-    width: '100%',
+    width: "100%",
     maxWidth: 360,
-    alignItems: 'center',
-    shadowColor: '#00b09b',
+    alignItems: "center",
+    shadowColor: "#00b09b",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
     shadowRadius: 20,
@@ -104,56 +111,59 @@ const styles = StyleSheet.create({
   logo: { fontSize: 48, marginBottom: 8 },
   brand: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: "700",
     letterSpacing: 4,
-    color: '#00b09b',
+    color: "#00b09b",
     marginBottom: 6,
   },
   welcome: {
     fontSize: 24,
-    fontWeight: '700',
-    color: '#1a1a1a',
+    fontWeight: "700",
+    color: "#1a1a1a",
     marginBottom: 28,
   },
-  inputWrap: { width: '100%', marginBottom: 16 },
+  inputWrap: { width: "100%", marginBottom: 16 },
   label: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#444',
+    fontWeight: "600",
+    color: "#444",
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: "#f5f5f5",
     borderRadius: 12,
     padding: 14,
     fontSize: 14,
-    color: '#333',
+    color: "#333",
     borderWidth: 1.5,
-    borderColor: '#eee',
+    borderColor: "#eee",
   },
   error: {
-    color: '#e74c3c',
+    color: "#e74c3c",
     fontSize: 13,
     marginBottom: 12,
-    textAlign: 'center',
+    textAlign: "center",
   },
   button: {
-    width: '100%',
+    width: "100%",
     padding: 15,
     borderRadius: 12,
-    backgroundColor: '#00b09b',
-    alignItems: 'center',
+    backgroundColor: "#00b09b",
+    alignItems: "center",
     marginTop: 8,
-    shadowColor: '#00b09b',
+    shadowColor: "#00b09b",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
     elevation: 6,
   },
   buttonText: {
-    color: '#fff',
-    fontWeight: '700',
+    color: "#fff",
+    fontWeight: "700",
     fontSize: 15,
     letterSpacing: 1,
   },
+  signupLink: { marginTop: 20 },
+  signupLinkText: { color: "#777", fontSize: 13 },
+  signupLinkBold: { color: "#00b09b", fontWeight: "700" },
 });

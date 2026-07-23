@@ -62,10 +62,43 @@
       "Bash(rm -f \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Admin-Desktop-EnergiBox\\\\c3012c48-572e-4071-945d-a34f3af818de\\\\scratchpad\\\\rooms_0\"*.png)",
       "Bash(node verify_new_home_rooms.js)",
       "Bash(\"/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql\" -u root -p'belobo2008@' energibox -e \"DELETE FROM energiboxes WHERE mac_address IN \\('AA:22:33:44:55:66'\\);\")",
-      "Bash(node verify_room_guards.js)"
+      "Bash(node verify_room_guards.js)",
+      "Bash(node verify_theme_lang.js)",
+      "Bash(node debug_theme_click.js)",
+      "Bash(\"/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql\" -u root -p'belobo2008@' energibox -e \"DELETE e FROM energiboxes e LEFT JOIN monitored_points mp ON mp.energibox_id = e.id WHERE mp.id IS NULL; SELECT ROW_COUNT\\(\\) AS deleted_orphans;\")",
+      "Bash(rm -f \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Admin-Desktop-EnergiBox\\\\c3012c48-572e-4071-945d-a34f3af818de\\\\scratchpad\\\\theme_\"*.png \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Admin-Desktop-EnergiBox\\\\c3012c48-572e-4071-945d-a34f3af818de\\\\scratchpad\\\\debug_theme_\"*)",
+      "Bash(rm -f \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Admin-Desktop-EnergiBox\\\\c3012c48-572e-4071-945d-a34f3af818de\\\\scratchpad\\\\swagger_\"*.png \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Admin-Desktop-EnergiBox\\\\c3012c48-572e-4071-945d-a34f3af818de\\\\scratchpad\\\\verify_swagger.js\")",
+      "Bash(curl -s -o /dev/null -w \"frontend: %{http_code}\\\\n\" http://localhost:5173 --max-time 3)",
+      "Bash(curl -s -o /dev/null -w \"backend: %{http_code}\\\\n\" http://localhost:8000/health --max-time 3)",
+      "Read(//tmp/**)",
+      "Bash(curl -s -o /dev/null -w \"frontend: %{http_code}\\\\n\" http://localhost:5173 --max-time 5)",
+      "Read(//c/Users/Admin/**)",
+      "Bash(ls -la \"/c/Users/Admin/AppData/Local/Microsoft/WindowsApps\" 2>/dev/null | grep -i python)",
+      "Read(//c/Users/Admin/AppData/Local/Microsoft/WindowsApps/**)",
+      "Bash(\"/c/Users/Admin/AppData/Local/Microsoft/WindowsApps/python.exe\" -c \"import ast; ast.parse\\(open\\(r'c:\\\\Users\\\\Admin\\\\Desktop\\\\EnergiBox\\\\backend\\\\main.py', encoding='utf-8'\\).read\\(\\)\\)\")",
+      "Bash(\"/c/Users/Admin/AppData/Local/Microsoft/WindowsApps/python.exe\" -c \"import ast; ast.parse\\(open\\(r'c:\\\\Users\\\\Admin\\\\Desktop\\\\EnergiBox\\\\backend\\\\auth.py', encoding='utf-8'\\).read\\(\\)\\)\")",
+      "Bash(/c/Users/Admin/AppData/Local/Microsoft/WindowsApps/python.exe -m pip show fastapi uvicorn)",
+      "Bash(\"/c/Users/Admin/AppData/Local/Microsoft/WindowsApps/python.exe\" -m uvicorn main:app --reload --host 0.0.0.0 --port 8000)",
+      "Bash(curl -s http://localhost:8000/health --max-time 5)",
+      "Bash(tail -30 /tmp/uvicorn.log)",
+      "Bash(node verify_admin_panel.js)",
+      "WebFetch(domain:docs.expo.dev)",
+      "Bash(npx expo *)",
+      "Bash(npm view *)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>console.log\\(JSON.parse\\(d\\).version\\)\\)\")",
+      "Bash(node \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Admin-Desktop-EnergiBox\\\\c3012c48-572e-4071-945d-a34f3af818de\\\\scratchpad\\\\babel_check.js\")",
+      "Bash(timeout 60 npx expo export --platform web --output-dir /tmp/expo_export_test)",
+      "Bash(timeout 90 npx expo export --platform android --output-dir /tmp/expo_export_android)",
+      "Bash(rm -rf /tmp/expo_export_test /tmp/expo_export_android *)",
+      "Bash(ipconfig)",
+      "Bash(curl -s http://localhost:8082/status --max-time 3)",
+      "Bash(node \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Admin-Desktop-EnergiBox\\\\c3012c48-572e-4071-945d-a34f3af818de\\\\scratchpad\\\\babel_check2.js\")",
+      "Bash(timeout 60 npx expo export --platform android --output-dir /tmp/expo_export_check2)",
+      "Bash(timeout 60 npx expo export --platform android --output-dir /tmp/expo_export_check3)"
     ],
     "additionalDirectories": [
-      "C:\\Users\\Admin\\AppData\\Local\\Temp\\claude\\c--Users-Admin-Desktop-EnergiBox\\c3012c48-572e-4071-945d-a34f3af818de\\scratchpad"
+      "C:\\Users\\Admin\\AppData\\Local\\Temp\\claude\\c--Users-Admin-Desktop-EnergiBox\\c3012c48-572e-4071-945d-a34f3af818de\\scratchpad",
+      "\\tmp"
     ]
   }
 }

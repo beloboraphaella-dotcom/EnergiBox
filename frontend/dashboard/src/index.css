@@ -11,6 +11,16 @@
   --shadow:
     rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
 
+  /* EnergiBox app theme fallback (light) — overridden by [data-theme] below
+     once ThemeProvider sets the attribute on <html>. */
+  --app-page-bg: #f8fafc;
+  --app-surface-bg: #ffffff;
+  --app-border: #f1f5f9;
+  --app-border-strong: #e2e8f0;
+  --app-text-primary: #0f172a;
+  --app-text-secondary: #64748b;
+  --app-text-muted: #94a3b8;
+
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
@@ -50,8 +60,29 @@
   }
 }
 
+:root[data-theme="light"] {
+  --app-page-bg: #f8fafc;
+  --app-surface-bg: #ffffff;
+  --app-border: #f1f5f9;
+  --app-border-strong: #e2e8f0;
+  --app-text-primary: #0f172a;
+  --app-text-secondary: #64748b;
+  --app-text-muted: #94a3b8;
+}
+
+:root[data-theme="dark"] {
+  --app-page-bg: #0b1220;
+  --app-surface-bg: #161f32;
+  --app-border: #263042;
+  --app-border-strong: #2f3b52;
+  --app-text-primary: #e8ecf5;
+  --app-text-secondary: #a6b0c3;
+  --app-text-muted: #7c879c;
+}
+
 body {
   margin: 0;
+  background: var(--app-page-bg);
 }
 
 #root {
