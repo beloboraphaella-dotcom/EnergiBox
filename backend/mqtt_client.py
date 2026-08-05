@@ -4,7 +4,7 @@ from datetime import datetime
 import pymysql
 from alert_engine import check_spike
 
-MQTT_BROKER = "localhost"
+MQTT_BROKER = "192.168.1.167"
 MQTT_PORT = 1883
 
 def get_db():
@@ -53,36 +53,48 @@ def on_connect(client, userdata, flags, rc):
 
 def on_message(client, userdata, msg):
     topic = msg.topic
-    payload = json.loads(msg.payload.decode())
-
     parts = topic.split("/")
     mac = parts[1]
     message_type = parts[2]
 
     if message_type == "consumption":
+        payload = json.loads(msg.payload.decode())
         watts = payload.get("watts", 0)
         timestamp = datetime.now().strftime("%H:%M:%S")
 
-        # Get monitored point
         result = get_monitored_point(mac)
-        
         if result:
             monitored_point_id, appliance_name = result
-            
-            # Save reading to database
             save_reading(monitored_point_id, watts)
-            
             print(f"{timestamp} | {appliance_name} | {watts:.1f}W")
-            
-            # Check for alerts
             check_spike(monitored_point_id, watts, appliance_name)
         else:
             print(f"Unknown device: {mac}")
 
+    elif message_type == "status":
+        # ESP32 confirming relay state — just log it for now
+        print(f"Status update from {mac}: {msg.payload.decode()}")
+
+# ── Global client reference so we can publish from other files ──
+_mqtt_client = None
+
 def start_mqtt():
+    global _mqtt_client
     client = mqtt.Client()
     client.on_connect = on_connect
     client.on_message = on_message
     client.connect(MQTT_BROKER, MQTT_PORT, 60)
     client.loop_start()
+    _mqtt_client = client
     return client
+
+def send_command(mac, command):
+    """Publish an ON/OFF command to a specific EnergiBox device"""
+    if _mqtt_client is None:
+        print(f"WARNING: MQTT client not connected yet — dropped command '{command}' for {mac}")
+        return False
+
+    topic = f"energibox/{mac}/control"
+    _mqtt_client.publish(topic, command)
+    print(f"Published '{command}' to {topic}")
+    return True

@@ -183,7 +183,14 @@ export default function Devices({ token, homeId }) {
         </div>
       ) : (
         filtered.map((d) => (
-          <button key={d.mac} style={s.deviceRow} onClick={() => setSelectedMac(d.mac)}>
+          <div
+            key={d.mac}
+            style={s.deviceRow}
+            role="button"
+            tabIndex={0}
+            onClick={() => setSelectedMac(d.mac)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedMac(d.mac); } }}
+          >
             <span style={s.deviceIconBox}>{getIcon(d.name, d.type)}</span>
             <div style={s.deviceInfo}>
               <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
@@ -211,7 +218,7 @@ export default function Devices({ token, homeId }) {
               </button>
             </div>
             <span style={s.chevron}>›</span>
-          </button>
+          </div>
         ))
       )}
 
@@ -607,7 +614,7 @@ const s = {
   powerLabel: { fontSize: "12px", color: "rgba(255,255,255,0.75)", margin: "0 0 4px" },
   powerWatts: { fontSize: "30px", fontWeight: "700", margin: 0 },
   powerToggle: { width: "52px", height: "28px", borderRadius: "20px", border: "none", position: "relative", cursor: "pointer" },
-  powerToggleThumb: { width: "22px", height: "22px", borderRadius: "50%", background: "var(--app-surface-bg)", position: "absolute", top: "3px", transition: "left .15s" },
+  powerToggleThumb: { width: "22px", height: "22px", borderRadius: "50%", background: "var(--app-surface-bg)", position: "absolute", top: "3px", transition: "left .15s", pointerEvents: "none" },
 
   chartCard: { background: "var(--app-surface-bg)", borderRadius: "16px", padding: "16px 16px 4px", marginBottom: "20px", border: "1px solid var(--app-border)", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" },
   chartTitle: { fontSize: "13px", fontWeight: "600", color: "var(--app-text-secondary)", margin: "0 0 4px" },

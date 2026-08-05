@@ -1,12 +1,9 @@
 import pymysql
-import paho.mqtt.client as mqtt
-import json
 from datetime import datetime
 import threading
 import time
 
-MQTT_BROKER = "localhost"
-MQTT_PORT = 1883
+from mqtt_client import send_command
 
 def get_db():
     return pymysql.connect(
@@ -15,20 +12,6 @@ def get_db():
         password="belobo2008@",
         database="energibox"
     )
-
-def get_mqtt_client():
-    client = mqtt.Client()
-    client.connect(MQTT_BROKER, MQTT_PORT, 60)
-    return client
-
-def send_command(mac_address, command):
-    """Send ON or OFF command to a specific EnergiBox via MQTT"""
-    client = get_mqtt_client()
-    topic = f"energibox/{mac_address}/control"
-    payload = json.dumps({"command": command, "timestamp": int(time.time())})
-    client.publish(topic, payload)
-    client.disconnect()
-    print(f"Command sent: {mac_address} → {command}")
 
 def check_schedules():
     """Check all active schedules and execute if time matches"""

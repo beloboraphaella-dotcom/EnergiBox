@@ -45,6 +45,15 @@ def get_raw_db():
         database="energibox"
     )
 
+def _derive_is_on(watts, last_commanded_state):
+    """Sensor-reported wattage takes priority. Devices that have never
+    reported a reading (e.g. relay-only modules with no SCT-013 sensor)
+    fall back to the last ON/OFF command actually sent to them, since
+    watts-based detection can never reflect their state."""
+    if watts is not None:
+        return bool(watts > 1)
+    return last_commanded_state == "ON"
+
 def _fmt_time(value):
     """pymysql returns MySQL TIME columns as datetime.timedelta, whose str()
     doesn't zero-pad hours under 10 (e.g. "5:00:00" instead of "05:00:00").
@@ -644,7 +653,7 @@ def get_devices(home_id: int, user: dict = Depends(get_scoped_user)):
     conn = get_raw_db()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT mp.id, mp.name, r.name, e.mac_address, e.status, latest.watts, latest.timestamp, mp.type, r.id
+        SELECT mp.id, mp.name, r.name, e.mac_address, e.status, latest.watts, latest.timestamp, mp.type, r.id, e.last_commanded_state
         FROM monitored_points mp
         JOIN rooms r ON mp.room_id = r.id
         JOIN energiboxes e ON mp.energibox_id = e.id
@@ -666,7 +675,7 @@ def get_devices(home_id: int, user: dict = Depends(get_scoped_user)):
             "mac": row[3],
             "status": row[4],
             "watts": round(row[5] or 0, 1),
-            "is_on": bool(row[5] and row[5] > 1),
+            "is_on": _derive_is_on(row[5], row[9]),
             "last_seen": str(row[6]) if row[6] else None,
             "type": row[7],
             "room_id": row[8],
@@ -680,7 +689,7 @@ def get_device_detail(mac: str, user: dict = Depends(get_mac_owner)):
     conn = get_raw_db()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT mp.id, mp.name, r.name, e.mac_address, e.status, latest.watts, latest.timestamp, mp.type, r.id
+        SELECT mp.id, mp.name, r.name, e.mac_address, e.status, latest.watts, latest.timestamp, mp.type, r.id, e.last_commanded_state
         FROM monitored_points mp
         JOIN rooms r ON mp.room_id = r.id
         JOIN energiboxes e ON mp.energibox_id = e.id
@@ -734,7 +743,7 @@ def get_device_detail(mac: str, user: dict = Depends(get_mac_owner)):
         "mac": row[3],
         "status": row[4],
         "watts": round(row[5] or 0, 1),
-        "is_on": bool(row[5] and row[5] > 1),
+        "is_on": _derive_is_on(row[5], row[9]),
         "last_seen": str(row[6]) if row[6] else None,
         "type": row[7],
         "room_id": row[8],
@@ -754,8 +763,14 @@ def control_device(mac: str, command: str, user: dict = Depends(get_mac_owner)):
     if command not in ["ON", "OFF"]:
         return {"error": "Command must be ON or OFF"}
 
-    from scheduler import send_command
-    send_command(mac, command)
+    from mqtt_client import send_command
+    sent = send_command(mac, command)
+    if sent:
+        conn = get_raw_db()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE energiboxes SET last_commanded_state = %s WHERE mac_address = %s", (command, mac))
+        conn.commit()
+        conn.close()
     return {
         "message": f"Command {command} sent to {mac}",
         "mac": mac,
