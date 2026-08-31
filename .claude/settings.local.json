@@ -111,7 +111,22 @@
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\({k:d[k] for k in ['name','watts','is_on','status']}\\)\")",
       "Bash(mysql -h localhost -u root -p'belobo2008@' -D energibox -e \"SELECT mac_address, last_commanded_state FROM energiboxes WHERE mac_address='B0:CB:D8:CE:66:E0';\")",
       "Bash(curl -s -m 5 -X POST -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZW1haWwiOiJyYXBoYUBlbmVyZ2lib3guY29tIiwicm9sZSI6Im93bmVyIiwiZXhwIjoxNzg2MDIzMDk5fQ.xwyBYGPjN0pe3nSXGcCAuW28Ra0qY7-ZWD6PgJ5aSpo' http://localhost:8000/control/B0:CB:D8:CE:66:E0?command=OFF)",
-      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\([x for x in d if x['name'].lower\\(\\)=='fridge']\\)\")"
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\([x for x in d if x['name'].lower\\(\\)=='fridge']\\)\")",
+      "Bash(mysqldump -h localhost -u root -p'belobo2008@' --no-data --skip-comments --compact energibox)",
+      "Bash(node verify_race.cjs)",
+      "Bash(rm -f verify_race.cjs)",
+      "Bash(tasklist //FI \"IMAGENAME eq chrome.exe\")",
+      "Bash(tasklist //FI \"IMAGENAME eq node.exe\")",
+      "Bash(tasklist //FI \"IMAGENAME eq msedge.exe\")",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"ProcessId=12444 or ProcessId=13760\")",
+      "Bash(mysql -h localhost -u root -pbelobo2008@ -D energibox -e ' *)",
+      "Bash(python -c ' *)",
+      "Bash(curl -s -m 5 -H 'Authorization: Bearer __TRACKED_VAR__' http://localhost:8000/devices/B0:CB:D8:CE:66:E0)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\({k:d[k] for k in ['name','watts','is_on']}\\)\")",
+      "Bash(curl -s -m 5 -H 'Authorization: Bearer __CMDSUB_OUTPUT__' http://localhost:8000/devices?home_id=2)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\([{k:x[k] for k in ['name','watts','is_on']} for x in d]\\)\")",
+      "Bash(mysql -h localhost -u root -p'belobo2008@' -D energibox -e \"SELECT mac_address, last_commanded_state FROM energiboxes;\")",
+      "Bash(rm -f \"c:/Users/Admin/Desktop/EnergiBox/backend/control_requests.log\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\Admin\\AppData\\Local\\Temp\\claude\\c--Users-Admin-Desktop-EnergiBox\\c3012c48-572e-4071-945d-a34f3af818de\\scratchpad",

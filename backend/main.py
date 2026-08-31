@@ -46,13 +46,14 @@ def get_raw_db():
     )
 
 def _derive_is_on(watts, last_commanded_state):
-    """Sensor-reported wattage takes priority. Devices that have never
-    reported a reading (e.g. relay-only modules with no SCT-013 sensor)
-    fall back to the last ON/OFF command actually sent to them, since
-    watts-based detection can never reflect their state."""
-    if watts is not None:
-        return bool(watts > 1)
-    return last_commanded_state == "ON"
+    """Once a device has been sent a command, that command is the source
+    of truth for is_on — wattage can't be trusted to reflect commanded
+    state for every device (e.g. a sensor that isn't wired downstream of
+    its own relay). Wattage is only used before any command has ever
+    been sent, as a best-effort guess."""
+    if last_commanded_state is not None:
+        return last_commanded_state == "ON"
+    return bool(watts and watts > 1)
 
 def _fmt_time(value):
     """pymysql returns MySQL TIME columns as datetime.timedelta, whose str()

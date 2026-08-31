@@ -54,6 +54,7 @@ export default function Devices({ token, homeId }) {
   const [filter, setFilter] = useState("all");
   const [selectedMac, setSelectedMac] = useState(null);
   const [activeModal, setActiveModal] = useState(null); // "device"
+  const [togglingMacs, setTogglingMacs] = useState({});
 
   const [newDevice, setNewDevice] = useState({ room_id: "", name: "", type: "appliance", mac: "" });
   const [deviceError, setDeviceError] = useState("");
@@ -87,10 +88,15 @@ export default function Devices({ token, homeId }) {
 
   const toggleDevice = async (e, d) => {
     e.stopPropagation();
+    if (togglingMacs[d.mac]) return;
+    const nextIsOn = !d.is_on;
+    setTogglingMacs((prev) => ({ ...prev, [d.mac]: true }));
     try {
-      await axios.post(`${API}/control/${d.mac}?command=${d.is_on ? "OFF" : "ON"}`, null, authHeaders);
+      await axios.post(`${API}/control/${d.mac}?command=${nextIsOn ? "ON" : "OFF"}`, null, authHeaders);
+      setDevices((prev) => prev.map((x) => (x.mac === d.mac ? { ...x, is_on: nextIsOn } : x)));
       setTimeout(fetchDevices, 500);
     } catch (err) {}
+    setTogglingMacs((prev) => ({ ...prev, [d.mac]: false }));
   };
 
   if (selectedMac) {
@@ -212,6 +218,7 @@ export default function Devices({ token, homeId }) {
                   color: d.is_on ? "#16a34a" : "#ef4444",
                 }}
                 onClick={(e) => toggleDevice(e, d)}
+                disabled={!!togglingMacs[d.mac]}
                 title={d.is_on ? "Turn off" : "Turn on"}
               >
                 {d.is_on ? "On" : "Off"}
@@ -330,9 +337,12 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack }) {
   }, [mac]);
 
   const togglePower = async () => {
+    if (toggling) return;
+    const nextIsOn = !device.is_on;
     setToggling(true);
     try {
-      await axios.post(`${API}/control/${mac}?command=${device.is_on ? "OFF" : "ON"}`, null, authHeaders);
+      await axios.post(`${API}/control/${mac}?command=${nextIsOn ? "ON" : "OFF"}`, null, authHeaders);
+      setDevice((prev) => (prev ? { ...prev, is_on: nextIsOn } : prev));
       setTimeout(fetchDevice, 500);
     } catch (err) {}
     setToggling(false);

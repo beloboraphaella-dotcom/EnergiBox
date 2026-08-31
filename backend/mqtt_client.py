@@ -4,7 +4,7 @@ from datetime import datetime
 import pymysql
 from alert_engine import check_spike
 
-MQTT_BROKER = "192.168.1.167"
+MQTT_BROKER = "192.168.1.168"
 MQTT_PORT = 1883
 
 def get_db():
@@ -43,6 +43,17 @@ def save_reading(monitored_point_id, watts):
     except Exception as e:
         print(f"Database error: {e}")
 
+def mark_device_online(mac):
+    """Record that a device is actively communicating right now."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE energiboxes SET status = 'online', last_seen = %s WHERE mac_address = %s",
+        (datetime.now(), mac)
+    )
+    conn.commit()
+    conn.close()
+
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         print("Connected to Mosquitto broker successfully")
@@ -62,6 +73,7 @@ def on_message(client, userdata, msg):
         watts = payload.get("watts", 0)
         timestamp = datetime.now().strftime("%H:%M:%S")
 
+        mark_device_online(mac)
         result = get_monitored_point(mac)
         if result:
             monitored_point_id, appliance_name = result
@@ -72,7 +84,9 @@ def on_message(client, userdata, msg):
             print(f"Unknown device: {mac}")
 
     elif message_type == "status":
-        # ESP32 confirming relay state — just log it for now
+        # ESP32 confirming relay state — only fires reactively after a
+        # control command today, but still counts as a live sign of life
+        mark_device_online(mac)
         print(f"Status update from {mac}: {msg.payload.decode()}")
 
 # ── Global client reference so we can publish from other files ──

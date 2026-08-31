@@ -49,6 +49,21 @@ def check_schedules():
             print(f"Schedule triggered: {appliance_name} → OFF")
             send_command(mac_address, "OFF")
 
+def mark_stale_devices_offline():
+    """Flip any device that hasn't published in over a minute back to
+    offline, so status self-corrects without every device needing to
+    send an explicit 'going offline' message."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE energiboxes
+        SET status = 'offline'
+        WHERE status = 'online'
+        AND (last_seen IS NULL OR last_seen < DATE_SUB(NOW(), INTERVAL 60 SECOND))
+    """)
+    conn.commit()
+    conn.close()
+
 def start_scheduler():
     """Run the scheduler every 30 seconds in a background thread"""
     def run():
@@ -56,6 +71,7 @@ def start_scheduler():
         while True:
             try:
                 check_schedules()
+                mark_stale_devices_offline()
             except Exception as e:
                 print(f"Scheduler error: {e}")
             time.sleep(30)
