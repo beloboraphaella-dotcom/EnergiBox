@@ -112,3 +112,16 @@ def send_command(mac, command):
     _mqtt_client.publish(topic, command)
     print(f"Published '{command}' to {topic}")
     return True
+
+def record_command_sent(mac, command):
+    """Persist the commanded state after a successful send_command().
+    This is the source of truth for is_on (see main.py's _derive_is_on),
+    so every call site that sends a command must call this too."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE energiboxes SET last_commanded_state = %s WHERE mac_address = %s",
+        (command, mac)
+    )
+    conn.commit()
+    conn.close()

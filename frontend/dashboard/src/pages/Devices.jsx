@@ -300,6 +300,9 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack }) {
   const [onTime, setOnTime] = useState("07:00");
   const [offTime, setOffTime] = useState("22:00");
   const [toggling, setToggling] = useState(false);
+  const [editingScheduleId, setEditingScheduleId] = useState(null);
+  const [editScheduleOnTime, setEditScheduleOnTime] = useState("");
+  const [editScheduleOffTime, setEditScheduleOffTime] = useState("");
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState("");
   const [editType, setEditType] = useState("appliance");
@@ -359,6 +362,23 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack }) {
 
   const deleteSchedule = async (id) => {
     await axios.delete(`${API}/schedules/${id}`, authHeaders);
+    fetchSchedules();
+  };
+
+  const startEditSchedule = (sc) => {
+    setEditingScheduleId(sc.id);
+    setEditScheduleOnTime(sc.on_time.slice(0, 5));
+    setEditScheduleOffTime(sc.off_time.slice(0, 5));
+  };
+
+  const cancelEditSchedule = () => setEditingScheduleId(null);
+
+  const saveScheduleEdit = async (id) => {
+    await axios.put(
+      `${API}/schedules/${id}?on_time=${editScheduleOnTime}&off_time=${editScheduleOffTime}`,
+      null, authHeaders
+    );
+    setEditingScheduleId(null);
     fetchSchedules();
   };
 
@@ -468,19 +488,32 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack }) {
         {deviceSchedules.length === 0 ? (
           <p style={s.emptyText}>No schedules for this device yet</p>
         ) : (
-          deviceSchedules.map((sc) => (
-            <div key={sc.id} style={s.scheduleRow}>
-              <div>
-                <p style={s.scheduleTimes}>ON {sc.on_time} → OFF {sc.off_time}</p>
-                <span style={{
-                  ...s.sourceTag,
-                  background: sc.source === "ai" ? "#eff6ff" : "var(--app-border)",
-                  color: sc.source === "ai" ? "#3b82f6" : "var(--app-text-secondary)",
-                }}>{sc.source}</span>
+          deviceSchedules.map((sc) =>
+            editingScheduleId === sc.id ? (
+              <div key={sc.id} style={s.scheduleRow}>
+                <input type="time" style={s.timeInput} value={editScheduleOnTime} onChange={(e) => setEditScheduleOnTime(e.target.value)} />
+                <span style={{ color: "var(--app-text-muted)" }}>→</span>
+                <input type="time" style={s.timeInput} value={editScheduleOffTime} onChange={(e) => setEditScheduleOffTime(e.target.value)} />
+                <button style={s.addScheduleBtn} onClick={() => saveScheduleEdit(sc.id)}>Save</button>
+                <button style={s.cancelBtn} onClick={cancelEditSchedule}>Cancel</button>
               </div>
-              <button style={s.deleteBtn} onClick={() => deleteSchedule(sc.id)}>🗑</button>
-            </div>
-          ))
+            ) : (
+              <div key={sc.id} style={s.scheduleRow}>
+                <div>
+                  <p style={s.scheduleTimes}>ON {sc.on_time} → OFF {sc.off_time}</p>
+                  <span style={{
+                    ...s.sourceTag,
+                    background: sc.source === "ai" ? "#eff6ff" : "var(--app-border)",
+                    color: sc.source === "ai" ? "#3b82f6" : "var(--app-text-secondary)",
+                  }}>{sc.source}</span>
+                </div>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button style={s.scheduleEditBtn} onClick={() => startEditSchedule(sc)}>✎</button>
+                  <button style={s.deleteBtn} onClick={() => deleteSchedule(sc.id)}>🗑</button>
+                </div>
+              </div>
+            )
+          )
         )}
         <div style={s.addScheduleRow}>
           <input type="time" style={s.timeInput} value={onTime} onChange={(e) => setOnTime(e.target.value)} />
@@ -641,6 +674,8 @@ const s = {
   scheduleTimes: { fontSize: "13px", fontWeight: "600", color: "var(--app-text-primary)", margin: "0 0 4px" },
   sourceTag: { fontSize: "10px", fontWeight: "700", padding: "2px 8px", borderRadius: "10px", textTransform: "capitalize" },
   deleteBtn: { background: "#fee2e2", border: "none", borderRadius: "8px", padding: "6px 10px", cursor: "pointer", fontSize: "14px" },
+  scheduleEditBtn: { background: "#eff6ff", border: "none", borderRadius: "8px", padding: "6px 10px", cursor: "pointer", fontSize: "14px" },
+  cancelBtn: { padding: "8px 14px", borderRadius: "8px", background: "var(--app-border)", color: "var(--app-text-primary)", border: "none", cursor: "pointer", fontWeight: "600", fontSize: "13px", whiteSpace: "nowrap" },
   addScheduleRow: { display: "flex", alignItems: "center", gap: "8px", padding: "14px 0" },
   timeInput: { flex: 1, padding: "8px 10px", borderRadius: "8px", border: "1px solid var(--app-border-strong)", fontSize: "13px", background: "var(--app-surface-bg)", color: "var(--app-text-primary)" },
   addScheduleBtn: { padding: "8px 14px", borderRadius: "8px", background: "#3b82f6", color: "#fff", border: "none", cursor: "pointer", fontWeight: "600", fontSize: "13px", whiteSpace: "nowrap" },

@@ -3,7 +3,7 @@ from datetime import datetime
 import threading
 import time
 
-from mqtt_client import send_command
+from mqtt_client import send_command, record_command_sent
 
 def get_db():
     return pymysql.connect(
@@ -43,11 +43,13 @@ def check_schedules():
 
         if current_time == on_time:
             print(f"Schedule triggered: {appliance_name} → ON")
-            send_command(mac_address, "ON")
+            if send_command(mac_address, "ON"):
+                record_command_sent(mac_address, "ON")
 
         elif current_time == off_time:
             print(f"Schedule triggered: {appliance_name} → OFF")
-            send_command(mac_address, "OFF")
+            if send_command(mac_address, "OFF"):
+                record_command_sent(mac_address, "OFF")
 
 def mark_stale_devices_offline():
     """Flip any device that hasn't published in over a minute back to

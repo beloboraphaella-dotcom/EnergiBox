@@ -764,14 +764,10 @@ def control_device(mac: str, command: str, user: dict = Depends(get_mac_owner)):
     if command not in ["ON", "OFF"]:
         return {"error": "Command must be ON or OFF"}
 
-    from mqtt_client import send_command
+    from mqtt_client import send_command, record_command_sent
     sent = send_command(mac, command)
     if sent:
-        conn = get_raw_db()
-        cursor = conn.cursor()
-        cursor.execute("UPDATE energiboxes SET last_commanded_state = %s WHERE mac_address = %s", (command, mac))
-        conn.commit()
-        conn.close()
+        record_command_sent(mac, command)
     return {
         "message": f"Command {command} sent to {mac}",
         "mac": mac,
