@@ -22,7 +22,7 @@ import DashboardScreen from "./src/screens/DashboardScreen";
 import DevicesScreen from "./src/screens/DevicesScreen";
 import AlertsScreen from "./src/screens/AlertsScreen";
 import SuggestionsScreen from "./src/screens/SuggestionsScreen";
-import ProfileScreen from "./src/screens/ProfileScreen";
+import SettingsScreen from "./src/screens/SettingsScreen";
 import HomeSwitcher from "./src/components/HomeSwitcher";
 
 export default function App() {
@@ -184,7 +184,14 @@ export default function App() {
         {activeTab === "devices" && <DevicesScreen homeId={activeHomeId} />}
         {activeTab === "alerts" && <AlertsScreen homeId={activeHomeId} />}
         {activeTab === "suggestions" && <SuggestionsScreen homeId={activeHomeId} />}
-        {activeTab === "profile" && <ProfileScreen user={user} onLogout={handleLogout} />}
+        {activeTab === "profile" && (
+          <SettingsScreen
+            user={user}
+            homeId={activeHomeId}
+            onLogout={handleLogout}
+            onUpdateUser={(updates) => setUser((prev) => ({ ...prev, ...updates }))}
+          />
+        )}
       </AppShell>
     );
   }

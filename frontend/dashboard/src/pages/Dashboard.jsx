@@ -4,7 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LineChart, Line
 } from "recharts";
-import Profile from "./Profile";
+import Settings from "./Settings";
 import Devices from "./Devices";
 import Rooms from "./Rooms";
 import Admin from "./Admin";
@@ -595,7 +595,7 @@ export default function Dashboard({
 
         {/* ── PROFILE TAB ── */}
         {activeTab === "profile" && (
-          <Profile token={token} user={user} homeId={activeHomeId} onLogout={onLogout} onUpdateUser={onUpdateUser} />
+          <Settings token={token} user={user} homeId={activeHomeId} onLogout={onLogout} onUpdateUser={onUpdateUser} />
         )}
         </>
       )}

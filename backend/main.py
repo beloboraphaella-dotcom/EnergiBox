@@ -718,6 +718,73 @@ def delete_monitored_point(point_id: int, user: dict = Depends(get_point_owner))
     conn.close()
     return {"message": "Device deleted"}
 
+# Published low-voltage schedule for Cameroon, from ARSEL decision
+# 0096/ARSEL/DG/DCEC/SDCT of 28 May 2012, effective 1 June 2012. Both the
+# regulator (arsel-cm.org/tarifs-basse-tension) and the operator
+# (eneocameroon.cm) still publish these figures, and both note they may be
+# out of date — a tariff harmonisation was announced for November 2024.
+# Treat as reference until a real ENEO bill confirms current rates.
+#
+# Two things this schedule settles:
+#   - Billing is progressive by monthly volume, not a flat rate. The 79
+#     the app multiplies by everywhere is the 111-400 kWh residential
+#     band, applied as though it were the only one.
+#   - There is NO time-of-day pricing for low-voltage customers. That
+#     removes the premise under ai_advisor's peak/off-peak savings.
+TARIFF_SOURCE = {
+    "operator": "ENEO",
+    "regulator": "ARSEL",
+    "decision": "0096/ARSEL/DG/DCEC/SDCT du 28 mai 2012",
+    "effective_from": "2012-06-01",
+    "regulator_url": "https://arsel-cm.org/tarifs-basse-tension/",
+    "verified_on": "2026-09-16",
+    "may_be_outdated": True,
+}
+
+TARIFF_BANDS = {
+    "residential": [
+        {"from_kwh": 0, "to_kwh": 110, "fcfa_per_kwh": 50},
+        {"from_kwh": 111, "to_kwh": 400, "fcfa_per_kwh": 79},
+        {"from_kwh": 401, "to_kwh": 800, "fcfa_per_kwh": 94},
+        {"from_kwh": 801, "to_kwh": 2000, "fcfa_per_kwh": 99},
+    ],
+    "non_residential": [
+        {"from_kwh": 0, "to_kwh": 110, "fcfa_per_kwh": 84},
+        {"from_kwh": 111, "to_kwh": 400, "fcfa_per_kwh": 92},
+        {"from_kwh": 401, "to_kwh": 1000, "fcfa_per_kwh": 99},
+    ],
+}
+
+# What the billing queries actually multiply by today.
+APPLIED_FLAT_RATE_FCFA = 79
+
+
+@app.get("/tariffs")
+def get_tariffs(user: dict = Depends(get_current_user)):
+    """The published tariff schedule, plus what this app currently bills at.
+
+    The two differ, and the response says so rather than hiding it: the
+    schedule is progressive, the app applies a single band's rate to
+    everything. Surfacing both is what lets the settings screen show the
+    real bands without pretending the app already honours them.
+    """
+    return {
+        "source": TARIFF_SOURCE,
+        "bands": TARIFF_BANDS,
+        "vat_exempt_below_kwh": 110,
+        "time_of_use": False,
+        "applied": {
+            "fcfa_per_kwh": APPLIED_FLAT_RATE_FCFA,
+            "matches_schedule": False,
+            "note": (
+                "Billing currently applies a single flat rate. It is the "
+                "111-400 kWh residential band, so consumption outside that "
+                "band is mis-costed."
+            ),
+        },
+    }
+
+
 @app.get("/devices")
 def get_devices(home_id: int, user: dict = Depends(get_scoped_user)):
     """Returns every monitored point with its room, connectivity and live power"""

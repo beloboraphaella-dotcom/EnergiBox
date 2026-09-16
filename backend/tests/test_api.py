@@ -191,5 +191,34 @@ sig = inspect.signature(main.get_device_history)
 check("le parametre n'est pas nomme 'range' dans la fonction",
       "range" not in sig.parameters, list(sig.parameters))
 
+# ── Tariff reference ────────────────────────────────────────────────────
+print("\n== /tariffs ==")
+
+with patch.object(main, "get_account_status", return_value=("a@b.co", "owner", False)):
+    r = client.get("/tariffs", headers={"Authorization": f"Bearer {TOKEN}"})
+check("/tariffs repond", r.status_code == 200, r.status_code)
+tariffs = r.json()
+check("les bandes residentielles sont progressives",
+      [b["fcfa_per_kwh"] for b in tariffs["bands"]["residential"]] == [50, 79, 94, 99],
+      tariffs["bands"]["residential"])
+check("les bandes se suivent sans trou",
+      all(tariffs["bands"]["residential"][i]["to_kwh"] + 1 == tariffs["bands"]["residential"][i + 1]["from_kwh"]
+          for i in range(len(tariffs["bands"]["residential"]) - 1)))
+check("le tarif applique est expose", tariffs["applied"]["fcfa_per_kwh"] == 79, tariffs["applied"])
+check("l'ecart avec le bareme est declare", tariffs["applied"]["matches_schedule"] is False)
+check("l'absence de tarification horaire est declaree", tariffs["time_of_use"] is False)
+check("la source est attribuee",
+      tariffs["source"]["regulator"] == "ARSEL" and tariffs["source"]["may_be_outdated"] is True,
+      tariffs["source"])
+check("/tariffs exige un jeton", client.get("/tariffs").status_code in (401, 403))
+
+# The flat rate the billing queries use must stay the same number the
+# endpoint advertises, or the settings screen would describe a rate the
+# app does not actually bill at.
+import re as _re
+_src = pathlib.Path(__file__).resolve().parent.parent.joinpath("main.py").read_text()
+check("le tarif annonce est celui des requetes de facturation",
+      len(_re.findall(r"\* 79\b|/ 1000 / 1800", _src)) > 0 and main.APPLIED_FLAT_RATE_FCFA == 79)
+
 print("\n" + ("TOUS LES TESTS PASSENT" if not fails else f"{len(fails)} ECHEC(S): {fails}"))
 sys.exit(1 if fails else 0)
