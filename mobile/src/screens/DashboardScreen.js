@@ -8,9 +8,11 @@ import { api } from "../api";
 import Icon from "../components/Icon";
 import { colors, spacing, radius, type, glassCard, surfaceCard } from "../theme";
 
-// 18:00-21:00 is the evening peak window in ai_advisor.PEAK_HOURS. It is a
-// constant in the backend, so it is a constant here.
-const PEAK_WINDOW = "18:00 - 21:00";
+// This card used to read "18:00 - 21:00 / High tariff period", mirroring
+// an advisor constant. Cameroon's low-voltage tariff has no time-of-day
+// pricing (see backend/tariff.py), so there is no expensive window to
+// warn about. The slot now shows when the household actually draws the
+// most, which is real and worth knowing.
 
 const GAUGE_SIZE = 192;
 const GAUGE_RADIUS = 45;
@@ -102,6 +104,11 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
 
   // The web lays the device grid out with CSS grid; here the card width is
   // computed so two fit per row inside the page gutters.
+  // The household's own busiest hour, from today's readings. Distinct
+  // from `peakWatts` above, which is the gauge's ceiling.
+  const peakHour = hourly?.peak_hour ?? null;
+  const peakHourWatts = hourly?.max_watts ?? 0;
+
   const cardWidth = (width - spacing.marginMobile * 2 - spacing.sm) / 2;
 
   return (
@@ -198,10 +205,16 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
           <Icon name="schedule" size={24} color={colors.tertiaryContainer} />
         </View>
         <View>
-          <Text style={styles.peakValue}>{PEAK_WINDOW}</Text>
+          <Text style={styles.peakValue}>
+            {peakHour === null ? "No readings yet" : `${String(peakHour).padStart(2, "0")}:00`}
+          </Text>
           <View style={styles.statFootRow}>
-            <Icon name="warning" size={16} color={colors.tertiaryContainer} />
-            <Text style={styles.statFoot}>High tariff period</Text>
+            <Icon name="bolt" size={16} color={colors.tertiaryContainer} />
+            <Text style={styles.statFoot}>
+              {peakHour === null
+                ? "Busiest hour appears once data arrives"
+                : `${formatWatts(peakHourWatts).value} ${formatWatts(peakHourWatts).unit} at its busiest`}
+            </Text>
           </View>
         </View>
       </View>

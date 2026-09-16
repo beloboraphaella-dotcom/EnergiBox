@@ -146,9 +146,9 @@ CREATE TABLE IF NOT EXISTS ai_suggestions (
 --    figure in the app. Integrating over real timestamp deltas would be
 --    robust; that is a deliberate open item, not an oversight.
 --
--- 2. ai_suggestions has no suggested_on_time / suggested_off_time columns.
---    generate_suggestion() computes them but save_suggestion() drops them,
---    and accept_suggestion() hardcodes '22:00:00'/'05:00:00'. Those happen
---    to be the only values the advisor ever proposes, so the two agree by
---    coincidence today. Give the advisor a real choice of window and this
---    breaks; adding the columns is the fix.
+-- 2. ai_suggestions carries no schedule columns, and no longer needs any.
+--    Suggestions used to be time-shifts, and accepting one inserted a
+--    schedule at a hardcoded 22:00-05:00 whatever it said. Cameroon's
+--    low-voltage tariff has no time-of-day pricing, so the advisor now
+--    suggests consuming less instead, and accepting simply records that
+--    the advice was taken. See backend/tariff.py.

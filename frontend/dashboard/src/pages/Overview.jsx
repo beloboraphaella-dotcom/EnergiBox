@@ -5,10 +5,11 @@ import { useLanguage } from "../context/LanguageContext";
 
 const API = "http://localhost:8000";
 
-// The backend's advisor treats 18:00-21:00 as the evening peak tariff
-// window (ai_advisor.PEAK_HOURS). It is a constant there, so it is a
-// constant here rather than a fetched value.
-const PEAK_WINDOW = "18:00 - 21:00";
+// This card used to read "18:00 - 21:00 / High tariff period", mirroring
+// an advisor constant. Cameroon's low-voltage tariff has no time-of-day
+// pricing (see backend/tariff.py), so there is no expensive window to
+// warn about. The slot now shows when the household actually draws the
+// most, which is real and worth knowing.
 
 const GAUGE_RADIUS = 45;
 const GAUGE_CIRCUMFERENCE = 2 * Math.PI * GAUGE_RADIUS; // 282.7, as in the mockup
@@ -83,6 +84,12 @@ export default function Overview({ token, homeId, onOpenDevices }) {
   const estimatedFcfa = overview?.month?.estimated_fcfa ?? 0;
   const projectedFcfa = overview?.month?.projected_fcfa ?? 0;
   const onlineCount = overview?.devices?.online ?? 0;
+
+  // The household's own busiest hour, from today's readings. Distinct
+  // from `peakWatts` above, which is the gauge's ceiling and folds in the
+  // live reading.
+  const peakHour = hourly?.peak_hour ?? null;
+  const peakHourWatts = hourly?.max_watts ?? 0;
 
   const activeDevices = devices.slice(0, 8);
 
@@ -207,11 +214,20 @@ export default function Overview({ token, homeId, onOpenDevices }) {
             </div>
             <div>
               <div className="font-headline-md text-headline-md text-on-background">
-                {PEAK_WINDOW}
+                {peakHour === null
+                  ? t("overview.peakNone")
+                  : `${String(peakHour).padStart(2, "0")}:00`}
               </div>
               <div className="mt-2 text-sm text-outline flex items-center">
-                <Icon name="warning" className="text-tertiary-container text-sm mr-1" />
-                <span>{t("overview.highTariff")}</span>
+                <Icon name="bolt" className="text-tertiary-container text-sm mr-1" />
+                <span>
+                  {peakHour === null
+                    ? t("overview.peakNoneHint")
+                    : t("overview.peakDraw", {
+                        watts: formatWatts(peakHourWatts).value,
+                        unit: formatWatts(peakHourWatts).unit,
+                      })}
+                </span>
               </div>
             </div>
           </div>

@@ -212,13 +212,21 @@ check("la source est attribuee",
       tariffs["source"])
 check("/tariffs exige un jeton", client.get("/tariffs").status_code in (401, 403))
 
-# The flat rate the billing queries use must stay the same number the
+# The flat rate the billing queries multiply by must stay the number the
 # endpoint advertises, or the settings screen would describe a rate the
-# app does not actually bill at.
+# app does not actually bill at. The constant now lives in tariff.py.
 import re as _re
+import tariff as _tariff
 _src = pathlib.Path(__file__).resolve().parent.parent.joinpath("main.py").read_text()
+# Only lines that actually produce FCFA count: a "* 100" elsewhere is a
+# percentage, not a tariff.
+_fcfa_lines = [l for l in _src.splitlines() if "fcfa" in l.lower()]
+_rates = {m for line in _fcfa_lines for m in _re.findall(r"\*\s*(\d+)", line)}
 check("le tarif annonce est celui des requetes de facturation",
-      len(_re.findall(r"\* 79\b|/ 1000 / 1800", _src)) > 0 and main.APPLIED_FLAT_RATE_FCFA == 79)
+      _tariff.APPLIED_FLAT_RATE_FCFA == 79 and str(_tariff.APPLIED_FLAT_RATE_FCFA) in _rates,
+      sorted(_rates))
+check("aucun autre tarif n'est code en dur dans les calculs FCFA",
+      _rates <= {str(_tariff.APPLIED_FLAT_RATE_FCFA)}, sorted(_rates))
 
 print("\n" + ("TOUS LES TESTS PASSENT" if not fails else f"{len(fails)} ECHEC(S): {fails}"))
 sys.exit(1 if fails else 0)

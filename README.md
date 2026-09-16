@@ -125,10 +125,18 @@ These are open, understood, and deliberately not papered over:
 - **Energy figures assume a perfect 2-second sample rate.** `SUM(watts)/1000/1800`
   under-counts whenever a device is offline. Integrating over real timestamp
   deltas would fix it.
-- **Two tariff models disagree.** The bill uses a flat 79 FCFA/kWh; the
-  advisor uses 100 peak / 60 off-peak. The savings shown to a user are not
-  consistent with the bill on the same screen. Someone needs to confirm the
-  real tariff.
+- **Billing still applies one flat rate.** Cameroon's published
+  low-voltage tariff is progressive by monthly volume — 50 FCFA/kWh up to
+  110 kWh, then 79, 94 and 99 — and `backend/tariff.py` implements that
+  arithmetic, but the billing queries in `main.py` still multiply by a
+  flat 79. That is the 111-400 kWh band, so anything outside it is
+  mis-costed. `GET /tariffs` reports the discrepancy, and the settings
+  screen shows it. Migrating the queries needs a real ENEO bill to
+  confirm current rates and whether bands apply per block or per
+  threshold.
+- **The tariff schedule is from 2012.** Both the regulator and the
+  operator still publish it and both note it may be out of date; a
+  harmonisation was announced for November 2024.
 - **A new database connection per query.** No pooling, and the MQTT path
   opens roughly six per reading per device. This will not scale.
 - **Rate limiting is per process.** `backend/rate_limit.py` is in-memory, so

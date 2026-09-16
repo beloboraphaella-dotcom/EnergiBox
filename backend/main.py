@@ -10,6 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
+import tariff
 from config import CORS_ORIGINS, get_connection as get_raw_db
 from database import engine, Base
 from schemas import (
@@ -718,63 +719,25 @@ def delete_monitored_point(point_id: int, user: dict = Depends(get_point_owner))
     conn.close()
     return {"message": "Device deleted"}
 
-# Published low-voltage schedule for Cameroon, from ARSEL decision
-# 0096/ARSEL/DG/DCEC/SDCT of 28 May 2012, effective 1 June 2012. Both the
-# regulator (arsel-cm.org/tarifs-basse-tension) and the operator
-# (eneocameroon.cm) still publish these figures, and both note they may be
-# out of date — a tariff harmonisation was announced for November 2024.
-# Treat as reference until a real ENEO bill confirms current rates.
-#
-# Two things this schedule settles:
-#   - Billing is progressive by monthly volume, not a flat rate. The 79
-#     the app multiplies by everywhere is the 111-400 kWh residential
-#     band, applied as though it were the only one.
-#   - There is NO time-of-day pricing for low-voltage customers. That
-#     removes the premise under ai_advisor's peak/off-peak savings.
-TARIFF_SOURCE = {
-    "operator": "ENEO",
-    "regulator": "ARSEL",
-    "decision": "0096/ARSEL/DG/DCEC/SDCT du 28 mai 2012",
-    "effective_from": "2012-06-01",
-    "regulator_url": "https://arsel-cm.org/tarifs-basse-tension/",
-    "verified_on": "2026-09-16",
-    "may_be_outdated": True,
-}
-
-TARIFF_BANDS = {
-    "residential": [
-        {"from_kwh": 0, "to_kwh": 110, "fcfa_per_kwh": 50},
-        {"from_kwh": 111, "to_kwh": 400, "fcfa_per_kwh": 79},
-        {"from_kwh": 401, "to_kwh": 800, "fcfa_per_kwh": 94},
-        {"from_kwh": 801, "to_kwh": 2000, "fcfa_per_kwh": 99},
-    ],
-    "non_residential": [
-        {"from_kwh": 0, "to_kwh": 110, "fcfa_per_kwh": 84},
-        {"from_kwh": 111, "to_kwh": 400, "fcfa_per_kwh": 92},
-        {"from_kwh": 401, "to_kwh": 1000, "fcfa_per_kwh": 99},
-    ],
-}
-
-# What the billing queries actually multiply by today.
-APPLIED_FLAT_RATE_FCFA = 79
-
-
 @app.get("/tariffs")
 def get_tariffs(user: dict = Depends(get_current_user)):
     """The published tariff schedule, plus what this app currently bills at.
 
     The two differ, and the response says so rather than hiding it: the
-    schedule is progressive, the app applies a single band's rate to
-    everything. Surfacing both is what lets the settings screen show the
-    real bands without pretending the app already honours them.
+    schedule is progressive, the billing queries apply a single band's
+    rate to everything. Surfacing both is what lets the settings screen
+    show the real bands without pretending the app already honours them.
     """
     return {
-        "source": TARIFF_SOURCE,
-        "bands": TARIFF_BANDS,
-        "vat_exempt_below_kwh": 110,
-        "time_of_use": False,
+        "source": tariff.SOURCE,
+        "bands": {
+            "residential": tariff.bands_as_dicts("residential"),
+            "non_residential": tariff.bands_as_dicts("non_residential"),
+        },
+        "vat_exempt_below_kwh": tariff.VAT_EXEMPT_BELOW_KWH,
+        "time_of_use": tariff.TIME_OF_USE,
         "applied": {
-            "fcfa_per_kwh": APPLIED_FLAT_RATE_FCFA,
+            "fcfa_per_kwh": tariff.APPLIED_FLAT_RATE_FCFA,
             "matches_schedule": False,
             "note": (
                 "Billing currently applies a single flat rate. It is the "
@@ -1209,11 +1172,9 @@ def accept_suggestion(suggestion_id: int, user: dict = Depends(get_suggestion_ow
     conn = get_raw_db()
     cursor = conn.cursor()
 
-    # Get suggestion details
+    # Existence check: ownership is already enforced by the dependency.
     cursor.execute("""
-        SELECT s.monitored_point_id
-        FROM ai_suggestions s
-        WHERE s.id = %s
+        SELECT s.id FROM ai_suggestions s WHERE s.id = %s
     """, (suggestion_id,))
 
     result = cursor.fetchone()
@@ -1221,23 +1182,20 @@ def accept_suggestion(suggestion_id: int, user: dict = Depends(get_suggestion_ow
         conn.close()
         raise HTTPException(status_code=404, detail="Suggestion not found")
 
-    monitored_point_id = result[0]
-
-    # Mark as accepted
+    # Accepting used to insert a schedule at a hardcoded 22:00-05:00
+    # whatever the suggestion actually said, because every suggestion was
+    # a time-shift. Suggestions are now about consuming less, which no
+    # schedule can carry out on the household's behalf, so accepting
+    # simply records that the advice was taken. Schedules remain available
+    # on their own, from the device screen.
     cursor.execute("""
         UPDATE ai_suggestions SET status = 'accepted'
         WHERE id = %s
     """, (suggestion_id,))
 
-    # Create schedule from suggestion
-    cursor.execute("""
-        INSERT INTO schedules (monitored_point_id, on_time, off_time, active, source)
-        VALUES (%s, '22:00:00', '05:00:00', TRUE, 'ai')
-    """, (monitored_point_id,))
-
     conn.commit()
     conn.close()
-    return {"message": "Suggestion accepted and schedule created"}
+    return {"message": "Suggestion accepted"}
 
 @app.put("/suggestions/{suggestion_id}/ignore")
 def ignore_suggestion(suggestion_id: int, user: dict = Depends(get_suggestion_owner)):
