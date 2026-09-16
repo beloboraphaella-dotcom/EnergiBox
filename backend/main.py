@@ -1,7 +1,9 @@
 from auth import (
     register_user, login_user, decode_token, update_user_name, change_password,
-    list_all_users, set_user_suspended, delete_user, admin_set_password
+    list_all_users, set_user_suspended, delete_user, admin_set_password,
+    get_account_status
 )
+from rate_limit import login_limiter, register_limiter
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -101,17 +103,35 @@ def _fmt_time(value):
 bearer_scheme = HTTPBearer()
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)) -> dict:
-    """Decode and verify the caller's JWT (same secret/algorithm as before).
-    Returns the current user as {user_id, email, role}. Raises 401 if the
-    token is missing, malformed or expired."""
+    """Decode and verify the caller's JWT, then re-check the account behind
+    it. Returns {user_id, email, role}; raises 401 if the token is missing,
+    malformed, expired or belongs to an account that no longer exists, and
+    403 if that account has been suspended.
+
+    Tokens live for 24 hours and there is no revocation list, so without
+    this lookup a suspended or deleted user would keep full access until
+    their token expired. It costs one query per authenticated request;
+    reading the role from the database rather than from the token also
+    means a role change applies immediately.
+    """
     payload = decode_token(credentials.credentials)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    return {
-        "user_id": int(payload.get("sub")),
-        "email": payload.get("email"),
-        "role": payload.get("role"),
-    }
+
+    try:
+        user_id = int(payload.get("sub"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    account = get_account_status(user_id)
+    if account is None:
+        raise HTTPException(status_code=401, detail="This account no longer exists")
+
+    email, role, is_suspended = account
+    if is_suspended:
+        raise HTTPException(status_code=403, detail="This account has been suspended")
+
+    return {"user_id": user_id, "email": email, "role": role}
 
 def get_current_admin(user: dict = Depends(get_current_user)) -> dict:
     """Same as get_current_user, but additionally requires the admin role."""
@@ -245,11 +265,32 @@ def root():
 
 @app.get("/health")
 def health():
-    return {
-        "database": "connected",
-        "mqtt": "connected",
-        "status": "healthy"
-    }
+    """Actually probe the dependencies. This used to return hardcoded
+    "connected" strings, which is worse than having no healthcheck: it
+    reported healthy while the database was down."""
+    from mqtt_client import is_mqtt_connected
+
+    try:
+        conn = get_raw_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        cursor.fetchone()
+        conn.close()
+        database = "connected"
+    except Exception:
+        database = "unavailable"
+
+    mqtt_state = "connected" if is_mqtt_connected() else "disconnected"
+    healthy = database == "connected" and mqtt_state == "connected"
+
+    return JSONResponse(
+        status_code=200 if healthy else 503,
+        content={
+            "database": database,
+            "mqtt": mqtt_state,
+            "status": "healthy" if healthy else "degraded",
+        },
+    )
 
 @app.get("/readings")
 def get_readings(home_id: int, user: dict = Depends(get_scoped_user)):
@@ -790,19 +831,42 @@ def get_device_detail(mac: str, user: dict = Depends(get_mac_owner)):
 def control_device(mac: str, command: str, user: dict = Depends(get_mac_owner)):
     """Send ON or OFF command to an EnergiBox"""
     if command not in ["ON", "OFF"]:
-        return {"error": "Command must be ON or OFF"}
+        raise HTTPException(status_code=400, detail="Command must be ON or OFF")
 
     from mqtt_client import send_command, record_command_sent
-    sent = send_command(mac, command)
-    if sent:
-        record_command_sent(mac, command)
+    if not send_command(mac, command):
+        # The broker is unreachable, so the relay never got the command.
+        # Saying "sent" here would leave the UI showing the wrong state.
+        raise HTTPException(
+            status_code=503,
+            detail="Cannot reach the MQTT broker — the device was not switched",
+        )
+    record_command_sent(mac, command)
     return {
         "message": f"Command {command} sent to {mac}",
         "mac": mac,
         "command": command
     }
+def _client_ip(request: Request) -> str:
+    """Best-effort client address. Behind a reverse proxy this is the proxy
+    unless it sets X-Forwarded-For, so configure the proxy (or run uvicorn
+    with --proxy-headers) for the per-address limit to mean anything."""
+    return request.client.host if request.client else "unknown"
+
+
+def _enforce_limit(limiter, key: str, what: str):
+    retry_after = limiter.check(key)
+    if retry_after:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many {what} attempts. Try again in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
 @app.post("/auth/register")
-def register(body: RegisterRequest):
+def register(body: RegisterRequest, request: Request):
+    _enforce_limit(register_limiter, f"ip:{_client_ip(request)}", "sign-up")
     user_id, error = register_user(body.name, body.email, body.password)
     if error:
         raise HTTPException(status_code=400, detail=error)
@@ -812,10 +876,22 @@ def register(body: RegisterRequest):
     }
 
 @app.post("/auth/login")
-def login(body: LoginRequest):
+def login(body: LoginRequest, request: Request):
+    # Two independent budgets: one address cannot spray many accounts, and
+    # one account cannot be attacked from many addresses.
+    ip_key = f"ip:{_client_ip(request)}"
+    email_key = f"email:{body.email.lower()}"
+    _enforce_limit(login_limiter, ip_key, "login")
+    _enforce_limit(login_limiter, email_key, "login")
+
     result, error = login_user(body.email, body.password)
     if error:
         raise HTTPException(status_code=401, detail=error)
+
+    # Successful login clears the budget so a user who mistyped a few times
+    # is not left throttled.
+    login_limiter.reset(ip_key)
+    login_limiter.reset(email_key)
     return result
 
 @app.get("/auth/me")

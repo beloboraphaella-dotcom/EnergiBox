@@ -1,0 +1,36 @@
+# EnergiBox topic ACLs.
+#
+# Topic layout:
+#   energibox/<mac>/consumption   device -> backend   power samples
+#   energibox/<mac>/status        device -> backend   relay state
+#   energibox/<mac>/control       backend -> device   ON / OFF
+#
+# The backend consumes telemetry and issues commands; devices do the exact
+# opposite. Splitting the two accounts means a compromised device cannot
+# switch other people's relays — the worst it can do is lie about itself.
+
+# The backend: read everything, command anything.
+user energibox-backend
+topic read energibox/+/consumption
+topic read energibox/+/status
+topic write energibox/+/control
+
+# Devices: publish their own telemetry, receive their own commands.
+#
+# This shared account still lets one device impersonate another, because
+# they all authenticate as the same user. To close that off, give each
+# device its own username and use the %u substitution below, which
+# Mosquitto expands to the connecting username:
+#
+#   user energibox-device-AABBCCDDEEFF
+#   topic write energibox/%u/consumption
+#
+# That requires provisioning per-device credentials in the firmware, so the
+# shared account is the pragmatic starting point.
+user energibox-device
+topic write energibox/+/consumption
+topic write energibox/+/status
+topic read energibox/+/control
+
+# Anyone not listed above gets nothing. There is no default-allow rule here
+# and that is deliberate.

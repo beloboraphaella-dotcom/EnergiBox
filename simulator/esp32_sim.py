@@ -1,12 +1,17 @@
 import paho.mqtt.client as mqtt
 import json
+import os
 import time
 import random
 from datetime import datetime
 
-# MQTT Broker settings
-MQTT_BROKER = "localhost"
-MQTT_PORT = 1883
+# MQTT Broker settings. Overridable from the environment so the simulator
+# keeps working once the broker requires authentication — it connects as a
+# device, so use the device account from deploy/mosquitto/aclfile.
+MQTT_BROKER = os.environ.get("ENERGIBOX_MQTT_BROKER", "localhost")
+MQTT_PORT = int(os.environ.get("ENERGIBOX_MQTT_PORT", "1883"))
+MQTT_USERNAME = os.environ.get("ENERGIBOX_MQTT_USERNAME", "").strip()
+MQTT_PASSWORD = os.environ.get("ENERGIBOX_MQTT_PASSWORD", "").strip()
 
 # Simulated EnergiBox devices
 devices = [
@@ -24,6 +29,8 @@ devices = [
 
 # Connect to broker
 client = mqtt.Client()
+if MQTT_USERNAME:
+    client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD or None)
 client.connect(MQTT_BROKER, MQTT_PORT, 60)
 client.loop_start()
 

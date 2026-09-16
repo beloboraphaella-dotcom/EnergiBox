@@ -50,7 +50,24 @@ def mark_device_online(mac):
     conn.commit()
     conn.close()
 
+# Tracks whether the broker connection is currently up, so /health can
+# report the truth instead of assuming.
+_connected = False
+
+
+def is_mqtt_connected() -> bool:
+    return _connected
+
+
+def on_disconnect(client, userdata, rc):
+    global _connected
+    _connected = False
+    print(f"Disconnected from broker (code {rc}) — paho will retry")
+
+
 def on_connect(client, userdata, flags, rc):
+    global _connected
+    _connected = rc == 0
     if rc == 0:
         print("Connected to Mosquitto broker successfully")
         client.subscribe("energibox/#")
@@ -59,14 +76,37 @@ def on_connect(client, userdata, flags, rc):
         print(f"Failed to connect. Code: {rc}")
 
 def on_message(client, userdata, msg):
-    topic = msg.topic
-    parts = topic.split("/")
+    """Paho calls this on its network thread. An exception escaping here
+    kills message processing, so nothing inside may raise: a malformed
+    topic, a non-JSON payload or a database hiccup must all degrade to a
+    log line."""
+    try:
+        _handle_message(msg)
+    except Exception as exc:
+        print(f"Error handling message on {msg.topic}: {exc!r}")
+
+
+def _handle_message(msg):
+    parts = msg.topic.split("/")
+    if len(parts) < 3:
+        print(f"Ignoring malformed topic: {msg.topic}")
+        return
+
     mac = parts[1]
     message_type = parts[2]
 
     if message_type == "consumption":
-        payload = json.loads(msg.payload.decode())
+        try:
+            payload = json.loads(msg.payload.decode())
+        except (ValueError, UnicodeDecodeError):
+            print(f"Ignoring non-JSON payload from {mac}")
+            return
+
         watts = payload.get("watts", 0)
+        if not isinstance(watts, (int, float)):
+            print(f"Ignoring non-numeric watts from {mac}: {watts!r}")
+            return
+
         timestamp = datetime.now().strftime("%H:%M:%S")
 
         mark_device_online(mac)
@@ -92,6 +132,7 @@ def start_mqtt():
     global _mqtt_client
     client = mqtt.Client()
     client.on_connect = on_connect
+    client.on_disconnect = on_disconnect
     client.on_message = on_message
     # Only set credentials when the broker is configured to require them;
     # an anonymous Mosquitto rejects a connection that sends a username.

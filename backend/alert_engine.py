@@ -2,23 +2,54 @@ from datetime import datetime
 
 from config import get_connection as get_db
 
+# A baseline is only meaningful once there is enough history behind it.
+# At one reading every 2 seconds that is roughly three minutes of data.
+MIN_READINGS_FOR_BASELINE = 100
+
+
 def compute_baseline(monitored_point_id):
-    """Calculate average watts for a monitored point from last 100 readings"""
+    """Average watts for a monitored point while it is actually drawing
+    power. Idle readings are excluded: averaging them in would drag the
+    baseline towards zero and make check_spike fire on every normal start."""
     conn = get_db()
     cursor = conn.cursor()
-    
+
     cursor.execute("""
-        SELECT AVG(watts), COUNT(*) 
-        FROM readings 
+        SELECT AVG(watts), COUNT(*)
+        FROM readings
         WHERE monitored_point_id = %s
+        AND watts > 1
     """, (monitored_point_id,))
-    
+
     result = cursor.fetchone()
     avg_watts = result[0] or 0
     count = result[1] or 0
     conn.close()
-    
+
     return avg_watts, count
+
+
+def refresh_all_baselines():
+    """Recompute and store the baseline for every monitored point.
+
+    Nothing called compute_baseline/save_baseline before this, so the
+    baselines table stayed empty and check_spike returned early every
+    time — the spike alerts never fired at all. The scheduler now calls
+    this periodically.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM monitored_points")
+    point_ids = [row[0] for row in cursor.fetchall()]
+    conn.close()
+
+    updated = 0
+    for point_id in point_ids:
+        avg_watts, count = compute_baseline(point_id)
+        if count >= MIN_READINGS_FOR_BASELINE and avg_watts:
+            save_baseline(point_id, avg_watts)
+            updated += 1
+    return updated
 
 def save_baseline(monitored_point_id, avg_watts):
     """Save or update the baseline for a monitored point"""

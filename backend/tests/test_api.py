@@ -50,8 +50,11 @@ r = client.post("/suggestions/run", headers={"Authorization": "Bearer garbage"})
 check("POST /suggestions/run rejette un token invalide", r.status_code == 401, r.status_code)
 
 print("\n== endpoints publics legitimes ==")
-for path in ["/", "/health"]:
-    check(f"GET {path} reste public", client.get(path).status_code == 200)
+check("GET / reste public", client.get("/").status_code == 200)
+# /health is public but no longer always 200: it probes the database and
+# the broker and answers 503 when either is down, which is the case here
+# (both are stubbed). "Public" means reachable without a token.
+check("GET /health reste public", client.get("/health").status_code not in (401, 403))
 
 # ── POINT 3: credentials in the body, never the URL ─────────────────────
 print("\n== point 3 : identifiants dans le corps ==")

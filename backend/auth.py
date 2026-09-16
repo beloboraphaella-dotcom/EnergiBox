@@ -256,3 +256,18 @@ def delete_user(user_id: int):
     cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
     conn.commit()
     conn.close()
+def get_account_status(user_id: int):
+    """Return (email, role, is_suspended) for a user, or None if the account
+    no longer exists. Used on every authenticated request so that suspending
+    or deleting an account takes effect immediately instead of waiting for
+    the JWT to expire."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT email, role, is_suspended FROM users WHERE id = %s", (user_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return row[0], row[1], bool(row[2])

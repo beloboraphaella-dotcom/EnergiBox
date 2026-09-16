@@ -58,17 +58,64 @@ def mark_stale_devices_offline():
     conn.commit()
     conn.close()
 
+# Periodic jobs that are slower than the 30-second tick. Both used to have
+# no caller at all: baselines were never computed (so spike alerts could
+# never fire) and the AI advisor only ran if someone hit /suggestions/run
+# by hand.
+TICK_SECONDS = 30
+BASELINE_INTERVAL_SECONDS = 15 * 60
+ADVISOR_INTERVAL_SECONDS = 6 * 60 * 60
+
+
+def _run_job(name, func):
+    """Run one periodic job. A failure in any single job must not take the
+    scheduler thread down with it, nor stop the others from running."""
+    try:
+        return func()
+    except Exception as e:
+        print(f"Scheduler job '{name}' failed: {e!r}")
+        return None
+
+
+def refresh_baselines():
+    from alert_engine import refresh_all_baselines
+    updated = refresh_all_baselines()
+    print(f"Baselines refreshed for {updated} monitored point(s)")
+
+
+def run_advisor():
+    from ai_advisor import run_ai_advisor
+    run_ai_advisor()
+
+
 def start_scheduler():
-    """Run the scheduler every 30 seconds in a background thread"""
+    """Run the scheduler loop in a background thread.
+
+    Schedules and device liveness are checked every tick; baselines and the
+    AI advisor run on their own longer intervals, tracked by elapsed time
+    rather than a tick counter so a slow tick cannot make them drift.
+    """
     def run():
-        print("Scheduler started — checking every 30 seconds")
+        print(f"Scheduler started — tick every {TICK_SECONDS}s")
+        # Run both slow jobs once at startup so a fresh deployment does not
+        # wait a full interval before baselines exist.
+        last_baseline = last_advisor = 0.0
+
         while True:
-            try:
-                check_schedules()
-                mark_stale_devices_offline()
-            except Exception as e:
-                print(f"Scheduler error: {e}")
-            time.sleep(30)
+            now = time.monotonic()
+
+            _run_job("check_schedules", check_schedules)
+            _run_job("mark_stale_devices_offline", mark_stale_devices_offline)
+
+            if now - last_baseline >= BASELINE_INTERVAL_SECONDS:
+                _run_job("refresh_baselines", refresh_baselines)
+                last_baseline = now
+
+            if now - last_advisor >= ADVISOR_INTERVAL_SECONDS:
+                _run_job("run_advisor", run_advisor)
+                last_advisor = now
+
+            time.sleep(TICK_SECONDS)
 
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
