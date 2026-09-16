@@ -7,6 +7,7 @@ import {
 import { api } from "../api";
 import Icon from "../components/Icon";
 import { colors, spacing, radius, type, glassCard, surfaceCard } from "../theme";
+import { useLanguage } from "../context/LanguageContext";
 
 // The "My Devices" mockup uses this teal for the primary action and the
 // live-draw figures rather than the palette's `secondary` (#006a61). It is
@@ -43,6 +44,7 @@ function getIcon(name = "", type = "appliance") {
 }
 
 export default function DevicesScreen({ homeId }) {
+  const { t } = useLanguage();
   const [devices, setDevices] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -102,12 +104,12 @@ export default function DevicesScreen({ homeId }) {
   const submitNewDevice = async () => {
     const { room_id, name, type, mac } = newDevice;
     if (!room_id || !name.trim() || !mac.trim()) {
-      setDeviceError("Room, name and MAC address are required.");
+      setDeviceError(t("devices.errRequired"));
       return;
     }
     const normalizedMac = normalizeMac(mac.trim());
     if (!normalizedMac) {
-      setDeviceError("Enter a valid MAC address — 12 hex digits, e.g. AA:BB:CC:DD:EE:FF.");
+      setDeviceError(t("devices.errMac"));
       return;
     }
     setSaving(true);
@@ -120,7 +122,7 @@ export default function DevicesScreen({ homeId }) {
       await fetchAll();
       closeAdd();
     } catch (err) {
-      setDeviceError(err.response?.data?.detail || "Could not add device. Check the MAC address.");
+      setDeviceError(err.response?.data?.detail || t("devices.errAdd"));
     }
     setSaving(false);
   };
@@ -158,8 +160,8 @@ export default function DevicesScreen({ homeId }) {
     >
       {/* Page header */}
       <View style={styles.header}>
-        <Text style={styles.title}>My Devices</Text>
-        <Text style={styles.subtitle}>Manage and monitor all connected appliances.</Text>
+        <Text style={styles.title}>{t("devices.title")}</Text>
+        <Text style={styles.subtitle}>{t("devices.subtitle")}</Text>
       </View>
 
       <TouchableOpacity
@@ -168,23 +170,23 @@ export default function DevicesScreen({ homeId }) {
         onPress={() => setAddOpen(true)}
       >
         <Icon name="add" size={20} color="#ffffff" />
-        <Text style={styles.addButtonLabel}>Add New Box</Text>
+        <Text style={styles.addButtonLabel}>{t("devices.addBox")}</Text>
       </TouchableOpacity>
 
       {/* Summary stats */}
       <View style={styles.statsRow}>
         <View style={[styles.statCard, { width: statWidth }]}>
-          <Text style={styles.statLabel}>Total Devices</Text>
+          <Text style={styles.statLabel}>{t("devices.total")}</Text>
           <Text style={styles.statValue}>{devices.length}</Text>
         </View>
         <View style={[styles.statCard, { width: statWidth }]}>
-          <Text style={styles.statLabel}>Active Now</Text>
+          <Text style={styles.statLabel}>{t("devices.activeNow")}</Text>
           <Text style={[styles.statValue, { color: ACCENT }]}>{activeCount}</Text>
         </View>
       </View>
 
       <View style={styles.drawCard}>
-        <Text style={styles.statLabel}>Total Current Draw</Text>
+        <Text style={styles.statLabel}>{t("devices.totalDraw")}</Text>
         <View style={styles.drawRow}>
           <Text style={styles.drawValue}>
             {totalKw.toLocaleString(undefined, { maximumFractionDigits: 1 })}
@@ -199,7 +201,7 @@ export default function DevicesScreen({ homeId }) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.filterRow}
       >
-        {[{ id: "all", name: "All Rooms" }, ...rooms.map((r) => ({ id: r.id, name: r.name }))].map(
+        {[{ id: "all", name: t("devices.allRooms") }, ...rooms.map((r) => ({ id: r.id, name: r.name }))].map(
           (room) => {
             const isActive = filter === room.id;
             return (
@@ -227,9 +229,7 @@ export default function DevicesScreen({ homeId }) {
       {filtered.length === 0 ? (
         <View style={[surfaceCard, styles.emptyCard]}>
           <Text style={styles.emptyText}>
-            {devices.length === 0
-              ? "No devices paired yet. Add your first EnergiBox."
-              : "No devices in this room."}
+            {devices.length === 0 ? t("devices.empty") : t("devices.emptyRoom")}
           </Text>
         </View>
       ) : (
@@ -303,7 +303,7 @@ export default function DevicesScreen({ homeId }) {
 
               <View style={styles.deviceBottom}>
                 <Text style={[styles.drawCaption, { color: isOn ? colors.onSurfaceVariant : colors.outline }]}>
-                  Current Draw
+                  {t("devices.currentDraw")}
                 </Text>
                 <Text style={[styles.deviceDraw, { color: isOn ? ACCENT : colors.onSurfaceVariant }]}>
                   {Math.round(d.watts || 0)} W
@@ -321,14 +321,14 @@ export default function DevicesScreen({ homeId }) {
         <Pressable style={styles.modalScrim} onPress={closeAdd}>
           <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add New Box</Text>
+              <Text style={styles.modalTitle}>{t("devices.addBox")}</Text>
               <TouchableOpacity onPress={closeAdd} activeOpacity={0.7} style={styles.modalClose}>
                 <Icon name="close" size={20} color={colors.onSurfaceVariant} />
               </TouchableOpacity>
             </View>
 
             <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
-              <Text style={styles.fieldLabel}>Room</Text>
+              <Text style={styles.fieldLabel}>{t("devices.room")}</Text>
               <View style={styles.chipRow}>
                 {rooms.map((r) => {
                   const picked = String(newDevice.room_id) === String(r.id);
@@ -352,20 +352,20 @@ export default function DevicesScreen({ homeId }) {
                 })}
               </View>
 
-              <Text style={styles.fieldLabel}>Name</Text>
+              <Text style={styles.fieldLabel}>{t("devices.name")}</Text>
               <TextInput
                 style={styles.input}
                 value={newDevice.name}
                 onChangeText={(v) => setNewDevice({ ...newDevice, name: v })}
-                placeholder="Fridge, Air conditioner…"
+                placeholder={t("devices.namePlaceholder")}
                 placeholderTextColor={colors.outline}
               />
 
-              <Text style={styles.fieldLabel}>Type</Text>
+              <Text style={styles.fieldLabel}>{t("devices.type")}</Text>
               <View style={styles.chipRow}>
                 {[
-                  { id: "appliance", label: "Appliance" },
-                  { id: "socket", label: "Socket" },
+                  { id: "appliance", label: t("devices.appliance") },
+                  { id: "socket", label: t("devices.socket") },
                 ].map((opt) => {
                   const picked = newDevice.type === opt.id;
                   return (
@@ -388,7 +388,7 @@ export default function DevicesScreen({ homeId }) {
                 })}
               </View>
 
-              <Text style={styles.fieldLabel}>EnergiBox MAC address</Text>
+              <Text style={styles.fieldLabel}>{t("devices.mac")}</Text>
               <TextInput
                 style={[styles.input, { fontFamily: type.dataLabel.fontFamily }]}
                 value={newDevice.mac}
@@ -410,7 +410,7 @@ export default function DevicesScreen({ homeId }) {
                 {saving ? (
                   <ActivityIndicator color={colors.onSecondary} />
                 ) : (
-                  <Text style={styles.submitLabel}>Add New Box</Text>
+                  <Text style={styles.submitLabel}>{t("devices.addBox")}</Text>
                 )}
               </TouchableOpacity>
             </ScrollView>
@@ -427,10 +427,12 @@ const ALERT_ICONS = {
   idle_waste: "energy_savings_leaf",
 };
 
-const ALERT_TITLES = {
-  spike: "Consumption spike",
-  extended_runtime: "Extended runtime",
-  idle_waste: "Unusual standby draw",
+// Alert copy lives in the translation file, keyed by the type the API
+// sends, so both apps name an alert the same way in both languages.
+const ALERT_TITLE_KEYS = {
+  spike: "detail.alert.spike",
+  extended_runtime: "detail.alert.extended_runtime",
+  idle_waste: "detail.alert.idle_waste",
 };
 
 /** Device detail, from the "Refrigerator Details" mockup.
@@ -445,6 +447,7 @@ const ALERT_TITLES = {
  * and door-open history needs a sensor the hardware lacks. That slot shows
  * this device's real alerts instead. */
 function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
+  const { t } = useLanguage();
   const [device, setDevice] = useState(null);
   const [history, setHistory] = useState(null);
   const [range, setRange] = useState("24h");
@@ -457,7 +460,7 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
       const res = await api.get(`/devices/${mac}`);
       setDevice(res.data);
     } catch (err) {
-      setError("Could not load this device.");
+      setError(t("detail.loadError"));
     }
   }, [mac]);
 
@@ -488,7 +491,7 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
       setDevice((prev) => ({ ...prev, is_on: nextIsOn }));
       setTimeout(fetchDevice, 500);
     } catch (err) {
-      setError(err.response?.data?.detail || "Could not switch the device.");
+      setError(err.response?.data?.detail || t("detail.toggleError"));
     }
     setToggling(false);
   };
@@ -498,7 +501,7 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
       <View style={styles.detailLoading}>
         <TouchableOpacity onPress={onBack} activeOpacity={0.7} style={styles.backRow}>
           <Icon name="arrow_back" size={20} color={colors.onSurfaceVariant} />
-          <Text style={styles.backLabel}>Back to devices</Text>
+          <Text style={styles.backLabel}>{t("detail.back")}</Text>
         </TouchableOpacity>
         {error ? <Text style={styles.emptyText}>{error}</Text> : <ActivityIndicator color={colors.secondary} />}
       </View>
@@ -524,7 +527,7 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
         <TouchableOpacity
           onPress={onOpenControl}
           activeOpacity={0.7}
-          accessibilityLabel="Remote control"
+          accessibilityLabel={t("control.open")}
           style={styles.iconButton}
         >
           <Icon name="power_settings_new" size={22} color={colors.onSurfaceVariant} />
@@ -561,7 +564,7 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
       {/* Current draw */}
       <View style={[glassCard, styles.detailCard]}>
         <View style={styles.detailCardTop}>
-          <Text style={styles.detailCardLabel}>Current Draw</Text>
+          <Text style={styles.detailCardLabel}>{t("detail.currentDraw")}</Text>
           <Icon name="bolt" size={24} color={colors.secondary} />
         </View>
         <View style={styles.metricRow}>
@@ -576,14 +579,18 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
             ]}
           />
           <Text style={styles.statusText}>
-            {device.status !== "online" ? "Device offline" : isOn ? "Drawing power" : "Idle"}
+            {device.status !== "online"
+              ? t("detail.offline")
+              : isOn
+                ? t("detail.running")
+                : t("detail.idle")}
           </Text>
         </View>
       </View>
 
       {/* Monthly cost */}
       <View style={styles.costCardDetail}>
-        <Text style={styles.costLabel}>Estimated Monthly Cost</Text>
+        <Text style={styles.costLabel}>{t("detail.monthlyCost")}</Text>
         <View style={styles.metricRow}>
           <Text style={[styles.metricValue, { color: colors.inverseOnSurface }]}>
             {(cost?.estimated_fcfa ?? 0).toLocaleString()}
@@ -592,13 +599,13 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
         </View>
         <View style={styles.costSplit}>
           <View style={styles.costItem}>
-            <Text style={styles.costItemLabel}>Daily Avg</Text>
+            <Text style={styles.costItemLabel}>{t("detail.dailyAvg")}</Text>
             <Text style={styles.costItemValue}>
               {(cost?.daily_avg_fcfa ?? 0).toLocaleString()} FCFA
             </Text>
           </View>
           <View style={styles.costItem}>
-            <Text style={styles.costItemLabel}>Projected Usage</Text>
+            <Text style={styles.costItemLabel}>{t("detail.projectedUsage")}</Text>
             <Text style={styles.costItemValue}>{(cost?.projected_kwh ?? 0).toLocaleString()} kWh</Text>
           </View>
         </View>
@@ -607,7 +614,7 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
       {/* History */}
       <View style={[glassCard, styles.detailCard]}>
         <View style={styles.historyHeader}>
-          <Text style={styles.sectionTitle}>Consumption History</Text>
+          <Text style={styles.sectionTitle}>{t("detail.history")}</Text>
           <View style={styles.rangeTabs}>
             {["24h", "7d", "30d"].map((r) => {
               const picked = range === r;
@@ -632,7 +639,7 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
           </View>
         </View>
 
-        <HistoryBars history={history} width={chartWidth} />
+        <HistoryBars history={history} width={chartWidth} emptyLabel={t("detail.noData")} />
       </View>
 
       {/* This device's alerts */}
@@ -642,8 +649,8 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
             <Icon name="check_circle" size={22} color={colors.secondary} />
           </View>
           <View style={styles.insightBody}>
-            <Text style={styles.insightTitle}>No alerts</Text>
-            <Text style={styles.insightText}>This device has not triggered any alert.</Text>
+            <Text style={styles.insightTitle}>{t("detail.noAlerts")}</Text>
+            <Text style={styles.insightText}>{t("detail.noAlertsHint")}</Text>
           </View>
         </View>
       ) : (
@@ -665,7 +672,9 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
               />
             </View>
             <View style={styles.insightBody}>
-              <Text style={styles.insightTitle}>{ALERT_TITLES[a.type] || a.type}</Text>
+              <Text style={styles.insightTitle}>
+                {ALERT_TITLE_KEYS[a.type] ? t(ALERT_TITLE_KEYS[a.type]) : a.type}
+              </Text>
               <Text style={styles.insightText}>{a.message}</Text>
             </View>
           </View>
@@ -677,7 +686,7 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
 
 /** The mockup's bar chart. Built from Views rather than SVG, exactly as
  * the mockup builds it from divs. */
-function HistoryBars({ history, width }) {
+function HistoryBars({ history, width, emptyLabel }) {
   const buckets = history?.buckets ?? [];
   const measured = buckets.filter((b) => b.watts !== null && b.watts !== undefined);
   const max = Math.max(history?.max_watts || 0, 1);
@@ -686,7 +695,7 @@ function HistoryBars({ history, width }) {
   if (measured.length === 0) {
     return (
       <View style={[styles.chartEmpty, { height: HEIGHT }]}>
-        <Text style={styles.emptyText}>No readings for this period yet.</Text>
+        <Text style={styles.emptyText}>{emptyLabel}</Text>
       </View>
     );
   }
@@ -752,6 +761,7 @@ function HistoryBars({ history, width }) {
  * opacity from a temporary Google URL that will stop resolving. Purely
  * ornamental, so it is dropped rather than baked in as a broken link. */
 function DeviceControl({ mac, onBack }) {
+  const { t } = useLanguage();
   const [device, setDevice] = useState(null);
   const [ceilingWatts, setCeilingWatts] = useState(0);
   const [toggling, setToggling] = useState(false);
@@ -762,7 +772,7 @@ function DeviceControl({ mac, onBack }) {
       const res = await api.get(`/devices/${mac}`);
       setDevice(res.data);
     } catch (err) {
-      setError("Could not load this device.");
+      setError(t("detail.loadError"));
     }
   }, [mac]);
 
@@ -789,7 +799,7 @@ function DeviceControl({ mac, onBack }) {
       setDevice((prev) => ({ ...prev, is_on: nextIsOn }));
       setTimeout(fetchDevice, 500);
     } catch (err) {
-      setError(err.response?.data?.detail || "Could not switch the device.");
+      setError(err.response?.data?.detail || t("detail.toggleError"));
     }
     setToggling(false);
   };
@@ -799,7 +809,7 @@ function DeviceControl({ mac, onBack }) {
       <View style={styles.detailLoading}>
         <TouchableOpacity onPress={onBack} activeOpacity={0.7} style={styles.backRow}>
           <Icon name="arrow_back" size={20} color={colors.onSurfaceVariant} />
-          <Text style={styles.backLabel}>Back to device</Text>
+          <Text style={styles.backLabel}>{t("control.back")}</Text>
         </TouchableOpacity>
         {error ? <Text style={styles.emptyText}>{error}</Text> : <ActivityIndicator color={colors.secondary} />}
       </View>
@@ -822,7 +832,7 @@ function DeviceControl({ mac, onBack }) {
     <ScrollView style={styles.page} contentContainerStyle={styles.pageContent}>
       <TouchableOpacity onPress={onBack} activeOpacity={0.7} style={styles.backRow}>
         <Icon name="arrow_back" size={18} color={colors.onSurfaceVariant} />
-        <Text style={styles.backLabel}>Back to device</Text>
+        <Text style={styles.backLabel}>{t("control.back")}</Text>
       </TouchableOpacity>
 
       {/* Main control card */}
@@ -836,10 +846,10 @@ function DeviceControl({ mac, onBack }) {
           />
           <Text style={styles.controlStatusText}>
             {device.status !== "online"
-              ? "The device is offline"
+              ? t("control.deviceOffline")
               : isOn
-                ? "The device is currently ON"
-                : "The device is OFF"}
+                ? t("control.deviceOn")
+                : t("control.deviceOff")}
           </Text>
         </View>
 
@@ -849,7 +859,7 @@ function DeviceControl({ mac, onBack }) {
           activeOpacity={0.8}
           accessibilityRole="switch"
           accessibilityState={{ checked: isOn }}
-          accessibilityLabel="Toggle power"
+          accessibilityLabel={t("control.togglePower")}
           style={[
             styles.powerToggle,
             { backgroundColor: isOn ? colors.secondary : colors.surfaceVariant },
@@ -868,8 +878,7 @@ function DeviceControl({ mac, onBack }) {
         <View style={styles.safetyNote}>
           <Icon name="info" size={20} color={colors.onErrorContainer} />
           <Text style={styles.safetyText}>
-            {error ||
-              "Switching off may affect how the appliance performs on its next start-up cycle."}
+            {error || t("control.safetyNote")}
           </Text>
         </View>
       </View>
@@ -878,7 +887,7 @@ function DeviceControl({ mac, onBack }) {
       <View style={[surfaceCard, styles.detailCard]}>
         <View style={styles.metricHead}>
           <Icon name="schedule" size={16} color={colors.onSurfaceVariant} />
-          <Text style={styles.metricHeadLabel}>ACTIVE TIME (TODAY)</Text>
+          <Text style={styles.metricHeadLabel}>{t("control.activeTime").toUpperCase()}</Text>
         </View>
         <View style={styles.metricRow}>
           <Text style={styles.metricValue}>{hours}</Text>
@@ -891,7 +900,7 @@ function DeviceControl({ mac, onBack }) {
       <View style={[surfaceCard, styles.detailCard]}>
         <View style={styles.metricHead}>
           <Icon name="monitoring" size={16} color={colors.onSurfaceVariant} />
-          <Text style={styles.metricHeadLabel}>CURRENT USAGE</Text>
+          <Text style={styles.metricHeadLabel}>{t("control.currentUsage").toUpperCase()}</Text>
         </View>
         <View style={styles.metricRow}>
           <Text

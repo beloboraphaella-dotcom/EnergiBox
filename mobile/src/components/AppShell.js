@@ -5,6 +5,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import Icon from "./Icon";
 import { colors, spacing, radius, type } from "../theme";
+import { useLanguage } from "../context/LanguageContext";
 
 /** The mockups' mobile chrome: a translucent top app bar and a bottom tab
  * bar with a pill-shaped active tab.
@@ -24,6 +25,7 @@ export default function AppShell({
   headerRight,
   children,
 }) {
+  const { t } = useLanguage();
   const [moreOpen, setMoreOpen] = useState(false);
 
   const primary = items.slice(0, 3);
@@ -136,8 +138,7 @@ export default function AppShell({
             isActive={overflowActive || moreOpen}
             iconName="more_horiz"
             label={
-              overflow.find((i) => i.key === active)?.label ??
-              (moreOpen ? "More" : "More")
+              overflow.find((i) => i.key === active)?.label ?? t("shell.more")
             }
           />
         )}

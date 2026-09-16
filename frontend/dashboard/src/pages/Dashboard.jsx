@@ -9,7 +9,6 @@ import Devices from "./Devices";
 import Rooms from "./Rooms";
 import Admin from "./Admin";
 import { useLanguage } from "../context/LanguageContext";
-import { useTheme } from "../context/ThemeContext";
 import AppShell from "../components/AppShell";
 import Icon from "../components/Icon";
 import Overview from "./Overview";
@@ -37,7 +36,6 @@ export default function Dashboard({
   token, user, onLogout, onUpdateUser,
   homes = [], activeHomeId, onSwitchHome, onHomesChanged,
 }) {
-  const { theme, toggleTheme } = useTheme();
   const { t } = useLanguage();
   const isAdmin = user?.role === "admin";
   const [activeTab, setTab] = useState(isAdmin ? "admin" : "home");
@@ -315,14 +313,6 @@ export default function Dashboard({
               token={token}
             />
           )}
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="p-2 rounded-full text-on-surface-variant hover:bg-surface-container-low transition-colors active:scale-95 duration-150"
-            aria-label="Toggle theme"
-          >
-            <Icon name={theme === "dark" ? "light_mode" : "dark_mode"} />
-          </button>
         </>
       }
     >
@@ -629,7 +619,7 @@ function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHomesChanged, token
       setNewAddress("");
       setOpen(false);
     } catch (err) {
-      setError("Could not create home.");
+      setError(t("shell.createHomeError"));
     }
   };
 

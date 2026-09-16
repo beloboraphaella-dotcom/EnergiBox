@@ -6,6 +6,7 @@ import {
 import { api } from "../api";
 import Icon from "../components/Icon";
 import { colors, spacing, radius, type, glassCard } from "../theme";
+import { useLanguage } from "../context/LanguageContext";
 
 /** Settings, from the "Settings & Configuration" mockup.
  *
@@ -49,6 +50,7 @@ function NotCollected({ children }) {
 }
 
 export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser }) {
+  const { t, language, setLanguage } = useLanguage();
   const [devices, setDevices] = useState([]);
   const [tariffs, setTariffs] = useState(null);
 
@@ -79,9 +81,9 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
     try {
       await api.put("/auth/profile", { name: nameInput.trim() });
       onUpdateUser?.({ name: nameInput.trim() });
-      setProfileMsg("Saved.");
+      setProfileMsg("success");
     } catch (err) {
-      setProfileMsg(err.response?.data?.detail || "Could not save the profile.");
+      setProfileMsg(err.response?.data?.detail || t("settings.saveError"));
     }
     setProfileSaving(false);
   };
@@ -92,11 +94,11 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
     setPwMsg("");
     try {
       await api.put("/auth/password", { current_password: currentPw, new_password: newPw });
-      setPwMsg("Password updated.");
+      setPwMsg("success");
       setCurrentPw("");
       setNewPw("");
     } catch (err) {
-      setPwMsg(err.response?.data?.detail || "Could not update the password.");
+      setPwMsg(err.response?.data?.detail || t("settings.pwError"));
     }
     setPwSaving(false);
   };
@@ -107,27 +109,22 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
   const verified = tariffs?.verified;
 
   const RULES = [
-    { icon: "warning", title: "Consumption spike",
-      body: "Fires when a device draws more than 30% above the average computed from its own history." },
-    { icon: "schedule", title: "Extended runtime",
-      body: "Fires when a device has been running more than twice its usual session length." },
-    { icon: "energy_savings_leaf", title: "Unusual standby draw",
-      body: "Fires when a device draws power during an hour it has historically been idle." },
+    { icon: "warning", key: "spike" },
+    { icon: "schedule", key: "runtime" },
+    { icon: "energy_savings_leaf", key: "idle" },
   ];
 
   return (
     <ScrollView style={styles.page} contentContainerStyle={styles.pageContent}>
       <View>
-        <Text style={styles.title}>Settings & Configuration</Text>
-        <Text style={styles.subtitle}>
-          Manage your EnergiBox, billing rates, and account preferences.
-        </Text>
+        <Text style={styles.title}>{t("settings.title")}</Text>
+        <Text style={styles.subtitle}>{t("settings.subtitle")}</Text>
       </View>
 
       {/* Box setup */}
-      <Panel icon="router" title="Box Setup">
+      <Panel icon="router" title={t("settings.boxSetup")}>
         {devices.length === 0 ? (
-          <Text style={styles.body}>No EnergiBox paired yet.</Text>
+          <Text style={styles.body}>{t("settings.noBoxes")}</Text>
         ) : (
           devices.map((d) => {
             const online = d.status === "online";
@@ -146,7 +143,7 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
                       { color: online ? colors.secondary : colors.outline },
                     ]}
                   >
-                    {online ? "Online" : "Offline"}
+                    {online ? t("settings.online") : t("settings.offline")}
                   </Text>
                 </View>
                 {/* MAC and last contact on their own line: side by side they
@@ -163,19 +160,12 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
             );
           })
         )}
-        <NotCollected>
-          WiFi network, signal strength and firmware version are not shown because an
-          EnergiBox does not report them — its MQTT messages carry power readings only.
-          Surfacing them needs a firmware change.
-        </NotCollected>
+        <NotCollected>{t("settings.boxNotCollected")}</NotCollected>
       </Panel>
 
       {/* Billing */}
-      <Panel icon="payments" title="Billing Rates">
-        <Text style={styles.body}>
-          Cameroon's low-voltage tariff is progressive: the rate depends on how much the
-          household consumes over the month, and there is no peak/off-peak pricing.
-        </Text>
+      <Panel icon="payments" title={t("settings.billing")}>
+        <Text style={styles.body}>{t("settings.billingIntro")}</Text>
 
         <View style={styles.bandTable}>
           {bands.map((band, i) => {
@@ -198,7 +188,7 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
                 </Text>
                 <View style={styles.bandRight}>
                   {isVerified ? (
-                    <Text style={styles.bandApplied}>checked on a bill</Text>
+                    <Text style={styles.bandApplied}>{t("settings.appliedBand")}</Text>
                   ) : null}
                   <Text style={styles.bandPrice}>{band.fcfa_per_kwh} FCFA</Text>
                 </View>
@@ -211,67 +201,64 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
             should do, so it is stated rather than implied. */}
         <View style={styles.info}>
           <Icon name="info" size={20} color={colors.onSecondaryContainer} />
-          <Text style={styles.infoText}>
-            The month's total volume picks one rate, applied to every kWh of it — not each
-            band in turn. A month ending at 130 kWh is billed 130 × 79; cutting it to
-            110 kWh bills 110 × 50, so 20 kWh less costs 4 770 FCFA less. Every cost in
-            this app follows that rule.
-          </Text>
+          <Text style={styles.infoText}>{t("settings.billingThreshold")}</Text>
         </View>
 
         {tariffs?.vat && tariffs.vat.charged === false ? (
-          <Text style={styles.sourceText}>
-            No tax was charged on any of the bills checked, up to 216 kWh, so the app adds
-            none.
-          </Text>
+          <Text style={styles.sourceText}>{t("settings.billingNoVat")}</Text>
         ) : null}
 
         {tariffs?.source ? (
           <Text style={styles.sourceText}>
-            Source: {tariffs.source.regulator}, decision {tariffs.source.decision}.
+            {t("settings.tariffSource", {
+              regulator: tariffs.source.regulator,
+              decision: tariffs.source.decision,
+            })}
             {verified
-              ? ` Checked against ${verified.bills} ENEO bills (${verified.period}), up to ${verified.up_to_kwh} kWh per month. The bands above 400 kWh are published figures, not yet seen on a bill.`
+              ? " " +
+                t("settings.tariffVerified", {
+                  bills: verified.bills,
+                  period: verified.period,
+                  upTo: verified.up_to_kwh,
+                })
               : ""}
           </Text>
         ) : null}
       </Panel>
 
       {/* Alerts */}
-      <Panel icon="tune" title="Usage Alerts">
+      <Panel icon="tune" title={t("settings.alerts")}>
         {RULES.map((rule) => (
-          <View key={rule.title} style={styles.ruleRow}>
+          <View key={rule.key} style={styles.ruleRow}>
             <View style={styles.ruleIcon}>
               <Icon name={rule.icon} size={20} color={colors.secondary} />
             </View>
             <View style={styles.ruleBody}>
-              <Text style={styles.ruleTitle}>{rule.title}</Text>
-              <Text style={styles.ruleText}>{rule.body}</Text>
+              <Text style={styles.ruleTitle}>{t(`settings.rule.${rule.key}.title`)}</Text>
+              <Text style={styles.ruleText}>{t(`settings.rule.${rule.key}.body`)}</Text>
             </View>
           </View>
         ))}
-        <NotCollected>
-          These thresholds are not adjustable yet. The alert engine compares each device
-          against its own measured baseline rather than a figure you set.
-        </NotCollected>
+        <NotCollected>{t("settings.alertsNotConfigurable")}</NotCollected>
       </Panel>
 
       {/* Account */}
-      <Panel icon="manage_accounts" title="Account Settings">
-        <Text style={styles.sectionLabel}>PROFILE</Text>
-        <Text style={styles.fieldLabel}>Full name</Text>
+      <Panel icon="manage_accounts" title={t("settings.account")}>
+        <Text style={styles.sectionLabel}>{t("settings.profile").toUpperCase()}</Text>
+        <Text style={styles.fieldLabel}>{t("settings.fullName")}</Text>
         <TextInput
           style={styles.input}
           value={nameInput}
           onChangeText={setNameInput}
           placeholderTextColor={colors.outline}
         />
-        <Text style={styles.fieldLabel}>Email address</Text>
+        <Text style={styles.fieldLabel}>{t("settings.email")}</Text>
         <TextInput
           style={[styles.input, styles.inputDisabled]}
           value={user?.email || ""}
           editable={false}
         />
-        <Text style={styles.hint}>Changing the email address is not supported yet.</Text>
+        <Text style={styles.hint}>{t("settings.emailFixed")}</Text>
         <TouchableOpacity
           onPress={saveProfile}
           disabled={profileSaving}
@@ -281,22 +268,24 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
           {profileSaving ? (
             <ActivityIndicator color={colors.onSecondary} />
           ) : (
-            <Text style={styles.primaryLabel}>Save profile</Text>
+            <Text style={styles.primaryLabel}>{t("settings.saveProfile")}</Text>
           )}
         </TouchableOpacity>
         {profileMsg ? (
           <Text
             style={[
               styles.msg,
-              { color: profileMsg === "Saved." ? colors.secondary : colors.error },
+              { color: profileMsg === "success" ? colors.secondary : colors.error },
             ]}
           >
-            {profileMsg}
+            {profileMsg === "success" ? t("settings.saved") : profileMsg}
           </Text>
         ) : null}
 
-        <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>SECURITY</Text>
-        <Text style={styles.fieldLabel}>Current password</Text>
+        <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>
+          {t("settings.security").toUpperCase()}
+        </Text>
+        <Text style={styles.fieldLabel}>{t("settings.currentPassword")}</Text>
         <TextInput
           style={styles.input}
           value={currentPw}
@@ -305,13 +294,13 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
           placeholder="••••••••"
           placeholderTextColor={colors.outline}
         />
-        <Text style={styles.fieldLabel}>New password</Text>
+        <Text style={styles.fieldLabel}>{t("settings.newPassword")}</Text>
         <TextInput
           style={styles.input}
           value={newPw}
           onChangeText={setNewPw}
           secureTextEntry
-          placeholder="New password"
+          placeholder={t("settings.newPassword")}
           placeholderTextColor={colors.outline}
         />
         <TouchableOpacity
@@ -321,27 +310,51 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
           style={[styles.outlineButton, pwSaving && { opacity: 0.6 }]}
         >
           <Text style={styles.outlineLabel}>
-            {pwSaving ? "Saving…" : "Update password"}
+            {pwSaving ? t("settings.saving") : t("settings.updatePassword")}
           </Text>
         </TouchableOpacity>
         {pwMsg ? (
           <Text
             style={[
               styles.msg,
-              { color: pwMsg === "Password updated." ? colors.secondary : colors.error },
+              { color: pwMsg === "success" ? colors.secondary : colors.error },
             ]}
           >
-            {pwMsg}
+            {pwMsg === "success" ? t("settings.pwSaved") : pwMsg}
           </Text>
         ) : null}
 
+        <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>
+          {t("settings.language").toUpperCase()}
+        </Text>
+        <View style={styles.langRow}>
+          {[
+            { id: "en", label: "English" },
+            { id: "fr", label: "Français" },
+          ].map((opt) => {
+            const selected = language === opt.id;
+            return (
+              <TouchableOpacity
+                key={opt.id}
+                onPress={() => setLanguage(opt.id)}
+                activeOpacity={0.8}
+                style={[styles.langChip, selected && styles.langChipOn]}
+              >
+                <Text style={[styles.langLabel, selected && styles.langLabelOn]}>
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
         <TouchableOpacity onPress={onLogout} activeOpacity={0.7} style={styles.logoutRow}>
           <Icon name="logout" size={18} color={colors.error} />
-          <Text style={styles.logoutLabel}>Logout</Text>
+          <Text style={styles.logoutLabel}>{t("shell.logout")}</Text>
         </TouchableOpacity>
       </Panel>
 
-      <Text style={styles.version}>EnergiBox v1.0</Text>
+      <Text style={styles.version}>{t("settings.version", { version: "1.0" })}</Text>
     </ScrollView>
   );
 }
@@ -409,6 +422,16 @@ const styles = StyleSheet.create({
   },
   infoText: { ...type.labelSm, color: colors.onSecondaryContainer, flex: 1, lineHeight: 18 },
   sourceText: { ...type.labelSm, color: colors.outline, lineHeight: 18 },
+
+  langRow: { flexDirection: "row", gap: spacing.xs, marginTop: 6 },
+  langChip: {
+    paddingHorizontal: 16, paddingVertical: 7, borderRadius: radius.full,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.outlineVariant,
+  },
+  langChipOn: { backgroundColor: colors.secondaryContainer, borderColor: "transparent" },
+  langLabel: { ...type.labelSm, color: colors.onSurface },
+  langLabelOn: { color: colors.onSecondaryContainer },
 
   ruleRow: { flexDirection: "row", gap: spacing.xs + 4, alignItems: "flex-start" },
   ruleIcon: {

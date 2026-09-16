@@ -1,3 +1,14 @@
+// Copied from frontend/dashboard/src/context/translations.js.
+//
+// The two apps show the same screens and must say the same things, but
+// they are separate builds with separate module graphs — Metro cannot
+// reach into the web app's tree, and a shared package would be a
+// workspace this repo does not have. So the file is duplicated, and
+// backend/tests/test_i18n.py fails the moment the two copies drift or
+// either language is missing a key.
+//
+// Add a string here and in the web copy, in both languages, or the test
+// will say so.
 export const translations = {
   en: {
     // Sidebar nav

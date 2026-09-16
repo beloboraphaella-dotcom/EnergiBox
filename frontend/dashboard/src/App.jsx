@@ -4,7 +4,6 @@ import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Onboarding from "./pages/Onboarding";
-import { ThemeProvider } from "./context/ThemeContext";
 import { LanguageProvider } from "./context/LanguageContext";
 
 const API = "http://localhost:8000";
@@ -33,11 +32,9 @@ axios.interceptors.response.use(
 
 function App() {
   return (
-    <ThemeProvider>
-      <LanguageProvider>
-        <AppInner />
-      </LanguageProvider>
-    </ThemeProvider>
+    <LanguageProvider>
+      <AppInner />
+    </LanguageProvider>
   );
 }
 

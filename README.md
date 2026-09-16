@@ -122,9 +122,6 @@ else. `backend/.env.example` documents every variable. Never commit a real
 
 These are open, understood, and deliberately not papered over:
 
-- **Energy figures assume a perfect 2-second sample rate.** `SUM(watts)/1000/1800`
-  under-counts whenever a device is offline. Integrating over real timestamp
-  deltas would fix it.
 - **The tariff is verified up to 216 kWh, not beyond.** Every cost now
   goes through `backend/tariff.py`, which is checked against five real
   ENEO LV-DOMESTIC bills (April 2024 to November 2025) and the fifteen
@@ -139,11 +136,26 @@ These are open, understood, and deliberately not papered over:
   any bill observed — including at 216 kWh, above the 110 kWh exemption
   the regulator documents. That is an observation, not a rule, and a bill
   showing VAT would change it.
-- **A new database connection per query.** No pooling, and the MQTT path
-  opens roughly six per reading per device. This will not scale.
-- **Rate limiting is per process.** `backend/rate_limit.py` is in-memory, so
-  running multiple uvicorn workers multiplies the allowance.
-- **`baselines.avg_runtime_min` is never written**, so the extended-runtime
-  alert stays inert.
-- **The mobile app has no theme or translations**, unlike the web app, and
-  `expo-notifications` is installed but unused.
+- **Two optional migrations change how much the app knows.** Without
+  `002_reading_interval.sql` energy is computed from an assumed 2-second
+  cadence rather than the interval each reading actually stands for;
+  without `003_auth_rate_limit.sql` the auth budget is per worker rather
+  than shared. Both degrade to the previous behaviour and `GET /health`
+  reports which mode is running, so neither is urgent — but until they are
+  applied, a box that drops off the network quietly lowers the bill, and N
+  uvicorn workers give N times the login allowance.
+- **The runtime baseline is learned in memory.** `runtime.py` tracks
+  appliance sessions from the live stream, so restarting the backend drops
+  the sessions in progress; the next complete session resumes the
+  learning. Nothing wrong is ever written, but a restart-heavy deployment
+  learns more slowly.
+- **Three screens are English-only, in both apps**: alerts, suggestions
+  and the sign-in/onboarding flow. They predate the mockups and were never
+  rebuilt; everything drawn from a mockup is translated, and
+  `backend/tests/test_i18n.py` keeps the two apps' translation files
+  identical.
+- **There is no dark theme.** The web app used to carry a light/dark
+  toggle that set an attribute nothing read — the mockups' dark variant
+  remaps to tokens that are themselves light, so the design system has no
+  dark values to switch to. The dead control was removed rather than left
+  pretending; a real dark mode needs a dark palette from design.

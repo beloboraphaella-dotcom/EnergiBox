@@ -6,8 +6,10 @@ import {
 import { api } from "../api";
 import Icon from "./Icon";
 import { colors, radius, type } from "../theme";
+import { useLanguage } from "../context/LanguageContext";
 
 export default function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHomesChanged }) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
@@ -35,7 +37,7 @@ export default function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHome
       onSwitchHome(res.data.id);
       close();
     } catch (err) {
-      setError("Could not create home.");
+      setError(t("shell.createHomeError"));
     }
   };
 
@@ -52,7 +54,7 @@ export default function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHome
       <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
         <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={close}>
           <TouchableOpacity style={styles.sheet} activeOpacity={1} onPress={() => {}}>
-            <Text style={styles.sheetTitle}>Your Homes</Text>
+            <Text style={styles.sheetTitle}>{t("shell.yourHomes")}</Text>
             <FlatList
               data={homes}
               keyExtractor={(h) => String(h.id)}
@@ -66,7 +68,10 @@ export default function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHome
                   <View style={{ flex: 1 }}>
                     <Text style={styles.rowName}>{h.name}</Text>
                     <Text style={styles.rowSub}>
-                      {h.room_count} room{h.room_count !== 1 ? "s" : ""} · {h.device_count} device{h.device_count !== 1 ? "s" : ""}
+                      {h.room_count} {h.room_count === 1 ? t("shell.room") : t("shell.rooms")}
+                      {" · "}
+                      {h.device_count}{" "}
+                      {h.device_count === 1 ? t("shell.device") : t("shell.devicesLower")}
                     </Text>
                   </View>
                   {h.id === activeHomeId && <Text style={styles.rowCheck}>✓</Text>}
@@ -76,16 +81,16 @@ export default function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHome
 
             {adding ? (
               <View style={styles.addForm}>
-                <TextInput style={styles.input} placeholder="Home name" placeholderTextColor="#94a3b8" value={newName} onChangeText={setNewName} />
-                <TextInput style={styles.input} placeholder="Address (optional)" placeholderTextColor="#94a3b8" value={newAddress} onChangeText={setNewAddress} />
+                <TextInput style={styles.input} placeholder={t("shell.homeName")} placeholderTextColor="#94a3b8" value={newName} onChangeText={setNewName} />
+                <TextInput style={styles.input} placeholder={t("shell.homeAddress")} placeholderTextColor="#94a3b8" value={newAddress} onChangeText={setNewAddress} />
                 {!!error && <Text style={styles.errorText}>{error}</Text>}
                 <TouchableOpacity style={styles.createBtn} onPress={createHome}>
-                  <Text style={styles.createBtnText}>Create Home</Text>
+                  <Text style={styles.createBtnText}>{t("shell.createHome")}</Text>
                 </TouchableOpacity>
               </View>
             ) : (
               <TouchableOpacity style={styles.addBtn} onPress={() => setAdding(true)}>
-                <Text style={styles.addBtnText}>+ Add another home</Text>
+                <Text style={styles.addBtnText}>+ {t("shell.addHome")}</Text>
               </TouchableOpacity>
             )}
           </TouchableOpacity>

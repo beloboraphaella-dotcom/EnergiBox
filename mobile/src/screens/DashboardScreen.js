@@ -7,6 +7,7 @@ import Svg, { Circle, Path, Defs, LinearGradient, Stop } from "react-native-svg"
 import { api } from "../api";
 import Icon from "../components/Icon";
 import { colors, spacing, radius, type, glassCard, surfaceCard } from "../theme";
+import { useLanguage } from "../context/LanguageContext";
 
 // This card used to read "18:00 - 21:00 / High tariff period", mirroring
 // an advisor constant. Cameroon's low-voltage tariff has no time-of-day
@@ -56,6 +57,7 @@ function buildSpline(pts) {
 }
 
 export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }) {
+  const { t } = useLanguage();
   const [overview, setOverview] = useState(null);
   const [devices, setDevices] = useState([]);
   const [hourly, setHourly] = useState(null);
@@ -123,8 +125,8 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
           instead. */}
       <View style={styles.headerRow}>
         <View style={styles.headerText}>
-          <Text style={styles.title}>Overview</Text>
-          <Text style={styles.subtitle}>Real-time household energy metrics</Text>
+          <Text style={styles.title}>{t("overview.title")}</Text>
+          <Text style={styles.subtitle}>{t("overview.subtitle")}</Text>
         </View>
       </View>
 
@@ -132,7 +134,7 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
       <View style={[glassCard, styles.gaugeCard]}>
         <View style={styles.liveRow}>
           <View style={[styles.statusDot, { backgroundColor: colors.error }]} />
-          <Text style={styles.liveLabel}>LIVE</Text>
+          <Text style={styles.liveLabel}>{t("overview.live").toUpperCase()}</Text>
         </View>
 
         <View style={styles.gaugeWrap}>
@@ -151,7 +153,7 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
           </Svg>
           <View style={styles.gaugeCenter} pointerEvents="none">
             <Text style={styles.gaugeValue}>{live.value}</Text>
-            <Text style={styles.gaugeUnit}>{live.unit} Current</Text>
+            <Text style={styles.gaugeUnit}>{live.unit} {t("overview.current")}</Text>
           </View>
         </View>
       </View>
@@ -159,7 +161,7 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
       {/* Today's usage */}
       <View style={[surfaceCard, styles.statCard]}>
         <View style={styles.statTop}>
-          <Text style={styles.statLabel}>TODAY'S USAGE</Text>
+          <Text style={styles.statLabel}>{t("overview.todayUsage").toUpperCase()}</Text>
           <Icon name="electric_meter" size={24} color={colors.secondary} />
         </View>
         <View>
@@ -175,7 +177,7 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
             />
             <Text style={styles.statFoot}>
               {change > 0 ? "+" : ""}
-              {change}% vs yesterday
+              {change}% {t("overview.vsYesterday")}
             </Text>
           </View>
         </View>
@@ -184,7 +186,9 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
       {/* Estimated cost */}
       <View style={styles.costCard}>
         <View style={styles.statTop}>
-          <Text style={[styles.statLabel, { color: colors.primaryFixedDim }]}>EST. COST</Text>
+          <Text style={[styles.statLabel, { color: colors.primaryFixedDim }]}>
+            {t("overview.estCost").toUpperCase()}
+          </Text>
           <Icon name="payments" size={24} color={colors.secondaryFixed} />
         </View>
         <View>
@@ -193,7 +197,7 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
             <Text style={[styles.statUnit, { color: colors.primaryFixedDim }]}> FCFA</Text>
           </Text>
           <Text style={[styles.statFoot, { color: colors.primaryFixedDim, marginTop: 8 }]}>
-            Projected: {projectedFcfa.toLocaleString()} FCFA/mo
+            {t("overview.projected")}: {projectedFcfa.toLocaleString()} FCFA/{t("overview.perMonth")}
           </Text>
         </View>
       </View>
@@ -201,19 +205,24 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
       {/* Peak window */}
       <View style={[surfaceCard, styles.statCard]}>
         <View style={styles.statTop}>
-          <Text style={styles.statLabel}>PEAK TIME</Text>
+          <Text style={styles.statLabel}>{t("overview.peakTime").toUpperCase()}</Text>
           <Icon name="schedule" size={24} color={colors.tertiaryContainer} />
         </View>
         <View>
           <Text style={styles.peakValue}>
-            {peakHour === null ? "No readings yet" : `${String(peakHour).padStart(2, "0")}:00`}
+            {peakHour === null
+              ? t("overview.peakNone")
+              : `${String(peakHour).padStart(2, "0")}:00`}
           </Text>
           <View style={styles.statFootRow}>
             <Icon name="bolt" size={16} color={colors.tertiaryContainer} />
             <Text style={styles.statFoot}>
               {peakHour === null
-                ? "Busiest hour appears once data arrives"
-                : `${formatWatts(peakHourWatts).value} ${formatWatts(peakHourWatts).unit} at its busiest`}
+                ? t("overview.peakNoneHint")
+                : t("overview.peakDraw", {
+                    watts: formatWatts(peakHourWatts).value,
+                    unit: formatWatts(peakHourWatts).unit,
+                  })}
             </Text>
           </View>
         </View>
@@ -224,15 +233,15 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
 
       {/* Active devices */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Active Devices</Text>
+        <Text style={styles.sectionTitle}>{t("overview.activeDevices")}</Text>
         <TouchableOpacity onPress={onOpenDevices} activeOpacity={0.7}>
-          <Text style={styles.viewAll}>View All</Text>
+          <Text style={styles.viewAll}>{t("overview.viewAll")}</Text>
         </TouchableOpacity>
       </View>
 
       {devices.length === 0 ? (
         <View style={[surfaceCard, styles.emptyCard]}>
-          <Text style={styles.emptyText}>No devices paired yet.</Text>
+          <Text style={styles.emptyText}>{t("overview.noDevices")}</Text>
         </View>
       ) : (
         <View style={styles.deviceGrid}>
@@ -280,7 +289,7 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
                       { color: device.is_on ? colors.secondary : colors.outline },
                     ]}
                   >
-                    {device.is_on ? `${draw.value} ${draw.unit}` : "Off"}
+                    {device.is_on ? `${draw.value} ${draw.unit}` : t("overview.off")}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -293,6 +302,7 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
 }
 
 function PowerChart({ hourly, width }) {
+  const { t } = useLanguage();
   const HEIGHT = 200;
   const W = Math.max(width, 1);
 
@@ -313,7 +323,7 @@ function PowerChart({ hourly, width }) {
 
   return (
     <View style={[surfaceCard, styles.chartCard]}>
-      <Text style={styles.sectionTitle}>Power Usage</Text>
+      <Text style={styles.sectionTitle}>{t("overview.powerUsage")}</Text>
 
       <View style={{ height: HEIGHT, marginTop: spacing.md }}>
         {/* The web draws five faint horizontal rules behind the curve. */}
@@ -342,7 +352,7 @@ function PowerChart({ hourly, width }) {
           </Svg>
         ) : (
           <View style={styles.chartEmpty}>
-            <Text style={styles.emptyText}>No readings today yet.</Text>
+            <Text style={styles.emptyText}>{t("overview.noData")}</Text>
           </View>
         )}
       </View>

@@ -13,6 +13,7 @@ import { JetBrainsMono_500Medium } from "@expo-google-fonts/jetbrains-mono/500Me
 
 import { api, setLogoutHandler } from "./src/api";
 import { colors } from "./src/theme";
+import { LanguageProvider, useLanguage } from "./src/context/LanguageContext";
 import AppShell from "./src/components/AppShell";
 import Icon from "./src/components/Icon";
 import LoginScreen from "./src/screens/LoginScreen";
@@ -26,6 +27,19 @@ import SettingsScreen from "./src/screens/SettingsScreen";
 import HomeSwitcher from "./src/components/HomeSwitcher";
 
 export default function App() {
+  // The language provider wraps everything, so a screen can call t()
+  // wherever it is mounted — including the auth screens, which render
+  // before there is a session at all.
+  return (
+    <LanguageProvider>
+      <AppInner />
+    </LanguageProvider>
+  );
+}
+
+function AppInner() {
+  const { t } = useLanguage();
+
   // The mockups' typography is Hanken Grotesk / Inter / JetBrains Mono.
   // Nothing renders until they are resolved, otherwise every screen would
   // flash in the system font first.
@@ -113,14 +127,14 @@ export default function App() {
   // more screens, so the first three keep their place and the rest move
   // behind "More".
   const navItems = [
-    { key: "dashboard", icon: "dashboard", label: "Dashboard" },
-    { key: "devices", icon: "devices", label: "My Devices" },
-    { key: "alerts", icon: "notifications", label: "Alerts" },
-    { key: "suggestions", icon: "lightbulb", label: "Suggestions" },
-    { key: "profile", icon: "settings", label: "Settings" },
+    { key: "dashboard", icon: "dashboard", label: t("shell.dashboard") },
+    { key: "devices", icon: "devices", label: t("shell.devices") },
+    { key: "alerts", icon: "notifications", label: t("shell.alerts") },
+    { key: "suggestions", icon: "lightbulb", label: t("shell.suggestions") },
+    { key: "profile", icon: "settings", label: t("shell.settings") },
   ];
   const footerItems = [
-    { key: "logout", icon: "logout", label: "Logout", danger: true },
+    { key: "logout", icon: "logout", label: t("shell.logout"), danger: true },
   ];
 
   const handleNavigate = (key) => {

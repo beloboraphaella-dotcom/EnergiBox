@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import Icon from "../components/Icon";
 import { useLanguage } from "../context/LanguageContext";
-import { useTheme } from "../context/ThemeContext";
 
 const API = "http://localhost:8000";
 
@@ -62,7 +61,6 @@ function NotCollected({ children }) {
 
 export default function Settings({ token, user, homeId, onLogout, onUpdateUser }) {
   const { t, language, setLanguage } = useLanguage();
-  const { theme, toggleTheme } = useTheme();
 
   const [devices, setDevices] = useState([]);
   const [tariffs, setTariffs] = useState(null);
@@ -436,20 +434,6 @@ export default function Settings({ token, user, homeId, onLogout, onUpdateUser }
                   </button>
                 ))}
               </div>
-            </div>
-            <div>
-              <span className={labelClass}>{t("settings.theme")}</span>
-              <button
-                type="button"
-                onClick={toggleTheme}
-                className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-surface text-on-surface border border-outline-variant hover:bg-surface-container-low font-label-sm text-label-sm transition-colors"
-              >
-                <Icon
-                  name={theme === "dark" ? "dark_mode" : "light_mode"}
-                  style={{ fontSize: "18px" }}
-                />
-                {theme === "dark" ? t("settings.themeDark") : t("settings.themeLight")}
-              </button>
             </div>
           </div>
 
