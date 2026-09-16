@@ -2,9 +2,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-# Database connection URL
-# Format: mysql+pymysql://username:password@host/database_name
-DATABASE_URL = "mysql+pymysql://root:belobo2008%40@localhost/energibox"
+# Credentials live in config.py (environment / .env) — never in this file.
+from config import DATABASE_URL
 
 # Create the database engine
 engine = create_engine(DATABASE_URL)

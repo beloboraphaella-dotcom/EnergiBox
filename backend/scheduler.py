@@ -1,17 +1,9 @@
-import pymysql
 from datetime import datetime
 import threading
 import time
 
+from config import get_connection as get_db
 from mqtt_client import send_command, record_command_sent
-
-def get_db():
-    return pymysql.connect(
-        host="localhost",
-        user="root",
-        password="belobo2008@",
-        database="energibox"
-    )
 
 def check_schedules():
     """Check all active schedules and execute if time matches"""

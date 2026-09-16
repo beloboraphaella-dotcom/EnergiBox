@@ -1,13 +1,6 @@
-import pymysql
 from datetime import datetime
 
-def get_db():
-    return pymysql.connect(
-        host="localhost",
-        user="root",
-        password="belobo2008@",
-        database="energibox"
-    )
+from config import get_connection as get_db
 
 def compute_baseline(monitored_point_id):
     """Calculate average watts for a monitored point from last 100 readings"""

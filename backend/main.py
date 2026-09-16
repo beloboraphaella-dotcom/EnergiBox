@@ -5,10 +5,10 @@ from auth import (
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
+from config import CORS_ORIGINS, get_connection as get_raw_db
 from database import engine, Base
 from mqtt_client import start_mqtt
 from scheduler import start_scheduler
-import pymysql
 import re
 
 EMAIL_REGEX = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -31,19 +31,11 @@ scheduler_thread = start_scheduler()
 app = FastAPI(title="EnergiBox API", version="1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-def get_raw_db():
-    return pymysql.connect(
-        host="localhost",
-        user="root",
-        password="belobo2008@",
-        database="energibox"
-    )
 
 def _derive_is_on(watts, last_commanded_state):
     """Once a device has been sent a command, that command is the source

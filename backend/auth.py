@@ -1,20 +1,13 @@
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 import hashlib
-import pymysql
 
-# Security settings
-SECRET_KEY = "energibox-secret-key-2026"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
-
-def get_db():
-    return pymysql.connect(
-        host="localhost",
-        user="root",
-        password="belobo2008@",
-        database="energibox"
-    )
+from config import (
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    ALGORITHM,
+    SECRET_KEY,
+    get_connection as get_db,
+)
 
 def hash_password(password: str) -> str:
     """Hash password using SHA256"""

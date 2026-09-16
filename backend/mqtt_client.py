@@ -1,19 +1,15 @@
 import paho.mqtt.client as mqtt
 import json
 from datetime import datetime
-import pymysql
+
 from alert_engine import check_spike
-
-MQTT_BROKER = "192.168.1.168"
-MQTT_PORT = 1883
-
-def get_db():
-    return pymysql.connect(
-        host="localhost",
-        user="root",
-        password="belobo2008@",
-        database="energibox"
-    )
+from config import (
+    MQTT_BROKER,
+    MQTT_PASSWORD,
+    MQTT_PORT,
+    MQTT_USERNAME,
+    get_connection as get_db,
+)
 
 def get_monitored_point(mac):
     """Get monitored point id and name from MAC address"""
@@ -97,6 +93,10 @@ def start_mqtt():
     client = mqtt.Client()
     client.on_connect = on_connect
     client.on_message = on_message
+    # Only set credentials when the broker is configured to require them;
+    # an anonymous Mosquitto rejects a connection that sends a username.
+    if MQTT_USERNAME:
+        client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD or None)
     client.connect(MQTT_BROKER, MQTT_PORT, 60)
     client.loop_start()
     _mqtt_client = client

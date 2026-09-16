@@ -1,14 +1,7 @@
-import pymysql
 from datetime import datetime
 import anthropic
 
-def get_db():
-    return pymysql.connect(
-        host="localhost",
-        user="root",
-        password="belobo2008@",
-        database="energibox"
-    )
+from config import get_connection as get_db
 
 # SOCADEL peak hours (expensive) — 6am to 9am and 6pm to 9pm
 PEAK_HOURS = list(range(6, 9)) + list(range(18, 21))
