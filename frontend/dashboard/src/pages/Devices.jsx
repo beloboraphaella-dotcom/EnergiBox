@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import { LineChart, Line, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 import { useLanguage } from "../context/LanguageContext";
+import Icon from "../components/Icon";
 
 const API = "http://localhost:8000";
 
@@ -15,51 +16,68 @@ function normalizeMac(input) {
   return hex.toUpperCase().match(/.{2}/g).join(":");
 }
 
+/** Material Symbols glyph for a device, from its name. The backend only
+ * stores "appliance" or "socket", so the name is the only signal. Kept in
+ * step with the same helper on the dashboard and in the mobile app. */
 function getIcon(name = "", type = "appliance") {
-  if (type === "socket") return "🔌";
   const n = name.toLowerCase();
-  if (n.includes("ac") || n.includes("air")) return "❄️";
-  if (n.includes("fridge") || n.includes("refrigerator")) return "🧊";
-  if (n.includes("wash")) return "🧺";
-  if (n.includes("light") || n.includes("lamp") || n.includes("bulb")) return "💡";
-  if (n.includes("tv") || n.includes("television")) return "📺";
-  if (n.includes("charger") || n.includes("ev")) return "🔌";
-  if (n.includes("battery")) return "🔋";
-  if (n.includes("water") || n.includes("heater")) return "🚿";
-  if (n.includes("microwave") || n.includes("oven")) return "🍽️";
-  if (n.includes("coffee")) return "☕";
-  if (n.includes("fan")) return "🌀";
-  return "📦";
+  if (/frig|fridge|réfrig|refrig|freezer|congel/.test(n)) return "kitchen";
+  if (/clim|\bac\b|air|cond/.test(n)) return "ac_unit";
+  if (/heater|chauffe|boiler|ballon/.test(n)) return "water_heater";
+  if (/light|lamp|lumi|ampoule|bulb/.test(n)) return "lightbulb";
+  if (/tv|télé|tele|screen|television/.test(n)) return "tv";
+  if (/fan|ventil/.test(n)) return "mode_fan";
+  if (/pump|pompe/.test(n)) return "water_pump";
+  if (/wash|lave|linge/.test(n)) return "local_laundry_service";
+  if (/micro|oven|four/.test(n)) return "microwave";
+  if (/coffee|café|cafe/.test(n)) return "coffee_maker";
+  if (/charger|\bev\b|battery|batterie/.test(n)) return "battery_charging_full";
+  return type === "socket" ? "power" : "devices_other";
 }
 
 function Modal({ title, onClose, children }) {
   return (
-    <div style={s.overlay} onClick={onClose}>
-      <div style={s.modal} onClick={(e) => e.stopPropagation()}>
-        <div style={s.modalHeader}>
-          <h3 style={s.modalTitle}>{title}</h3>
-          <button style={s.modalClose} onClick={onClose}>✕</button>
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-on-surface/40 p-0 sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full sm:max-w-md bg-surface-container-lowest rounded-t-xl sm:rounded-xl border border-outline-variant/30 shadow-lg max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-md py-4 border-b border-outline-variant/20">
+          <h3 className="font-headline-md text-[20px] leading-[28px] font-semibold text-on-surface">
+            {title}
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="p-2 rounded-full text-on-surface-variant hover:bg-surface-container-low transition-colors active:scale-95 duration-150"
+          >
+            <Icon name="close" style={{ fontSize: "20px" }} />
+          </button>
         </div>
-        <div style={s.modalBody}>{children}</div>
+        <div className="p-md">{children}</div>
       </div>
     </div>
   );
 }
 
 export default function Devices({ token, homeId }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [devices, setDevices] = useState([]);
   const [rooms, setRooms] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [selectedMac, setSelectedMac] = useState(null);
-  const [activeModal, setActiveModal] = useState(null); // "device"
+  const [activeModal, setActiveModal] = useState(null);
   const [togglingMacs, setTogglingMacs] = useState({});
 
   const [newDevice, setNewDevice] = useState({ room_id: "", name: "", type: "appliance", mac: "" });
   const [deviceError, setDeviceError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const locale = language === "fr" ? "fr-FR" : "en-US";
   const authHeaders = { headers: { Authorization: `Bearer ${token}` } };
 
   const fetchDevices = async () => {
@@ -67,8 +85,10 @@ export default function Devices({ token, homeId }) {
     try {
       const res = await axios.get(`${API}/devices?home_id=${homeId}`, authHeaders);
       setDevices(res.data);
-    } catch (err) {}
-    setLoading(false);
+    } catch (err) {
+      // Left alone deliberately: a failed poll keeps the last good list on
+      // screen instead of blanking it.
+    }
   };
 
   const fetchRooms = async () => {
@@ -76,7 +96,9 @@ export default function Devices({ token, homeId }) {
     try {
       const res = await axios.get(`${API}/rooms?home_id=${homeId}`, authHeaders);
       setRooms(res.data);
-    } catch (err) {}
+    } catch (err) {
+      // Same reasoning as fetchDevices.
+    }
   };
 
   useEffect(() => {
@@ -95,21 +117,12 @@ export default function Devices({ token, homeId }) {
       await axios.post(`${API}/control/${d.mac}?command=${nextIsOn ? "ON" : "OFF"}`, null, authHeaders);
       setDevices((prev) => prev.map((x) => (x.mac === d.mac ? { ...x, is_on: nextIsOn } : x)));
       setTimeout(fetchDevices, 500);
-    } catch (err) {}
+    } catch (err) {
+      // The command did not reach the relay, so leave the switch as it was
+      // rather than showing a state the device never entered.
+    }
     setTogglingMacs((prev) => ({ ...prev, [d.mac]: false }));
   };
-
-  if (selectedMac) {
-    return <DeviceDetail mac={selectedMac} rooms={rooms} token={token} homeId={homeId} onBack={() => { setSelectedMac(null); fetchDevices(); }} />;
-  }
-
-  const filtered = devices.filter((d) => {
-    if (filter === "online") return d.status === "online";
-    if (filter === "offline") return d.status !== "online";
-    return true;
-  });
-
-  const totalKw = devices.reduce((sum, d) => sum + (d.watts || 0), 0) / 1000;
 
   const closeModals = () => {
     setActiveModal(null);
@@ -120,12 +133,12 @@ export default function Devices({ token, homeId }) {
   const submitNewDevice = async () => {
     const { room_id, name, type, mac } = newDevice;
     if (!room_id || !name.trim() || !mac.trim()) {
-      setDeviceError("Room, name and MAC address are required.");
+      setDeviceError(t("devices.errRequired"));
       return;
     }
     const normalizedMac = normalizeMac(mac.trim());
     if (!normalizedMac) {
-      setDeviceError("Enter a valid MAC address — 12 hex digits, e.g. AA:BB:CC:DD:EE:FF.");
+      setDeviceError(t("devices.errMac"));
       return;
     }
     setSaving(true);
@@ -138,154 +151,285 @@ export default function Devices({ token, homeId }) {
       await fetchDevices();
       closeModals();
     } catch (err) {
-      setDeviceError(err.response?.data?.detail || "Could not add device. Check the MAC address.");
+      setDeviceError(err.response?.data?.detail || t("devices.errAdd"));
     }
     setSaving(false);
   };
 
+  if (selectedMac) {
+    return (
+      <DeviceDetail
+        mac={selectedMac}
+        rooms={rooms}
+        token={token}
+        homeId={homeId}
+        onBack={() => { setSelectedMac(null); fetchDevices(); }}
+      />
+    );
+  }
+
+  // The mockup filters by room, not by connectivity.
+  const filtered = filter === "all" ? devices : devices.filter((d) => d.room_id === filter);
+  const activeCount = devices.filter((d) => d.is_on).length;
+  const totalWatts = devices.reduce((sum, d) => sum + (d.watts || 0), 0);
+  const totalKw = totalWatts / 1000;
+
   return (
-    <div>
-      <div style={s.pageHeader}>
+    <div className="max-w-7xl mx-auto py-lg">
+      {/* Page header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-lg gap-4">
         <div>
-          <h1 style={s.pageTitle}>{t("devices.title")}</h1>
-          <p style={s.pageSub}>{t("devices.subtitle")}</p>
+          <h2 className="font-headline-lg text-headline-lg text-on-background md:hidden mb-1">
+            {t("devices.title")}
+          </h2>
+          <p className="font-body-md text-body-md text-on-surface-variant">
+            {t("devices.subtitle")}
+          </p>
         </div>
-        <button style={s.addBtn} onClick={() => setActiveModal("device")} title="Add Appliance / Socket">+</button>
+        <button
+          type="button"
+          onClick={() => setActiveModal("device")}
+          className="flex items-center gap-2 bg-[#0D9488] hover:bg-[#0f766e] text-white px-6 py-3 rounded-full font-label-sm text-label-sm transition-all shadow-sm hover:shadow-md active:scale-95"
+        >
+          <Icon name="add" style={{ fontSize: "20px" }} />
+          {t("devices.addBox")}
+        </button>
       </div>
 
-      <div style={s.filterRow}>
-        {[
-          { id: "all", label: `${t("devices.all")} (${devices.length})` },
-          { id: "online", label: t("devices.online") },
-          { id: "offline", label: t("devices.offline") },
-        ].map((f) => (
-          <button
-            key={f.id}
-            style={{
-              ...s.filterBtn,
-              background: filter === f.id ? "#3b82f6" : "var(--app-border)",
-              color: filter === f.id ? "#fff" : "var(--app-text-secondary)",
-            }}
-            onClick={() => setFilter(f.id)}
-          >
-            {f.label}
-          </button>
-        ))}
+      {/* Summary stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-sm mb-lg">
+        <div className="glass-card-strong rounded-xl p-4 flex flex-col">
+          <span className="font-label-sm text-label-sm text-on-surface-variant mb-1">
+            {t("devices.total")}
+          </span>
+          <span className="font-headline-md text-headline-md text-on-background">
+            {devices.length}
+          </span>
+        </div>
+        <div className="glass-card-strong rounded-xl p-4 flex flex-col">
+          <span className="font-label-sm text-label-sm text-on-surface-variant mb-1">
+            {t("devices.activeNow")}
+          </span>
+          <span className="font-headline-md text-headline-md text-[#0D9488]">{activeCount}</span>
+        </div>
+        <div className="glass-card-strong rounded-xl p-4 flex flex-col col-span-2 bg-[#eff4ff] border-none shadow-[inset_0_2px_12px_rgba(0,0,0,0.02)]">
+          <span className="font-label-sm text-label-sm text-on-surface-variant mb-1">
+            {t("devices.totalDraw")}
+          </span>
+          <div className="flex items-baseline gap-2">
+            <span className="font-headline-lg text-headline-lg text-on-background">
+              {totalKw.toLocaleString(locale, { maximumFractionDigits: 1 })}
+            </span>
+            <span className="font-data-label text-data-label text-on-surface-variant">kW</span>
+          </div>
+        </div>
       </div>
 
-      <div style={s.listHeader}>
-        <h2 style={s.listTitle}>{t("devices.myHome")}</h2>
-        <p style={s.powerUse}>
-          {t("devices.powerUse")} <span style={s.powerUseVal}>{totalKw.toFixed(2)} kW</span>
-        </p>
+      {/* Room filters */}
+      <div className="flex gap-2 overflow-x-auto pb-4 mb-2 no-scrollbar">
+        {[{ id: "all", name: t("devices.allRooms") }, ...rooms.map((r) => ({ id: r.id, name: r.name }))].map(
+          (room) => (
+            <button
+              key={room.id}
+              type="button"
+              onClick={() => setFilter(room.id)}
+              className={
+                "px-4 py-1.5 rounded-full font-label-sm text-label-sm whitespace-nowrap transition-colors " +
+                (filter === room.id
+                  ? "bg-secondary-container text-on-secondary-container border border-transparent"
+                  : "bg-surface text-on-surface border border-outline-variant hover:bg-surface-container-low")
+              }
+            >
+              {room.name}
+            </button>
+          )
+        )}
       </div>
 
-      {loading ? (
-        <div style={s.emptyCard}><p style={{ color: "var(--app-text-muted)" }}>{t("devices.loading")}</p></div>
-      ) : filtered.length === 0 ? (
-        <div style={s.emptyCard}>
-          <p style={{ color: "var(--app-text-muted)", marginBottom: "12px" }}>{t("devices.noDevices")}</p>
-          <button style={s.addBtnSmall} onClick={() => setActiveModal("device")}>{t("devices.addFirstDevice")}</button>
+      {/* Device grid */}
+      {filtered.length === 0 ? (
+        <div className="glass-card-strong rounded-xl p-md text-center text-on-surface-variant">
+          {devices.length === 0 ? t("devices.empty") : t("devices.emptyRoom")}
         </div>
       ) : (
-        filtered.map((d) => (
-          <div
-            key={d.mac}
-            style={s.deviceRow}
-            role="button"
-            tabIndex={0}
-            onClick={() => setSelectedMac(d.mac)}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedMac(d.mac); } }}
-          >
-            <span style={s.deviceIconBox}>{getIcon(d.name, d.type)}</span>
-            <div style={s.deviceInfo}>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <p style={s.deviceName}>{d.name}</p>
-                <span style={s.typeTag}>{d.type === "socket" ? "Socket" : "Appliance"}</span>
-              </div>
-              <p style={s.deviceRoom}>{d.room}</p>
-              <p style={{ ...s.deviceStatus, color: d.status === "online" ? "#16a34a" : "#ef4444" }}>
-                {d.status === "online" ? t("devices.online") : t("devices.offline")}
-              </p>
-            </div>
-            <div style={s.deviceRight}>
-              <p style={s.deviceKw}>{(d.watts / 1000).toFixed(2)} kW</p>
-              <button
-                style={{
-                  ...s.statePill,
-                  border: "none", cursor: "pointer",
-                  background: d.is_on ? "#dcfce7" : "#fee2e2",
-                  color: d.is_on ? "#16a34a" : "#ef4444",
-                }}
-                onClick={(e) => toggleDevice(e, d)}
-                disabled={!!togglingMacs[d.mac]}
-                title={d.is_on ? "Turn off" : "Turn on"}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-sm">
+          {filtered.map((d) => {
+            const isOn = d.is_on;
+            return (
+              <div
+                key={d.id}
+                onClick={() => setSelectedMac(d.mac)}
+                className={
+                  "glass-card-strong rounded-xl p-5 hover:shadow-[0_4px_12px_rgba(0,106,97,0.05)] transition-shadow group relative cursor-pointer " +
+                  (isOn ? "" : "bg-surface/40 opacity-80")
+                }
               >
-                {d.is_on ? "On" : "Off"}
-              </button>
-            </div>
-            <span style={s.chevron}>›</span>
-          </div>
-        ))
+                <div className="flex justify-between items-start mb-4">
+                  <div
+                    className={
+                      "w-10 h-10 rounded-full flex items-center justify-center " +
+                      (isOn
+                        ? "bg-surface-container-low text-on-surface border border-outline-variant/50"
+                        : "bg-surface-container-lowest text-outline border border-outline-variant/30")
+                    }
+                  >
+                    <Icon name={getIcon(d.name, d.type)} />
+                  </div>
+
+                  {/* Toggle */}
+                  <button
+                    type="button"
+                    onClick={(e) => toggleDevice(e, d)}
+                    disabled={togglingMacs[d.mac]}
+                    aria-label={isOn ? t("devices.turnOff") : t("devices.turnOn")}
+                    aria-pressed={isOn}
+                    className="relative inline-block w-10 h-5 shrink-0 disabled:opacity-50"
+                  >
+                    <span
+                      className={
+                        "block h-5 w-10 rounded-full transition-colors duration-300 " +
+                        (isOn ? "bg-secondary" : "bg-outline-variant")
+                      }
+                    />
+                    <span
+                      className={
+                        "absolute top-0 w-5 h-5 rounded-full bg-white border-4 transition-all duration-300 " +
+                        (isOn ? "right-0 border-secondary" : "left-0 border-outline-variant")
+                      }
+                    />
+                  </button>
+                </div>
+
+                <div className="mb-4">
+                  <h3
+                    className={
+                      "font-body-lg text-body-lg font-semibold truncate " +
+                      (isOn ? "text-on-background" : "text-on-surface-variant")
+                    }
+                  >
+                    {d.name}
+                  </h3>
+                  <p
+                    className={
+                      "font-label-sm text-label-sm flex items-center gap-1 " +
+                      (isOn ? "text-on-surface-variant" : "text-outline")
+                    }
+                  >
+                    <span
+                      className={
+                        "w-2 h-2 rounded-full " +
+                        (d.status === "online" ? "bg-[#0D9488]" : "bg-outline-variant")
+                      }
+                    />
+                    {d.room}
+                  </p>
+                </div>
+
+                <div className="flex justify-between items-end mt-auto pt-4 border-t border-outline-variant/30">
+                  <div>
+                    <p
+                      className={
+                        "font-label-sm text-label-sm " +
+                        (isOn ? "text-on-surface-variant" : "text-outline")
+                      }
+                    >
+                      {t("devices.currentDraw")}
+                    </p>
+                    <p
+                      className={
+                        "font-data-label text-data-label " +
+                        (isOn ? "text-[#0D9488]" : "text-on-surface-variant")
+                      }
+                    >
+                      {Math.round(d.watts || 0)} W
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setSelectedMac(d.mac); }}
+                    aria-label={t("devices.edit")}
+                    className="p-1.5 rounded text-outline hover:text-on-surface hover:bg-surface-container transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                  >
+                    <Icon name="edit" style={{ fontSize: "18px" }} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
 
-      {/* ── Add Device modal ── */}
+      {/* Add device */}
       {activeModal === "device" && (
-        <Modal title="Add Appliance or Socket" onClose={closeModals}>
-          <label style={s.label}>Room</label>
-          <select
-            style={s.input}
-            value={newDevice.room_id}
-            onChange={(e) => setNewDevice({ ...newDevice, room_id: e.target.value })}
-          >
-            <option value="">Select a room...</option>
-            {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-          {rooms.length === 0 && (
-            <p style={s.infoTextMuted}>No rooms yet — go to Home → See Rooms to add one first.</p>
-          )}
-
-          <label style={s.label}>Name</label>
-          <input
-            style={s.input}
-            placeholder="e.g. Living Room TV"
-            value={newDevice.name}
-            onChange={(e) => setNewDevice({ ...newDevice, name: e.target.value })}
-          />
-
-          <label style={s.label}>Type</label>
-          <div style={s.typeRow}>
-            {["appliance", "socket"].map((t) => (
-              <button
-                key={t}
-                style={{
-                  ...s.typeChoice,
-                  background: newDevice.type === t ? "#3b82f6" : "var(--app-border)",
-                  color: newDevice.type === t ? "#fff" : "var(--app-text-secondary)",
-                }}
-                onClick={() => setNewDevice({ ...newDevice, type: t })}
+        <Modal title={t("devices.addBox")} onClose={closeModals}>
+          <div className="space-y-4">
+            <div>
+              <label className="font-label-sm text-label-sm text-on-surface-variant block mb-2">
+                {t("devices.room")}
+              </label>
+              <select
+                value={newDevice.room_id}
+                onChange={(e) => setNewDevice({ ...newDevice, room_id: e.target.value })}
+                className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/50 rounded-lg font-body-md text-body-md text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors"
               >
-                {t === "appliance" ? "Appliance (fixed device)" : "Socket (shared / mobile use)"}
-              </button>
-            ))}
+                <option value="">{t("devices.selectRoom")}</option>
+                {rooms.map((r) => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="font-label-sm text-label-sm text-on-surface-variant block mb-2">
+                {t("devices.name")}
+              </label>
+              <input
+                value={newDevice.name}
+                onChange={(e) => setNewDevice({ ...newDevice, name: e.target.value })}
+                placeholder={t("devices.namePlaceholder")}
+                className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/50 rounded-lg font-body-md text-body-md text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors"
+              />
+            </div>
+
+            <div>
+              <label className="font-label-sm text-label-sm text-on-surface-variant block mb-2">
+                {t("devices.type")}
+              </label>
+              <select
+                value={newDevice.type}
+                onChange={(e) => setNewDevice({ ...newDevice, type: e.target.value })}
+                className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/50 rounded-lg font-body-md text-body-md text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors"
+              >
+                <option value="appliance">{t("devices.appliance")}</option>
+                <option value="socket">{t("devices.socket")}</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="font-label-sm text-label-sm text-on-surface-variant block mb-2">
+                {t("devices.mac")}
+              </label>
+              <input
+                value={newDevice.mac}
+                onChange={(e) => setNewDevice({ ...newDevice, mac: e.target.value })}
+                placeholder="AA:BB:CC:DD:EE:FF"
+                className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/50 rounded-lg font-data-label text-data-label text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors"
+              />
+            </div>
+
+            {deviceError && (
+              <p className="font-label-sm text-label-sm text-error">{deviceError}</p>
+            )}
+
+            <button
+              type="button"
+              onClick={submitNewDevice}
+              disabled={saving}
+              className="w-full bg-secondary text-on-secondary font-label-sm text-label-sm py-3 rounded-lg hover:bg-on-secondary-container transition-colors shadow-sm disabled:opacity-60"
+            >
+              {saving ? t("devices.adding") : t("devices.addBox")}
+            </button>
           </div>
-
-          <label style={s.label}>EnergiBox MAC Address</label>
-          <input
-            style={s.input}
-            placeholder="AA:BB:CC:DD:EE:FF"
-            value={newDevice.mac}
-            onChange={(e) => setNewDevice({ ...newDevice, mac: e.target.value.toUpperCase() })}
-          />
-          <p style={s.infoTextMuted}>
-            If this EnergiBox hasn't connected before, it's registered offline and comes
-            online automatically the first time it publishes over MQTT.
-          </p>
-
-          {deviceError && <p style={s.errorText}>{deviceError}</p>}
-          <button style={s.saveBtn} onClick={submitNewDevice} disabled={saving}>
-            {saving ? "Adding..." : "Add Device"}
-          </button>
         </Modal>
       )}
     </div>
