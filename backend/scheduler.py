@@ -77,6 +77,13 @@ def _run_job(name, func):
         return None
 
 
+def close_stale_sessions():
+    import runtime
+    closed = runtime.close_stale()
+    if closed:
+        print(f"Closed {closed} runtime session(s) whose device went quiet")
+
+
 def refresh_baselines():
     from alert_engine import refresh_all_baselines
     updated = refresh_all_baselines()
@@ -106,6 +113,10 @@ def start_scheduler():
 
             _run_job("check_schedules", check_schedules)
             _run_job("mark_stale_devices_offline", mark_stale_devices_offline)
+            # An appliance that was running when its box dropped off the
+            # network would otherwise hold a session open forever and
+            # never contribute to its own runtime baseline.
+            _run_job("close_stale_sessions", close_stale_sessions)
 
             if now - last_baseline >= BASELINE_INTERVAL_SECONDS:
                 _run_job("refresh_baselines", refresh_baselines)

@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import runtime
 from config import get_connection as get_db
 
 # A baseline is only meaningful once there is enough history behind it.
@@ -106,6 +107,13 @@ def create_alert(monitored_point_id, alert_type, message):
 
 def check_spike(monitored_point_id, current_watts, appliance_name):
     """Check if current consumption is 30% above baseline"""
+    # The session tracker must see every reading, including the ones that
+    # arrive before this device has a baseline at all — otherwise the
+    # early return below would stop it ever learning how long the
+    # appliance normally runs, and the extended-runtime alert would stay
+    # as inert as it was.
+    session_minutes = runtime.observe(monitored_point_id, current_watts)
+
     conn = get_db()
     cursor = conn.cursor()
     
@@ -136,44 +144,40 @@ def check_spike(monitored_point_id, current_watts, appliance_name):
               f"(baseline: {avg_watts:.1f}W)")
     
     # Check extended runtime
-    check_extended_runtime(monitored_point_id, appliance_name)
+    check_extended_runtime(monitored_point_id, appliance_name, session_minutes)
     
     # Check idle waste
     check_idle_waste(monitored_point_id, current_watts, appliance_name)
-def check_extended_runtime(monitored_point_id, appliance_name):
-    """Alert when appliance runs much longer than normal"""
+def check_extended_runtime(monitored_point_id, appliance_name, current_runtime_min):
+    """Alert when an appliance runs much longer than it normally does.
+
+    The current run is measured by runtime.py, which tracks sessions as
+    readings arrive. What this used to do — count rows above 10 W among
+    the last 150 readings, consecutive or not, and call each one two
+    seconds — could neither tell one long run from an afternoon of
+    cycling nor report more than five minutes. The baseline it compares
+    against is written by that same tracker; before it, nothing wrote the
+    column and this alert never fired at all.
+    """
+    if current_runtime_min <= 0:
+        return
+
     conn = get_db()
     cursor = conn.cursor()
-    
-    # Get baseline runtime
     cursor.execute("""
         SELECT avg_runtime_min FROM baselines
         WHERE monitored_point_id = %s
     """, (monitored_point_id,))
-    
     result = cursor.fetchone()
-    
-    if not result or not result[0]:
-        conn.close()
-        return
-    
-    avg_runtime = result[0]
-    
-    # Count consecutive readings above 10W (appliance is ON)
-    cursor.execute("""
-        SELECT COUNT(*) FROM (
-            SELECT watts FROM readings
-            WHERE monitored_point_id = %s
-            AND watts > 10
-            ORDER BY timestamp DESC
-            LIMIT 150
-        ) recent
-    """, (monitored_point_id,))
-    
-    consecutive = cursor.fetchone()[0]
-    current_runtime_min = (consecutive * 2) / 60  # 2 seconds per reading
     conn.close()
-    
+
+    if not result or not result[0]:
+        # No sessions learned yet. Silence is the right answer: "longer
+        # than normal" means nothing before normal is known.
+        return
+
+    avg_runtime = result[0]
+
     if current_runtime_min > avg_runtime * 2:
         message = (
             f"{appliance_name} has been running for "
