@@ -1067,6 +1067,51 @@ def run_advisor_now(admin: dict = Depends(get_current_admin)):
     from ai_advisor import run_ai_advisor
     run_ai_advisor()
     return {"message": "AI advisor executed"}
+@app.get("/history/hourly")
+def get_hourly_history(home_id: int, user: dict = Depends(get_scoped_user)):
+    """Average power per hour of the day, for the 24-hour chart on the
+    dashboard. The other /history endpoints aggregate into kWh per day,
+    week or month; none of them resolve within a day, which is what the
+    overview chart plots.
+
+    Returns average watts for the whole household rather than kWh, because
+    the chart is a power curve. Note the aggregate is SUM(watts) / 1800,
+    not AVG(watts): rows from every device in the home land in the same
+    hour, so AVG would return the mean draw of a single device instead of
+    what the house pulled. 1800 is the samples-per-hour constant the rest
+    of the backend already assumes (one reading every 2 seconds).
+
+    An hour with no readings is reported as null so the client can tell
+    "the house drew nothing" apart from "we have no data"."""
+    conn = get_raw_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT HOUR(r.timestamp) AS hour, SUM(r.watts) / 1800 AS avg_watts, COUNT(*) AS samples
+        FROM readings r
+        JOIN monitored_points mp ON r.monitored_point_id = mp.id
+        JOIN rooms rm ON mp.room_id = rm.id
+        WHERE rm.home_id = %s AND DATE(r.timestamp) = CURDATE()
+        GROUP BY HOUR(r.timestamp)
+    """, (home_id,))
+    by_hour = {row[0]: (row[1], row[2]) for row in cursor.fetchall()}
+    conn.close()
+
+    points = []
+    for hour in range(24):
+        avg_watts, samples = by_hour.get(hour, (None, 0))
+        points.append({
+            "hour": hour,
+            "watts": round(avg_watts, 1) if avg_watts is not None else None,
+            "samples": samples,
+        })
+
+    measured = [p["watts"] for p in points if p["watts"] is not None]
+    return {
+        "points": points,
+        "peak_hour": max(by_hour, key=lambda h: by_hour[h][0]) if by_hour else None,
+        "max_watts": round(max(measured), 1) if measured else 0,
+    }
+
 @app.get("/history/daily")
 def get_daily_history(home_id: int, month: int = None, year: int = None, user: dict = Depends(get_scoped_user)):
     """Returns consumption per day for a given month"""

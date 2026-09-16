@@ -9,6 +9,10 @@ import Devices from "./Devices";
 import Rooms from "./Rooms";
 import Admin from "./Admin";
 import { useLanguage } from "../context/LanguageContext";
+import { useTheme } from "../context/ThemeContext";
+import AppShell from "../components/AppShell";
+import Icon from "../components/Icon";
+import Overview from "./Overview";
 
 const API = "http://localhost:8000";
 const COLORS = ["#6366f1", "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
@@ -33,6 +37,7 @@ export default function Dashboard({
   token, user, onLogout, onUpdateUser,
   homes = [], activeHomeId, onSwitchHome, onHomesChanged,
 }) {
+  const { theme, toggleTheme } = useTheme();
   const { t } = useLanguage();
   const isAdmin = user?.role === "admin";
   const [activeTab, setTab] = useState(isAdmin ? "admin" : "home");
@@ -256,213 +261,85 @@ export default function Dashboard({
         { id: "profile", icon: "👤", label: t("nav.profile") },
       ];
 
+  // Sidebar items. The mockups ship four; the app has more screens than
+  // that, so the extra ones are added here in the same style rather than
+  // being left unreachable. The bottom tab bar takes the first four plus
+  // "More", which opens the rest.
+  const navItems = isAdmin
+    ? [
+        { key: "admin", icon: "admin_panel_settings", labelKey: "shell.admin" },
+        { key: "profile", icon: "settings", labelKey: "shell.settings" },
+      ]
+    : [
+        { key: "home", icon: "dashboard", labelKey: "shell.dashboard" },
+        { key: "devices", icon: "devices", labelKey: "shell.devices" },
+        { key: "alerts", icon: "notifications", labelKey: "shell.alerts" },
+        { key: "history", icon: "monitoring", labelKey: "shell.history" },
+        { key: "rooms", icon: "meeting_room", labelKey: "shell.rooms" },
+        { key: "profile", icon: "settings", labelKey: "shell.settings" },
+      ];
+
+  const footerItems = [
+    { key: "logout", icon: "logout", labelKey: "shell.logout", danger: true },
+  ];
+
+  const handleNavigate = (key) => {
+    if (key === "logout") return onLogout();
+    if (key === "rooms") {
+      setTab("home");
+      setShowRooms(true);
+      return;
+    }
+    setShowRooms(false);
+    setTab(key);
+  };
+
+  const activeKey = showRooms && activeTab === "home" ? "rooms" : activeTab;
+  const activeItem = navItems.find((i) => i.key === activeKey);
+
   return (
-    <div style={s.page}>
-
-      {/* SIDEBAR */}
-      <div style={s.sidebar}>
-        {isAdmin ? (
-          <div style={s.sidebarHeader}>
-            <span style={s.sidebarLogo}>⚡</span>
-            <span style={s.sidebarBrand}>EnergiBox</span>
-          </div>
-        ) : (
-          <HomeSwitcher
-            homes={homes}
-            activeHomeId={activeHomeId}
-            onSwitchHome={onSwitchHome}
-            onHomesChanged={onHomesChanged}
-            token={token}
-          />
-        )}
-        <nav style={s.nav}>
-          {navTabs.map(tab => (
-            <button key={tab.id} style={{
-              ...s.navBtn,
-              background: activeTab === tab.id ? "#eff6ff" : "transparent",
-              color: activeTab === tab.id ? "#3b82f6" : "#666",
-              borderLeft: activeTab === tab.id ? "3px solid #3b82f6" : "3px solid transparent",
-              fontWeight: activeTab === tab.id ? "600" : "400",
-            }} onClick={() => { setTab(tab.id); setShowRooms(false); }}>
-              <span style={s.navIcon}>{tab.icon}</span>
-              <span>{tab.label}</span>
-            </button>
-          ))}
-        </nav>
-        <button style={s.logoutBtn} onClick={onLogout}>🚪 {t("nav.logout")}</button>
-      </div>
-
-      {/* MAIN */}
-      <div style={s.main}>
-        {isAdmin ? (
-          <Admin token={token} currentUserId={user?.id} />
-        ) : (
-          <>
-        {/* ── HOME TAB ── */}
-{activeTab === "home" && showRooms && (
-  <Rooms token={token} homeId={activeHomeId} onBack={() => setShowRooms(false)} />
-)}
-{activeTab === "home" && !showRooms && dashboard && (
-  <div>
-    {/* Header */}
-<div style={s.homeHeader}>
-  <div>
-    <p style={s.greeting}>
-      {new Date().getHours() < 12 ? t("home.goodMorning") :
-       new Date().getHours() < 18 ? t("home.goodAfternoon") : t("home.goodEvening")}
-    </p>
-    <h1 style={s.greetingName}>
-      {user?.name?.split(" ")[0] || "User"}
-    </h1>
-  </div>
-  <div style={s.headerRight}>
-    <div style={s.bellWrap}>
-      <span style={s.bellIcon}>🔔</span>
-      {dashboard.unread_alerts > 0 && localStorage.getItem("notificationsEnabled") !== "false" && (
-        <span style={s.bellBadge}>{dashboard.unread_alerts}</span>
-      )}
-    </div>
-  </div>
-</div>
-
-    {/* Hero card */}
-    <div style={s.heroCard}>
-      <div style={s.heroLeft}>
-        <div style={s.heroTopRow}>
-          <div>
-            <p style={s.heroLabel}>⚡ {t("home.currentConsumption")}</p>
-            <p style={s.heroWatts}>
-              {(dashboard.appliances.reduce((sum, a) => sum + a.watts, 0) / 1000).toFixed(2)} <span style={{fontSize:"18px", fontWeight:"400"}}>kW</span>
-            </p>
-          </div>
-          <span style={s.liveBadge}>● {t("home.live")}</span>
-        </div>
-        {/* Mini line chart */}
-        <div style={s.miniChartWrap}>
-          <ResponsiveContainer width="100%" height={60}>
-            <LineChart data={dashboard.appliances.map((a, i) => ({name: a.name, watts: a.watts}))}>
-              <Line type="monotone" dataKey="watts" stroke="rgba(255,255,255,0.8)" strokeWidth={2} dot={false}/>
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-      <div style={s.heroDivider}/>
-      <div style={s.heroRight}>
-        <p style={s.heroLabel}>📋 {t("home.estimatedBill")}</p>
-        <p style={s.heroBill}>{dashboard.bill.estimated_fcfa.toLocaleString()} FCFA</p>
-        <p style={s.heroMonth}>{t("home.thisMonth")}</p>
-        <div style={s.projectedBadge}>
-          📈 {t("home.projected")}: {overviewData?.month?.projected_fcfa?.toLocaleString() || "—"} FCFA
-        </div>
-      </div>
-    </div>
-
-    {/* My Rooms */}
-    <div style={s.section}>
-      <div style={s.sectionHeader}>
-        <h2 style={s.sectionTitle}>{t("home.myRooms")}</h2>
-        <button style={s.viewAllBtn} onClick={() => setShowRooms(true)}>{t("home.seeRooms")}</button>
-      </div>
-      {roomsData.length === 0 ? (
-        <div style={s.emptyCard}>
-          <p style={{ color: "var(--app-text-muted)", marginBottom: "12px" }}>{t("home.noRoomsYet")}</p>
-          <button style={s.addBtnSmall} onClick={() => setShowRooms(true)}>{t("home.addFirstRoom")}</button>
-        </div>
+    <AppShell
+      items={navItems}
+      footerItems={footerItems}
+      active={activeKey}
+      onNavigate={handleNavigate}
+      title={activeItem ? t(activeItem.labelKey) : "EnergiBox"}
+      headerRight={
+        <>
+          {!isAdmin && homes && (
+            <HomeSwitcher
+              homes={homes}
+              activeHomeId={activeHomeId}
+              onSwitchHome={onSwitchHome}
+              onHomesChanged={onHomesChanged}
+              token={token}
+            />
+          )}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="p-2 rounded-full text-on-surface-variant hover:bg-surface-container-low transition-colors active:scale-95 duration-150"
+            aria-label="Toggle theme"
+          >
+            <Icon name={theme === "dark" ? "light_mode" : "dark_mode"} />
+          </button>
+        </>
+      }
+    >
+      {isAdmin ? (
+        <Admin token={token} currentUserId={user?.id} />
       ) : (
-        <div style={s.roomsRow}>
-          {roomsData.map((room, i) => (
-            <div key={i} style={{
-              ...s.roomCard,
-              borderTop: `3px solid ${COLORS[i % COLORS.length]}`
-            }}>
-              <div style={s.roomTop}>
-                <span style={s.roomIcon}>🏠</span>
-              </div>
-              <p style={{...s.roomName, color: COLORS[i % COLORS.length]}}>{room.name}</p>
-              <p style={s.roomKw}>{room.kw} kW</p>
-              <p style={s.roomDevices}>{room.device_count} Device{room.device_count !== 1 ? "s" : ""}</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-
-    {/* AI Recommendation banner */}
-    {suggestions.filter(s2 => s2.status === "pending").length > 0 && (
-      <div style={s.aiBanner}>
-        <div style={s.aiBannerLeft}>
-          <span style={{fontSize:"28px"}}>🤖</span>
-          <div>
-            <p style={s.aiBannerTitle}>{t("home.aiRecommendation")}</p>
-            <p style={s.aiBannerText}>
-              {t("home.saveUpTo")}{" "}
-              <strong>
-                {suggestions
-                  .filter(s2 => s2.status === "pending")
-                  .reduce((sum, s2) => sum + s2.estimated_saving_fcfa, 0)
-                  .toLocaleString()} FCFA
-              </strong>{" "}
-              {t("home.withActions")}
-            </p>
-          </div>
-        </div>
-        <button style={s.aiBannerBtn} onClick={() => setTab("alerts")}>
-          {t("home.viewRecommendations")}
-        </button>
-      </div>
-    )}
-
-    {/* Recent Alerts */}
-    {alerts.length > 0 && (
-      <div style={s.section}>
-        <div style={s.sectionHeader}>
-          <h2 style={s.sectionTitle}>{t("home.recentAlerts")}</h2>
-          <button style={s.viewAllBtn} onClick={() => setTab("alerts")}>{t("home.viewAll")}</button>
-        </div>
-        {alerts.slice(0, 2).map((a, i) => (
-          <div key={i} style={s.recentAlertCard}>
-            <div style={{
-              ...s.recentAlertIcon,
-              background: a.type === "spike" ? "#fef2f2" : "#eff6ff",
-            }}>
-              {a.type === "spike" ? "⚠️" : "ℹ️"}
-            </div>
-            <div style={s.recentAlertText}>
-              <p style={s.recentAlertTitle}>{a.message.slice(0, 50)}...</p>
-              <p style={s.recentAlertTime}>{a.created_at}</p>
-            </div>
-            <span style={{
-              ...s.alertBadge,
-              background: a.type === "spike" ? "#fef2f2" : "#eff6ff",
-              color: a.type === "spike" ? "#ef4444" : "#3b82f6",
-            }}>
-              {a.type === "spike" ? "High" : "Info"}
-            </span>
-          </div>
-        ))}
-      </div>
-    )}
-
-    {/* Bottom stats bar */}
-    {overviewData && (
-      <div style={s.bottomBar}>
-        {[
-          { icon:"🔌", value:overviewData.devices.total, label:t("home.totalDevices"), sub:t("devices.online"), subColor:"#16a34a" },
-          { icon:"📶", value:overviewData.devices.online, label:t("home.onlineDevices"), sub:null },
-          { icon:"🛡", value:overviewData.devices.active_alerts, label:t("home.alertsLabel"), sub:t("home.active"), subColor:"#ef4444" },
-          { icon:"🌿", value:`${overviewData.month.kwh} kWh`, label:t("home.thisMonthKwh"), sub:`▲ ${overviewData.month.change_vs_last_month}%`, subColor:"#16a34a" },
-        ].map((item, i) => (
-          <div key={i} style={s.bottomBarItem}>
-            <span style={s.bottomBarIcon}>{item.icon}</span>
-            <p style={s.bottomBarValue}>{item.value}</p>
-            <p style={s.bottomBarLabel}>{item.label}</p>
-            {item.sub && <p style={{...s.bottomBarSub, color: item.subColor}}>{item.sub}</p>}
-          </div>
-        ))}
-      </div>
-    )}
-  </div>
-)}
+        <>
+          {activeTab === "home" && !showRooms && (
+            <Overview
+              token={token}
+              homeId={activeHomeId}
+              onOpenDevices={() => handleNavigate("devices")}
+            />
+          )}
+        {activeTab === "home" && showRooms && (
+          <Rooms token={token} homeId={activeHomeId} onBack={() => handleNavigate("home")} />
+        )}
 
         {/* ── DEVICES TAB ── */}
         {activeTab === "devices" && <Devices token={token} homeId={activeHomeId} />}
@@ -720,10 +597,9 @@ export default function Dashboard({
         {activeTab === "profile" && (
           <Profile token={token} user={user} homeId={activeHomeId} onLogout={onLogout} onUpdateUser={onUpdateUser} />
         )}
-          </>
-        )}
-      </div>
-    </div>
+        </>
+      )}
+    </AppShell>
   );
 }
 
@@ -758,46 +634,104 @@ function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHomesChanged, token
   };
 
   return (
-    <div style={s.switcherWrap}>
-      <button style={s.switcherTrigger} onClick={() => setOpen((v) => !v)}>
-        <span style={s.sidebarLogo}>⚡</span>
-        <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-          <p style={s.switcherHomeName}>{activeHome?.name || "EnergiBox"}</p>
-          <p style={s.switcherHint}>{t("nav.switchHome")} ▾</p>
-        </div>
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-container border border-outline-variant/50 text-on-surface hover:bg-surface-container-high transition-colors active:scale-95 duration-150 max-w-[180px]"
+      >
+        <Icon name="home" className="text-secondary" style={{ fontSize: "18px" }} />
+        <span className="font-label-sm text-label-sm truncate">
+          {activeHome?.name || "EnergiBox"}
+        </span>
+        <Icon
+          name={open ? "expand_less" : "expand_more"}
+          className="text-on-surface-variant"
+          style={{ fontSize: "18px" }}
+        />
       </button>
 
       {open && (
-        <div style={s.switcherOverlay} onClick={() => { setOpen(false); setAdding(false); }}>
-          <div style={s.switcherSheet} onClick={(e) => e.stopPropagation()}>
-            <p style={s.switcherTitle}>Your Homes</p>
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => {
+              setOpen(false);
+              setAdding(false);
+            }}
+          />
+          <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-xl bg-surface-container-lowest border border-outline-variant/30 shadow-lg overflow-hidden">
+            <p className="font-label-sm text-label-sm text-outline uppercase tracking-wider px-4 pt-4 pb-2">
+              {t("shell.yourHomes")}
+            </p>
+
             {homes.map((h) => (
               <button
                 key={h.id}
-                style={s.switcherRow}
-                onClick={() => { onSwitchHome(h.id); setOpen(false); }}
+                type="button"
+                onClick={() => {
+                  onSwitchHome(h.id);
+                  setOpen(false);
+                }}
+                className={
+                  "w-full flex items-center gap-3 px-4 py-3 text-left transition-colors " +
+                  (h.id === activeHomeId
+                    ? "bg-secondary-container text-on-secondary-container"
+                    : "text-on-surface hover:bg-surface-container-high")
+                }
               >
-                <span style={s.switcherRowIcon}>🏠</span>
-                <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-                  <p style={s.switcherRowName}>{h.name}</p>
-                  <p style={s.switcherRowSub}>{h.room_count} room{h.room_count !== 1 ? "s" : ""} · {h.device_count} device{h.device_count !== 1 ? "s" : ""}</p>
+                <Icon name="home" fill={h.id === activeHomeId} />
+                <div className="flex-1 min-w-0">
+                  <p className="font-body-md text-body-md truncate">{h.name}</p>
+                  <p className="font-label-sm text-label-sm text-on-surface-variant">
+                    {h.room_count} {h.room_count === 1 ? t("shell.room") : t("shell.rooms")} ·{" "}
+                    {h.device_count}{" "}
+                    {h.device_count === 1 ? t("shell.device") : t("shell.devicesLower")}
+                  </p>
                 </div>
-                {h.id === activeHomeId && <span style={s.switcherCheck}>✓</span>}
+                {h.id === activeHomeId && <Icon name="check" style={{ fontSize: "18px" }} />}
               </button>
             ))}
 
-            {adding ? (
-              <div style={s.switcherAddForm}>
-                <input style={s.switcherInput} placeholder="Home name" value={newName} onChange={(e) => setNewName(e.target.value)} />
-                <input style={s.switcherInput} placeholder="Address (optional)" value={newAddress} onChange={(e) => setNewAddress(e.target.value)} />
-                {error && <p style={{ color: "#ef4444", fontSize: "12px", margin: "0 0 8px" }}>{error}</p>}
-                <button style={s.switcherCreateBtn} onClick={createHome}>Create Home</button>
-              </div>
-            ) : (
-              <button style={s.switcherAddBtn} onClick={() => setAdding(true)}>+ Add another home</button>
-            )}
+            <div className="border-t border-outline-variant/30 p-4">
+              {adding ? (
+                <div className="space-y-2">
+                  <input
+                    className="w-full px-3 py-2 bg-surface-container-low border border-outline-variant/50 rounded-lg font-body-md text-body-md text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors"
+                    placeholder={t("shell.homeName")}
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                  />
+                  <input
+                    className="w-full px-3 py-2 bg-surface-container-low border border-outline-variant/50 rounded-lg font-body-md text-body-md text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors"
+                    placeholder={t("shell.homeAddress")}
+                    value={newAddress}
+                    onChange={(e) => setNewAddress(e.target.value)}
+                  />
+                  {error && (
+                    <p className="font-label-sm text-label-sm text-error">{error}</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={createHome}
+                    className="w-full bg-secondary text-on-secondary font-label-sm text-label-sm py-2.5 rounded-lg hover:bg-on-secondary-container transition-colors"
+                  >
+                    {t("shell.createHome")}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setAdding(true)}
+                  className="w-full flex items-center justify-center gap-2 text-secondary font-label-sm text-label-sm py-2 rounded-lg hover:bg-secondary/10 transition-colors"
+                >
+                  <Icon name="add" style={{ fontSize: "18px" }} />
+                  {t("shell.addHome")}
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

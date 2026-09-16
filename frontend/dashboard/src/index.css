@@ -8,9 +8,15 @@
    kept under distinct names rather than silently picking a winner. */
 
 @layer base {
+  /* The mockups put `bg-background` on <body>; React mounts inside #root,
+     so without this the page background shows through white on overscroll
+     and on pages shorter than the viewport. */
   body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    background-color: theme("colors.background");
+    color: theme("colors.on-background");
+    margin: 0;
   }
 }
 
