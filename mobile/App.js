@@ -1,19 +1,43 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { View, StyleSheet, ActivityIndicator, TouchableOpacity } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { StatusBar } from "expo-status-bar";
+import { useFonts } from "expo-font";
+import { HankenGrotesk_600SemiBold } from "@expo-google-fonts/hanken-grotesk/600SemiBold";
+import { HankenGrotesk_700Bold } from "@expo-google-fonts/hanken-grotesk/700Bold";
+import { Inter_400Regular } from "@expo-google-fonts/inter/400Regular";
+import { Inter_500Medium } from "@expo-google-fonts/inter/500Medium";
+import { Inter_600SemiBold } from "@expo-google-fonts/inter/600SemiBold";
+import { JetBrainsMono_500Medium } from "@expo-google-fonts/jetbrains-mono/500Medium";
 
 import { api, setLogoutHandler } from "./src/api";
+import { colors } from "./src/theme";
+import AppShell from "./src/components/AppShell";
+import Icon from "./src/components/Icon";
 import LoginScreen from "./src/screens/LoginScreen";
 import SignupScreen from "./src/screens/SignupScreen";
 import OnboardingScreen from "./src/screens/OnboardingScreen";
 import DashboardScreen from "./src/screens/DashboardScreen";
 import DevicesScreen from "./src/screens/DevicesScreen";
+import AlertsScreen from "./src/screens/AlertsScreen";
+import SuggestionsScreen from "./src/screens/SuggestionsScreen";
 import ProfileScreen from "./src/screens/ProfileScreen";
 import HomeSwitcher from "./src/components/HomeSwitcher";
 
 export default function App() {
+  // The mockups' typography is Hanken Grotesk / Inter / JetBrains Mono.
+  // Nothing renders until they are resolved, otherwise every screen would
+  // flash in the system font first.
+  const [fontsLoaded] = useFonts({
+    HankenGrotesk_600SemiBold,
+    HankenGrotesk_700Bold,
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    JetBrainsMono_500Medium,
+  });
+
   const [bootstrapping, setBootstrapping] = useState(true);
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
@@ -21,6 +45,7 @@ export default function App() {
   const [homes, setHomes] = useState(null); // null = not loaded yet
   const [activeHomeId, setActiveHomeId] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [devicesOnline, setDevicesOnline] = useState(null);
 
   // Load any persisted session on first launch.
   useEffect(() => {
@@ -84,14 +109,35 @@ export default function App() {
     setActiveHomeId(homeId);
   };
 
+  // Same nav model as the web: the mockups ship four tabs, the app has
+  // more screens, so the first three keep their place and the rest move
+  // behind "More".
+  const navItems = [
+    { key: "dashboard", icon: "dashboard", label: "Dashboard" },
+    { key: "devices", icon: "devices", label: "My Devices" },
+    { key: "alerts", icon: "notifications", label: "Alerts" },
+    { key: "suggestions", icon: "lightbulb", label: "Suggestions" },
+    { key: "profile", icon: "settings", label: "Settings" },
+  ];
+  const footerItems = [
+    { key: "logout", icon: "logout", label: "Logout", danger: true },
+  ];
+
+  const handleNavigate = (key) => {
+    if (key === "logout") return handleLogout();
+    setActiveTab(key);
+  };
+
+  const spinner = (
+    <View style={styles.loading}>
+      <ActivityIndicator size="large" color={colors.secondary} />
+    </View>
+  );
+
   let content;
 
-  if (bootstrapping) {
-    content = (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color="#3b82f6" />
-      </View>
-    );
+  if (!fontsLoaded || bootstrapping) {
+    content = spinner;
   } else if (!token) {
     content = authView === "signup" ? (
       <SignupScreen onSignupSuccess={handleAuthSuccess} onBackToLogin={() => setAuthView("login")} />
@@ -99,54 +145,47 @@ export default function App() {
       <LoginScreen onLogin={handleAuthSuccess} onGoToSignup={() => setAuthView("signup")} />
     );
   } else if (homes === null) {
-    content = (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color="#3b82f6" />
-      </View>
-    );
+    content = spinner;
   } else if (homes.length === 0) {
     content = <OnboardingScreen onComplete={fetchHomes} />;
   } else {
     content = (
-      <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-        <StatusBar style="dark" />
-        <View style={styles.header}>
-          <HomeSwitcher
-            homes={homes}
-            activeHomeId={activeHomeId}
-            onSwitchHome={handleSwitchHome}
-            onHomesChanged={fetchHomes}
-          />
-        </View>
-
-        <View style={styles.content}>
-          {activeTab === "dashboard" && <DashboardScreen homeId={activeHomeId} user={user} />}
-          {activeTab === "devices" && <DevicesScreen homeId={activeHomeId} />}
-          {activeTab === "profile" && <ProfileScreen user={user} onLogout={handleLogout} />}
-        </View>
-
-        <View style={styles.tabBar}>
-          {[
-            { id: "dashboard", icon: "⚡", label: "Dashboard" },
-            { id: "devices", icon: "🔌", label: "Devices" },
-            { id: "profile", icon: "👤", label: "Profile" },
-          ].map((tab) => (
-            <TouchableOpacity
-              key={tab.id}
-              style={styles.tabItem}
-              onPress={() => setActiveTab(tab.id)}
-            >
-              <Text style={styles.tabIcon}>{tab.icon}</Text>
-              <Text style={[
-                styles.tabLabel,
-                { color: activeTab === tab.id ? "#3b82f6" : "#94a3b8" },
-              ]}>
-                {tab.label}
-              </Text>
+      <AppShell
+        items={navItems}
+        footerItems={footerItems}
+        active={activeTab}
+        onNavigate={handleNavigate}
+        headerRight={
+          <>
+            <HomeSwitcher
+              homes={homes}
+              activeHomeId={activeHomeId}
+              onSwitchHome={handleSwitchHome}
+              onHomesChanged={fetchHomes}
+            />
+            <TouchableOpacity activeOpacity={0.7} style={styles.wifiButton}>
+              <Icon
+                name="wifi"
+                size={22}
+                color={devicesOnline ? colors.secondary : colors.outline}
+              />
             </TouchableOpacity>
-          ))}
-        </View>
-      </SafeAreaView>
+          </>
+        }
+      >
+        <StatusBar style="dark" />
+        {activeTab === "dashboard" && (
+          <DashboardScreen
+            homeId={activeHomeId}
+            onOpenDevices={() => setActiveTab("devices")}
+            onOnlineCount={setDevicesOnline}
+          />
+        )}
+        {activeTab === "devices" && <DevicesScreen homeId={activeHomeId} />}
+        {activeTab === "alerts" && <AlertsScreen homeId={activeHomeId} />}
+        {activeTab === "suggestions" && <SuggestionsScreen homeId={activeHomeId} />}
+        {activeTab === "profile" && <ProfileScreen user={user} onLogout={handleLogout} />}
+      </AppShell>
     );
   }
 
@@ -154,23 +193,11 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  loading: { flex: 1, backgroundColor: "#f8fafc", justifyContent: "center", alignItems: "center" },
-  container: { flex: 1, backgroundColor: "#f8fafc" },
-  header: {
-    flexDirection: "row", alignItems: "center", minHeight: 64,
-    backgroundColor: "#fff", borderBottomWidth: 1, borderBottomColor: "#f1f5f9",
-    paddingVertical: 8,
+  wifiButton: { padding: 6, borderRadius: 999 },
+  loading: {
+    flex: 1,
+    backgroundColor: colors.background,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  content: { flex: 1 },
-  tabBar: {
-    flexDirection: "row",
-    backgroundColor: "#fff",
-    borderTopWidth: 1,
-    borderTopColor: "#f1f5f9",
-    paddingTop: 10,
-    paddingBottom: 8,
-  },
-  tabItem: { flex: 1, alignItems: "center", gap: 4 },
-  tabIcon: { fontSize: 22 },
-  tabLabel: { fontSize: 11, fontWeight: "600" },
 });

@@ -3,17 +3,15 @@ import {
   View, Text, StyleSheet, ScrollView,
   TouchableOpacity, RefreshControl
 } from 'react-native';
-import axios from 'axios';
+import { api } from '../api';
 
-const API = 'http://192.168.1.121:8000';
-
-export default function SuggestionsScreen() {
+export default function SuggestionsScreen({ homeId }) {
   const [suggestions, setSuggestions] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchSuggestions = async () => {
     try {
-      const res = await axios.get(`${API}/suggestions`);
+      const res = await api.get(`/suggestions?home_id=${homeId}`);
       setSuggestions(res.data);
     } catch (err) {}
   };
@@ -25,12 +23,12 @@ export default function SuggestionsScreen() {
   };
 
   const accept = async (id) => {
-    await axios.put(`${API}/suggestions/${id}/accept`);
+    await api.put(`/suggestions/${id}/accept`);
     fetchSuggestions();
   };
 
   const ignore = async (id) => {
-    await axios.put(`${API}/suggestions/${id}/ignore`);
+    await api.put(`/suggestions/${id}/ignore`);
     fetchSuggestions();
   };
 

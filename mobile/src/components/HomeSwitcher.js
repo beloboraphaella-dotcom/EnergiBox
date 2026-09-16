@@ -4,6 +4,8 @@ import {
   StyleSheet, FlatList
 } from "react-native";
 import { api } from "../api";
+import Icon from "./Icon";
+import { colors, radius, type } from "../theme";
 
 export default function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHomesChanged }) {
   const [open, setOpen] = useState(false);
@@ -38,16 +40,13 @@ export default function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHome
   };
 
   return (
-    <View style={{ flex: 1 }}>
-      <TouchableOpacity style={styles.trigger} onPress={() => setOpen(true)} activeOpacity={0.6}>
-        <Text style={styles.triggerLogo}>⚡</Text>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.triggerName}>{activeHome?.name || "EnergiBox"}</Text>
-          <View style={styles.triggerHintRow}>
-            <Text style={styles.triggerHint}>Switch home</Text>
-            <View style={styles.triangle} />
-          </View>
-        </View>
+    <View>
+      <TouchableOpacity style={styles.trigger} onPress={() => setOpen(true)} activeOpacity={0.7}>
+        <Icon name="home" size={18} color={colors.secondary} />
+        <Text style={styles.triggerName} numberOfLines={1}>
+          {activeHome?.name || "EnergiBox"}
+        </Text>
+        <Icon name="expand_more" size={18} color={colors.onSurfaceVariant} />
       </TouchableOpacity>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
@@ -97,20 +96,16 @@ export default function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHome
 }
 
 const styles = StyleSheet.create({
-  trigger: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingVertical: 20, flex: 1 },
-  triggerLogo: { fontSize: 20 },
-  triggerName: { fontSize: 16, fontWeight: "700", color: "#0f172a", paddingBottom: 2 },
-  triggerHintRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 3 },
-  triggerHint: { fontSize: 12, color: "#94a3b8" },
+  trigger: {
+    flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 170,
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: radius.full,
+    backgroundColor: colors.surfaceContainer,
+    borderWidth: 1, borderColor: "rgba(198, 198, 205, 0.5)",
+  },
+  triggerName: { ...type.labelSm, color: colors.onSurface, flexShrink: 1 },
   // Drawn as a real shape (not a "▾" glyph) so it renders identically on
   // every device/font instead of risking a missing-glyph box on some phones.
-  triangle: {
-    width: 0, height: 0,
-    borderLeftWidth: 4, borderRightWidth: 4, borderTopWidth: 5,
-    borderLeftColor: "transparent", borderRightColor: "transparent",
-    borderTopColor: "#94a3b8",
-    marginTop: 2,
-  },
 
   overlay: { flex: 1, backgroundColor: "rgba(15,23,42,0.4)", justifyContent: "flex-start" },
   sheet: { backgroundColor: "#fff", borderRadius: 16, margin: 14, marginTop: 60, padding: 14 },

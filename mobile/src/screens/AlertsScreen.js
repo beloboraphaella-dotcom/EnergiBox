@@ -3,17 +3,15 @@ import {
   View, Text, StyleSheet, ScrollView,
   RefreshControl
 } from 'react-native';
-import axios from 'axios';
+import { api } from '../api';
 
-const API = 'http://192.168.1.121:8000';
-
-export default function AlertsScreen() {
+export default function AlertsScreen({ homeId }) {
   const [alerts, setAlerts] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchAlerts = async () => {
     try {
-      const res = await axios.get(`${API}/alerts`);
+      const res = await api.get(`/alerts?home_id=${homeId}`);
       setAlerts(res.data);
     } catch (err) {}
   };
