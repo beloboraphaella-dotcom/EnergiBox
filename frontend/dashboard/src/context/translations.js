@@ -197,6 +197,17 @@ export const translations = {
     "detail.delete": "Delete device",
     "detail.deleteConfirm": "Delete {name}? Its readings, alerts and schedules will be removed. This cannot be undone.",
     "detail.cancel": "Cancel",
+  
+    // Remote control (mockup)
+    "control.open": "Remote control",
+    "control.back": "Back to device",
+    "control.togglePower": "Toggle power",
+    "control.deviceOn": "The device is currently ON",
+    "control.deviceOff": "The device is OFF",
+    "control.deviceOffline": "The device is offline",
+    "control.safetyNote": "Switching off may affect how the appliance performs on its next start-up cycle.",
+    "control.activeTime": "Active time (today)",
+    "control.currentUsage": "Current usage",
   },
 
   fr: {
@@ -397,5 +408,16 @@ export const translations = {
     "detail.delete": "Supprimer l'appareil",
     "detail.deleteConfirm": "Supprimer {name} ? Ses relev\u00e9s, alertes et programmations seront effac\u00e9s. Action irr\u00e9versible.",
     "detail.cancel": "Annuler",
+  
+    // Contr\u00f4le \u00e0 distance (maquette)
+    "control.open": "Contr\u00f4le \u00e0 distance",
+    "control.back": "Retour \u00e0 l'appareil",
+    "control.togglePower": "Allumer ou \u00e9teindre",
+    "control.deviceOn": "L'appareil est actuellement ALLUM\u00c9",
+    "control.deviceOff": "L'appareil est \u00c9TEINT",
+    "control.deviceOffline": "L'appareil est hors ligne",
+    "control.safetyNote": "L'extinction peut affecter les performances de l'appareil lors du prochain cycle de d\u00e9marrage.",
+    "control.activeTime": "Temps actif (aujourd'hui)",
+    "control.currentUsage": "Consommation actuelle",
   },
 };

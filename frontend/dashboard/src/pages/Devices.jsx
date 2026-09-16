@@ -69,6 +69,7 @@ export default function Devices({ token, homeId }) {
   const [rooms, setRooms] = useState([]);
   const [filter, setFilter] = useState("all");
   const [selectedMac, setSelectedMac] = useState(null);
+  const [controlling, setControlling] = useState(false);
   const [activeModal, setActiveModal] = useState(null);
   const [togglingMacs, setTogglingMacs] = useState({});
 
@@ -155,6 +156,16 @@ export default function Devices({ token, homeId }) {
     setSaving(false);
   };
 
+  if (selectedMac && controlling) {
+    return (
+      <DeviceControl
+        mac={selectedMac}
+        token={token}
+        onBack={() => setControlling(false)}
+      />
+    );
+  }
+
   if (selectedMac) {
     return (
       <DeviceDetail
@@ -162,7 +173,8 @@ export default function Devices({ token, homeId }) {
         rooms={rooms}
         token={token}
         homeId={homeId}
-        onBack={() => { setSelectedMac(null); fetchDevices(); }}
+        onBack={() => { setSelectedMac(null); setControlling(false); fetchDevices(); }}
+        onOpenControl={() => setControlling(true)}
       />
     );
   }
@@ -449,7 +461,7 @@ export default function Devices({ token, homeId }) {
  * door sensor the hardware does not have. That slot shows this device's
  * actual alerts instead — spikes, extended runtime and idle waste, which
  * the alert engine really produces. */
-function DeviceDetail({ mac, rooms, token, homeId, onBack }) {
+function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
   const { t, language } = useLanguage();
   const [device, setDevice] = useState(null);
   const [history, setHistory] = useState(null);
@@ -599,6 +611,15 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack }) {
                 (isOn ? "right-0 border-secondary" : "left-0 border-surface-tint")
               }
             />
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenControl?.()}
+            aria-label={t("control.open")}
+            title={t("control.open")}
+            className="p-2 rounded-full text-on-surface-variant hover:bg-surface-container-low transition-colors"
+          >
+            <Icon name="power_settings_new" />
           </button>
           <button
             type="button"
@@ -915,5 +936,238 @@ function HistoryBars({ history }) {
         ))}
       </div>
     </>
+  );
+}
+
+
+/** Full-screen remote control, from the "Contrôle à Distance" mockup.
+ *
+ * Reached from the device detail rather than straight from the list: the
+ * detail already carries a small switch, and this screen exists for the
+ * large touch target, so it sits one level deeper instead of competing
+ * with the detail for the same entry point.
+ *
+ * The mockup lays a decorative photograph across the background at 3%
+ * opacity, served from a temporary Google URL that will stop resolving.
+ * Purely ornamental, so it is dropped rather than baked in as a link that
+ * will break. */
+function DeviceControl({ mac, token, onBack }) {
+  const { t, language } = useLanguage();
+  const [device, setDevice] = useState(null);
+  const [history, setHistory] = useState(null);
+  const [toggling, setToggling] = useState(false);
+  const [error, setError] = useState("");
+
+  const locale = language === "fr" ? "fr-FR" : "en-US";
+  const authHeaders = { headers: { Authorization: `Bearer ${token}` } };
+
+  const fetchDevice = async () => {
+    try {
+      const res = await axios.get(`${API}/devices/${mac}`, authHeaders);
+      setDevice(res.data);
+    } catch (err) {
+      setError(t("detail.loadError"));
+    }
+  };
+
+  useEffect(() => {
+    fetchDevice();
+    const interval = setInterval(fetchDevice, 3000);
+    return () => clearInterval(interval);
+  }, [mac]);
+
+  useEffect(() => {
+    // Only feeds the draw bar's ceiling, so once per device is enough.
+    axios
+      .get(`${API}/devices/${mac}/history?range=24h`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then((res) => setHistory(res.data))
+      .catch(() => {});
+  }, [mac, token]);
+
+  const togglePower = async () => {
+    if (!device || toggling) return;
+    const nextIsOn = !device.is_on;
+    setToggling(true);
+    setError("");
+    try {
+      await axios.post(`${API}/control/${mac}?command=${nextIsOn ? "ON" : "OFF"}`, null, authHeaders);
+      setDevice((prev) => ({ ...prev, is_on: nextIsOn }));
+      setTimeout(fetchDevice, 500);
+    } catch (err) {
+      setError(err.response?.data?.detail || t("detail.toggleError"));
+    }
+    setToggling(false);
+  };
+
+  if (!device) {
+    return (
+      <div className="max-w-3xl mx-auto py-lg">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex items-center gap-2 text-on-surface-variant font-label-sm text-label-sm hover:text-on-surface transition-colors"
+        >
+          <Icon name="arrow_back" style={{ fontSize: "18px" }} />
+          {t("control.back")}
+        </button>
+        <p className="text-on-surface-variant mt-lg">{error || t("detail.loading")}</p>
+      </div>
+    );
+  }
+
+  const isOn = device.is_on;
+  const watts = device.watts || 0;
+  const draw = watts >= 1000
+    ? { value: (watts / 1000).toFixed(1), unit: "kW" }
+    : { value: Math.round(watts).toString(), unit: "W" };
+  // The bar reads against the busiest this device has been in 24h, the
+  // only ceiling the data actually supplies.
+  const ceiling = Math.max(history?.max_watts || 0, watts, 1);
+  const drawPct = Math.min((watts / ceiling) * 100, 100);
+
+  const totalMinutes = Math.round((device.runtime?.today_hours ?? 0) * 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  return (
+    <div className="max-w-3xl mx-auto py-lg flex flex-col">
+      <button
+        type="button"
+        onClick={onBack}
+        className="mb-sm flex items-center gap-2 text-on-surface-variant font-label-sm text-label-sm hover:text-on-surface transition-colors self-start"
+      >
+        <Icon name="arrow_back" style={{ fontSize: "18px" }} />
+        {t("control.back")}
+      </button>
+
+      {/* Main control card */}
+      <section className="glass-panel-light rounded-xl p-md md:p-lg flex flex-col items-center justify-center relative overflow-hidden mb-lg shadow-sm border border-outline-variant/30">
+        <div
+          className={
+            "absolute w-96 h-96 blur-[100px] rounded-full top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-colors duration-500 z-0 pointer-events-none " +
+            (isOn ? "bg-secondary/10" : "bg-surface-variant/20")
+          }
+        />
+
+        <div className="z-10 text-center mb-xl">
+          <h2 className="font-headline-lg text-headline-lg text-on-surface font-bold mb-2">
+            {device.name}
+          </h2>
+          <div className="flex items-center justify-center gap-2">
+            <Icon
+              name="power"
+              fill
+              className={isOn ? "text-secondary" : "text-on-surface-variant"}
+            />
+            <p className="font-body-lg text-body-lg text-on-surface-variant font-medium">
+              {device.status !== "online"
+                ? t("control.deviceOffline")
+                : isOn
+                  ? t("control.deviceOn")
+                  : t("control.deviceOff")}
+            </p>
+          </div>
+        </div>
+
+        <div className="z-10 mb-xl">
+          <button
+            type="button"
+            onClick={togglePower}
+            disabled={toggling}
+            aria-label={t("control.togglePower")}
+            aria-pressed={isOn}
+            className={
+              "relative w-48 h-24 rounded-full toggle-bg p-2 cursor-pointer focus:outline-none focus:ring-4 focus:ring-secondary/30 shadow-inner flex items-center disabled:opacity-60 " +
+              (isOn ? "bg-secondary glow-active" : "bg-surface-variant")
+            }
+          >
+            <div
+              className={
+                "toggle-knob w-20 h-20 bg-surface-container-lowest rounded-full shadow-md flex items-center justify-center transform " +
+                (isOn ? "translate-x-24" : "translate-x-0")
+              }
+            >
+              <Icon
+                name="power_settings_new"
+                className={
+                  "text-4xl font-bold transition-colors duration-300 " +
+                  (isOn ? "text-secondary" : "text-on-surface-variant")
+                }
+              />
+            </div>
+          </button>
+        </div>
+
+        <div className="z-10 bg-error-container/30 border border-error-container/50 rounded-lg p-sm flex items-start gap-3 w-full max-w-md">
+          <Icon name="info" className="text-on-error-container mt-0.5" />
+          <p className="font-label-sm text-label-sm text-on-error-container leading-relaxed">
+            {error || t("control.safetyNote")}
+          </p>
+        </div>
+      </section>
+
+      {/* Metrics */}
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-sm md:gap-md">
+        <div className="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-md shadow-sm hover:shadow-md transition-shadow duration-200">
+          <div className="flex items-center gap-2 mb-sm text-on-surface-variant">
+            <Icon name="schedule" style={{ fontSize: "16px" }} />
+            <h3 className="font-label-sm text-label-sm uppercase tracking-wider">
+              {t("control.activeTime")}
+            </h3>
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="font-display-metrics text-display-metrics text-on-surface">{hours}</span>
+            <span className="font-body-md text-body-md text-on-surface-variant font-medium">h</span>
+            <span className="font-display-metrics text-display-metrics text-on-surface ml-2">
+              {minutes}
+            </span>
+            <span className="font-body-md text-body-md text-on-surface-variant font-medium">m</span>
+          </div>
+        </div>
+
+        <div className="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-md shadow-sm hover:shadow-md transition-shadow duration-200 relative overflow-hidden">
+          <div className="absolute right-0 top-0 opacity-10 translate-x-4 -translate-y-4 pointer-events-none">
+            <Icon name="bolt" className="text-9xl" />
+          </div>
+          <div className="flex items-center gap-2 mb-sm text-on-surface-variant relative z-10">
+            <Icon name="monitoring" style={{ fontSize: "16px" }} />
+            <h3 className="font-label-sm text-label-sm uppercase tracking-wider">
+              {t("control.currentUsage")}
+            </h3>
+          </div>
+          <div className="flex items-baseline gap-2 relative z-10">
+            <span
+              className={
+                "font-display-metrics text-display-metrics " +
+                (isOn ? "text-secondary" : "text-on-surface-variant")
+              }
+            >
+              {draw.value}
+            </span>
+            <span
+              className={
+                "font-body-md text-body-md font-medium " +
+                (isOn ? "text-secondary" : "text-on-surface-variant")
+              }
+            >
+              {draw.unit}
+            </span>
+          </div>
+          <div className="mt-2 relative z-10">
+            <div className="w-full bg-surface-variant h-1.5 rounded-full overflow-hidden">
+              <div
+                className={
+                  "h-full rounded-full transition-all duration-500 " +
+                  (isOn ? "bg-secondary" : "bg-on-surface-variant")
+                }
+                style={{ width: `${drawPct}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }

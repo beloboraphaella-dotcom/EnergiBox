@@ -48,6 +48,7 @@ export default function DevicesScreen({ homeId }) {
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState("all");
   const [selectedMac, setSelectedMac] = useState(null);
+  const [controlling, setControlling] = useState(false);
   const [togglingMacs, setTogglingMacs] = useState({});
   const [addOpen, setAddOpen] = useState(false);
   const [newDevice, setNewDevice] = useState({ room_id: "", name: "", type: "appliance", mac: "" });
@@ -124,12 +125,17 @@ export default function DevicesScreen({ homeId }) {
     setSaving(false);
   };
 
+  if (selectedMac && controlling) {
+    return <DeviceControl mac={selectedMac} onBack={() => setControlling(false)} />;
+  }
+
   if (selectedMac) {
     return (
       <DeviceDetail
         mac={selectedMac}
         homeId={homeId}
-        onBack={() => { setSelectedMac(null); fetchAll(); }}
+        onBack={() => { setSelectedMac(null); setControlling(false); fetchAll(); }}
+        onOpenControl={() => setControlling(true)}
       />
     );
   }
@@ -438,7 +444,7 @@ const ALERT_TITLES = {
  * comparing against similar models needs a fleet baseline nobody gathers,
  * and door-open history needs a sensor the hardware lacks. That slot shows
  * this device's real alerts instead. */
-function DeviceDetail({ mac, homeId, onBack }) {
+function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
   const [device, setDevice] = useState(null);
   const [history, setHistory] = useState(null);
   const [range, setRange] = useState("24h");
@@ -515,6 +521,14 @@ function DeviceDetail({ mac, homeId, onBack }) {
           <Icon name={getIcon(device.name, device.type)} size={22} color={colors.secondary} />
           <Text style={styles.detailTitle} numberOfLines={1}>{device.name}</Text>
         </View>
+        <TouchableOpacity
+          onPress={onOpenControl}
+          activeOpacity={0.7}
+          accessibilityLabel="Remote control"
+          style={styles.iconButton}
+        >
+          <Icon name="power_settings_new" size={22} color={colors.onSurfaceVariant} />
+        </TouchableOpacity>
         <TouchableOpacity
           onPress={togglePower}
           disabled={toggling}
@@ -727,7 +741,228 @@ function HistoryBars({ history, width }) {
   );
 }
 
+/** Full-screen remote control, from the "Contr\u00f4le \u00e0 Distance" mockup.
+ *
+ * Reached from the device detail rather than straight from the list: the
+ * detail already carries a switch, and this screen exists for the large
+ * touch target, so it sits one level deeper instead of competing for the
+ * same entry point.
+ *
+ * The mockup lays a decorative photograph across the background at 3%
+ * opacity from a temporary Google URL that will stop resolving. Purely
+ * ornamental, so it is dropped rather than baked in as a broken link. */
+function DeviceControl({ mac, onBack }) {
+  const [device, setDevice] = useState(null);
+  const [ceilingWatts, setCeilingWatts] = useState(0);
+  const [toggling, setToggling] = useState(false);
+  const [error, setError] = useState("");
+
+  const fetchDevice = useCallback(async () => {
+    try {
+      const res = await api.get(`/devices/${mac}`);
+      setDevice(res.data);
+    } catch (err) {
+      setError("Could not load this device.");
+    }
+  }, [mac]);
+
+  useEffect(() => {
+    fetchDevice();
+    const interval = setInterval(fetchDevice, 3000);
+    return () => clearInterval(interval);
+  }, [fetchDevice]);
+
+  useEffect(() => {
+    // Only feeds the draw bar's ceiling, so once per device is enough.
+    api.get(`/devices/${mac}/history?range=24h`)
+      .then((res) => setCeilingWatts(res.data?.max_watts || 0))
+      .catch(() => {});
+  }, [mac]);
+
+  const togglePower = async () => {
+    if (!device || toggling) return;
+    const nextIsOn = !device.is_on;
+    setToggling(true);
+    setError("");
+    try {
+      await api.post(`/control/${mac}?command=${nextIsOn ? "ON" : "OFF"}`);
+      setDevice((prev) => ({ ...prev, is_on: nextIsOn }));
+      setTimeout(fetchDevice, 500);
+    } catch (err) {
+      setError(err.response?.data?.detail || "Could not switch the device.");
+    }
+    setToggling(false);
+  };
+
+  if (!device) {
+    return (
+      <View style={styles.detailLoading}>
+        <TouchableOpacity onPress={onBack} activeOpacity={0.7} style={styles.backRow}>
+          <Icon name="arrow_back" size={20} color={colors.onSurfaceVariant} />
+          <Text style={styles.backLabel}>Back to device</Text>
+        </TouchableOpacity>
+        {error ? <Text style={styles.emptyText}>{error}</Text> : <ActivityIndicator color={colors.secondary} />}
+      </View>
+    );
+  }
+
+  const isOn = device.is_on;
+  const watts = device.watts || 0;
+  const draw = watts >= 1000
+    ? { value: (watts / 1000).toFixed(1), unit: "kW" }
+    : { value: String(Math.round(watts)), unit: "W" };
+  const ceiling = Math.max(ceilingWatts, watts, 1);
+  const drawPct = Math.min((watts / ceiling) * 100, 100);
+
+  const totalMinutes = Math.round((device.runtime?.today_hours ?? 0) * 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  return (
+    <ScrollView style={styles.page} contentContainerStyle={styles.pageContent}>
+      <TouchableOpacity onPress={onBack} activeOpacity={0.7} style={styles.backRow}>
+        <Icon name="arrow_back" size={18} color={colors.onSurfaceVariant} />
+        <Text style={styles.backLabel}>Back to device</Text>
+      </TouchableOpacity>
+
+      {/* Main control card */}
+      <View style={[glassCard, styles.controlCard]}>
+        <Text style={styles.controlName}>{device.name}</Text>
+        <View style={styles.controlStatusRow}>
+          <Icon
+            name="power"
+            size={22}
+            color={isOn ? colors.secondary : colors.onSurfaceVariant}
+          />
+          <Text style={styles.controlStatusText}>
+            {device.status !== "online"
+              ? "The device is offline"
+              : isOn
+                ? "The device is currently ON"
+                : "The device is OFF"}
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          onPress={togglePower}
+          disabled={toggling}
+          activeOpacity={0.8}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: isOn }}
+          accessibilityLabel="Toggle power"
+          style={[
+            styles.powerToggle,
+            { backgroundColor: isOn ? colors.secondary : colors.surfaceVariant },
+            toggling && { opacity: 0.6 },
+          ]}
+        >
+          <View style={[styles.powerKnob, isOn ? styles.powerKnobOn : styles.powerKnobOff]}>
+            <Icon
+              name="power_settings_new"
+              size={36}
+              color={isOn ? colors.secondary : colors.onSurfaceVariant}
+            />
+          </View>
+        </TouchableOpacity>
+
+        <View style={styles.safetyNote}>
+          <Icon name="info" size={20} color={colors.onErrorContainer} />
+          <Text style={styles.safetyText}>
+            {error ||
+              "Switching off may affect how the appliance performs on its next start-up cycle."}
+          </Text>
+        </View>
+      </View>
+
+      {/* Metrics */}
+      <View style={[surfaceCard, styles.detailCard]}>
+        <View style={styles.metricHead}>
+          <Icon name="schedule" size={16} color={colors.onSurfaceVariant} />
+          <Text style={styles.metricHeadLabel}>ACTIVE TIME (TODAY)</Text>
+        </View>
+        <View style={styles.metricRow}>
+          <Text style={styles.metricValue}>{hours}</Text>
+          <Text style={styles.metricUnitPlain}>h</Text>
+          <Text style={[styles.metricValue, { marginLeft: spacing.xs }]}>{minutes}</Text>
+          <Text style={styles.metricUnitPlain}>m</Text>
+        </View>
+      </View>
+
+      <View style={[surfaceCard, styles.detailCard]}>
+        <View style={styles.metricHead}>
+          <Icon name="monitoring" size={16} color={colors.onSurfaceVariant} />
+          <Text style={styles.metricHeadLabel}>CURRENT USAGE</Text>
+        </View>
+        <View style={styles.metricRow}>
+          <Text
+            style={[
+              styles.metricValue,
+              { color: isOn ? colors.secondary : colors.onSurfaceVariant },
+            ]}
+          >
+            {draw.value}
+          </Text>
+          <Text
+            style={[
+              styles.metricUnitPlain,
+              { color: isOn ? colors.secondary : colors.onSurfaceVariant },
+            ]}
+          >
+            {draw.unit}
+          </Text>
+        </View>
+        <View style={styles.drawTrack}>
+          <View
+            style={[
+              styles.drawFill,
+              {
+                width: `${drawPct}%`,
+                backgroundColor: isOn ? colors.secondary : colors.onSurfaceVariant,
+              },
+            ]}
+          />
+        </View>
+      </View>
+    </ScrollView>
+  );
+}
+
 const styles = StyleSheet.create({
+  controlCard: { padding: spacing.md, alignItems: "center", gap: spacing.md, marginTop: spacing.xs },
+  controlName: { ...type.headlineLg, color: colors.onSurface, textAlign: "center" },
+  controlStatusRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  controlStatusText: { ...type.bodyLg, color: colors.onSurfaceVariant, flexShrink: 1 },
+
+  powerToggle: {
+    width: 192, height: 96, borderRadius: radius.full,
+    padding: 8, justifyContent: "center", marginVertical: spacing.sm,
+  },
+  powerKnob: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: colors.surfaceContainerLowest,
+    alignItems: "center", justifyContent: "center",
+    position: "absolute",
+  },
+  powerKnobOn: { right: 8 },
+  powerKnobOff: { left: 8 },
+
+  safetyNote: {
+    flexDirection: "row", alignItems: "flex-start", gap: spacing.xs,
+    backgroundColor: "rgba(255, 218, 214, 0.3)",
+    borderWidth: 1, borderColor: "rgba(255, 218, 214, 0.5)",
+    borderRadius: radius.lg, padding: spacing.sm, width: "100%",
+  },
+  safetyText: { ...type.labelSm, color: colors.onErrorContainer, flex: 1, lineHeight: 18 },
+
+  metricHead: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  metricHeadLabel: { ...type.labelSm, color: colors.onSurfaceVariant, letterSpacing: 1 },
+  metricUnitPlain: { ...type.bodyMd, color: colors.onSurfaceVariant, marginBottom: 6 },
+  drawTrack: {
+    height: 6, borderRadius: radius.full,
+    backgroundColor: colors.surfaceVariant, overflow: "hidden", marginTop: spacing.xs,
+  },
+  drawFill: { height: "100%", borderRadius: radius.full },
+
   detailLoading: { flex: 1, padding: spacing.marginMobile, gap: spacing.md },
   backRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
   backLabel: { ...type.labelSm, color: colors.onSurfaceVariant },
