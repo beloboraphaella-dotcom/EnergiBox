@@ -1,6 +1,7 @@
 """Integration check for points 3-5. Stubs MySQL/MQTT, then drives the real
 FastAPI app through TestClient."""
 import os, pathlib, sys
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 os.environ.update(
@@ -110,6 +111,85 @@ tok = create_access_token(1, "owner@b.co", "owner")
 r = client.post("/admin/users", json={"name": "x", "email": "a@b.co", "password": "s3cret!"},
                 headers={"Authorization": f"Bearer {tok}"})
 check("POST /admin/users refuse un token non-admin (403)", r.status_code == 403, r.status_code)
+
+
+# ── Per-device history (device detail screen) ───────────────────────────
+print("\n== /devices/{mac}/history ==")
+
+class _HistoryDB:
+    """Fake MySQL that answers the endpoint's three queries in order."""
+    lastrowid = 1
+    def __init__(self, found=True):
+        self.found, self.calls, self._next = found, [], None
+    def cursor(self): return self
+    def execute(self, sql, params=()):
+        flat = " ".join(sql.split())
+        self.calls.append((flat, params))
+        if "FROM monitored_points mp" in flat:
+            self._next = (7,) if self.found else None
+        elif "HOUR(timestamp)" in flat:
+            self._rows = [(h, 3600.0, 1800) for h in (9, 10, 11)]
+        elif "DATE(timestamp)" in flat:
+            self._rows = [("2026-09-14", 120.0, 43200), ("2026-09-15", 140.0, 43200)]
+        elif "/ 1000 / 1800" in flat:
+            self._next = (4.5,)
+    def fetchone(self): return self._next
+    def fetchall(self): return getattr(self, "_rows", [])
+    def close(self): pass
+
+def _history(mac="AA:BB:CC:DD:EE:01", query="", found=True):
+    db = _HistoryDB(found)
+    with patch.object(main, "get_raw_db", return_value=db), \
+         patch.object(main, "_mac_home_id", return_value=1), \
+         patch.object(main, "_verify_home_ownership", return_value=None), \
+         patch.object(main, "get_account_status", return_value=("a@b.co", "owner", False)):
+        return client.get(f"/devices/{mac}/history{query}", headers={"Authorization": f"Bearer {TOKEN}"}), db
+
+TOKEN = __import__("auth").create_access_token(1, "a@b.co", "owner")
+
+r, db = _history()
+check("24h renvoie 24 tranches horaires", r.status_code == 200 and len(r.json()["buckets"]) == 24,
+      f"{r.status_code} {len(r.json().get('buckets', []))}")
+body = r.json()
+check("les heures sans relevé valent null, pas zéro",
+      any(b["watts"] is None for b in body["buckets"]))
+# The division happens in SQL, so the fake returns the post-division value
+# and the endpoint only rounds it. What is worth asserting is the divisor
+# actually present in the query.
+hourly_sql = next(c[0] for c in db.calls if "HOUR(timestamp)" in c[0])
+check("la requete horaire divise par 1800", "SUM(watts) / 1800" in hourly_sql, hourly_sql[:80])
+check("la valeur SQL est transmise telle quelle",
+      any(b["watts"] == 3600.0 for b in body["buckets"]),
+      [b["watts"] for b in body["buckets"] if b["watts"] is not None][:3])
+check("la derniere tranche est l'heure courante",
+      body["buckets"][-1]["label"] == f"{datetime.now().hour:02d}:00", body["buckets"][-1]["label"])
+check("le cout mensuel est calcule", body["cost"]["estimated_fcfa"] == round(4.5 * 79, 0), body["cost"])
+check("la projection est presente", body["cost"]["projected_kwh"] > 0, body["cost"])
+
+r, _ = _history(query="?range=7d")
+check("7d renvoie des tranches journalieres",
+      r.status_code == 200 and len(r.json()["buckets"]) == 2, r.status_code)
+r7, db7 = _history(query="?range=7d")
+daily_sql = next(c[0] for c in db7.calls if "DATE(timestamp)" in c[0])
+check("la requete journaliere divise par 43200", "SUM(watts) / 43200" in daily_sql, daily_sql[:80])
+check("la valeur journaliere est transmise telle quelle",
+      r7.json()["buckets"][0]["watts"] == 120.0, r7.json()["buckets"][0])
+
+r, _ = _history(query="?range=90d")
+check("un range invalide est refuse", r.status_code == 400, r.status_code)
+
+r, _ = _history(found=False)
+check("un MAC inconnu renvoie 404", r.status_code == 404, r.status_code)
+
+r = client.get("/devices/AA:BB/history")
+check("l'historique exige un jeton", r.status_code in (401, 403), r.status_code)
+
+# `range` is the query parameter name but shadows the builtin inside the
+# function; the alias is what keeps range(23, -1, -1) working.
+import inspect
+sig = inspect.signature(main.get_device_history)
+check("le parametre n'est pas nomme 'range' dans la fonction",
+      "range" not in sig.parameters, list(sig.parameters))
 
 print("\n" + ("TOUS LES TESTS PASSENT" if not fails else f"{len(fails)} ECHEC(S): {fails}"))
 sys.exit(1 if fails else 0)

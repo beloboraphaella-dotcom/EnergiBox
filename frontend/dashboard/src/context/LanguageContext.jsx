@@ -16,7 +16,15 @@ export function LanguageProvider({ children }) {
     document.documentElement.setAttribute("lang", language);
   }, [language]);
 
-  const t = (key) => translations[language]?.[key] ?? translations.en[key] ?? key;
+  // Values are substituted into {placeholders}; callers that pass nothing
+  // behave exactly as before.
+  const t = (key, vars) => {
+    const template = translations[language]?.[key] ?? translations.en[key] ?? key;
+    if (!vars) return template;
+    return template.replace(/\{(\w+)\}/g, (match, name) =>
+      Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match
+    );
+  };
 
   return (
     <LanguageContext.Provider value={{ language, setLanguage, t }}>

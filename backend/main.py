@@ -4,7 +4,8 @@ from auth import (
     get_account_status
 )
 from rate_limit import login_limiter, register_limiter
-from fastapi import FastAPI, HTTPException, Depends, Request
+from datetime import datetime
+from fastapi import FastAPI, HTTPException, Depends, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -804,6 +805,16 @@ def get_device_detail(mac: str, user: dict = Depends(get_mac_owner)):
     """, (monitored_point_id,))
     recent = list(reversed(cursor.fetchall()))
 
+    # The detail screen surfaces this device's own alerts. Filtering the
+    # home-wide /alerts by appliance name would mis-attribute them as soon
+    # as two devices share a name, so they are keyed by id here.
+    cursor.execute("""
+        SELECT type, message, read_status, created_at FROM alerts
+        WHERE monitored_point_id = %s
+        ORDER BY created_at DESC LIMIT 5
+    """, (monitored_point_id,))
+    device_alerts = cursor.fetchall()
+
     conn.close()
 
     return {
@@ -825,7 +836,119 @@ def get_device_detail(mac: str, user: dict = Depends(get_mac_owner)):
         "recent_readings": [
             {"watts": r[0], "timestamp": str(r[1])} for r in recent
         ],
+        "recent_alerts": [
+            {
+                "type": a[0],
+                "message": a[1],
+                "read": bool(a[2]),
+                "created_at": str(a[3]),
+            }
+            for a in device_alerts
+        ],
     }
+
+@app.get("/devices/{mac}/history")
+def get_device_history(
+    mac: str,
+    window: str = Query("24h", alias="range"),
+    user: dict = Depends(get_mac_owner),
+):
+    """Consumption history and running costs for one device.
+
+    The device-detail screen plots a power curve and shows a monthly cost,
+    neither of which any existing endpoint resolves per device:
+    /history/by-appliance is monthly and keyed by name, and /devices/{mac}
+    only carries the last 30 raw readings.
+
+    Buckets are average watts over the bucket, so the chart's Y axis reads
+    in W whatever the range. That is SUM(watts) divided by the number of
+    samples the bucket holds at one reading every 2 seconds — 1800 for an
+    hour, 43200 for a day — the same constant the rest of the backend
+    assumes. Empty buckets come back as null rather than zero, so the
+    client can tell "drew nothing" from "no data".
+
+    The query parameter is named `range`, which would shadow the builtin
+    inside this function, hence the alias.
+    """
+    if window not in ("24h", "7d", "30d"):
+        raise HTTPException(status_code=400, detail="range must be 24h, 7d or 30d")
+
+    conn = get_raw_db()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT mp.id FROM monitored_points mp
+        JOIN energiboxes e ON mp.energibox_id = e.id
+        WHERE e.mac_address = %s
+    """, (mac,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Device not found")
+    point_id = row[0]
+
+    if window == "24h":
+        cursor.execute("""
+            SELECT HOUR(timestamp) AS bucket, SUM(watts) / 1800 AS avg_watts, COUNT(*) AS samples
+            FROM readings
+            WHERE monitored_point_id = %s AND timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+            GROUP BY HOUR(timestamp)
+        """, (point_id,))
+        by_hour = {r[0]: (r[1], r[2]) for r in cursor.fetchall()}
+        # Oldest first, ending on the current hour, so the bars read left
+        # to right in time rather than 00:00-23:00 regardless of "now".
+        current_hour = datetime.now().hour
+        ordered_hours = [(current_hour - offset) % 24 for offset in range(23, -1, -1)]
+        buckets = [
+            {
+                "label": f"{hour:02d}:00",
+                "watts": round(by_hour[hour][0], 1) if hour in by_hour else None,
+                "samples": by_hour[hour][1] if hour in by_hour else 0,
+            }
+            for hour in ordered_hours
+        ]
+    else:
+        days = 7 if window == "7d" else 30
+        cursor.execute("""
+            SELECT DATE(timestamp) AS bucket, SUM(watts) / 43200 AS avg_watts, COUNT(*) AS samples
+            FROM readings
+            WHERE monitored_point_id = %s AND timestamp >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
+            GROUP BY DATE(timestamp)
+            ORDER BY bucket
+        """, (point_id, days))
+        buckets = [
+            {"label": str(r[0]), "watts": round(r[1], 1), "samples": r[2]}
+            for r in cursor.fetchall()
+        ]
+
+    # Month-to-date energy and cost for this device, projected the same way
+    # /stats/overview projects the whole home.
+    cursor.execute("""
+        SELECT SUM(watts) / 1000 / 1800
+        FROM readings
+        WHERE monitored_point_id = %s
+        AND MONTH(timestamp) = MONTH(NOW()) AND YEAR(timestamp) = YEAR(NOW())
+    """, (point_id,))
+    month_kwh = cursor.fetchone()[0] or 0
+    conn.close()
+
+    day_of_month = datetime.now().day or 1
+    projected_kwh = (month_kwh / day_of_month) * 30
+    measured = [b["watts"] for b in buckets if b["watts"] is not None]
+
+    return {
+        "range": window,
+        "buckets": buckets,
+        "max_watts": round(max(measured), 1) if measured else 0,
+        "cost": {
+            "month_kwh": round(month_kwh, 3),
+            "estimated_fcfa": round(month_kwh * 79, 0),
+            "daily_avg_fcfa": round((month_kwh * 79) / day_of_month, 0),
+            "projected_kwh": round(projected_kwh, 1),
+            "projected_fcfa": round(projected_kwh * 79, 0),
+        },
+    }
+
 
 @app.post("/control/{mac}")
 def control_device(mac: str, command: str, user: dict = Depends(get_mac_owner)):
@@ -1346,7 +1469,6 @@ def get_overview(home_id: int, user: dict = Depends(get_scoped_user)):
         return round((current - previous) / previous * 100, 1)
 
     # Projected bill (linear projection)
-    from datetime import datetime
     day_of_month = datetime.now().day
     days_in_month = 30
     projected_kwh = (month_kwh / day_of_month) * days_in_month if day_of_month > 0 else 0

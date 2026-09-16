@@ -415,16 +415,54 @@ export default function DevicesScreen({ homeId }) {
   );
 }
 
+const ALERT_ICONS = {
+  spike: "warning",
+  extended_runtime: "schedule",
+  idle_waste: "energy_savings_leaf",
+};
+
+const ALERT_TITLES = {
+  spike: "Consumption spike",
+  extended_runtime: "Extended runtime",
+  idle_waste: "Unusual standby draw",
+};
+
+/** Device detail, from the "Refrigerator Details" mockup.
+ *
+ * The mockup is marked class="dark", but the design system has no dark
+ * values — every `dark:` token resolves to a light colour. Rendered as
+ * drawn it puts pale blue text on white, so the light palette, which is
+ * the real design, is what this reproduces.
+ *
+ * Its two insight cards describe data the platform does not collect:
+ * comparing against similar models needs a fleet baseline nobody gathers,
+ * and door-open history needs a sensor the hardware lacks. That slot shows
+ * this device's real alerts instead. */
 function DeviceDetail({ mac, homeId, onBack }) {
   const [device, setDevice] = useState(null);
+  const [history, setHistory] = useState(null);
+  const [range, setRange] = useState("24h");
   const [toggling, setToggling] = useState(false);
+  const [error, setError] = useState("");
+  const { width } = useWindowDimensions();
 
   const fetchDevice = useCallback(async () => {
     try {
       const res = await api.get(`/devices/${mac}`);
       setDevice(res.data);
-    } catch (err) {}
+    } catch (err) {
+      setError("Could not load this device.");
+    }
   }, [mac]);
+
+  const fetchHistory = useCallback(async () => {
+    try {
+      const res = await api.get(`/devices/${mac}/history?range=${range}`);
+      setHistory(res.data);
+    } catch (err) {
+      // The chart falls back to its empty state; the rest of the screen stays.
+    }
+  }, [mac, range]);
 
   useEffect(() => {
     fetchDevice();
@@ -432,78 +470,342 @@ function DeviceDetail({ mac, homeId, onBack }) {
     return () => clearInterval(interval);
   }, [fetchDevice]);
 
+  useEffect(() => { fetchHistory(); }, [fetchHistory]);
+
   const togglePower = async () => {
+    if (!device || toggling) return;
+    const nextIsOn = !device.is_on;
     setToggling(true);
+    setError("");
     try {
-      await api.post(`/control/${mac}?command=${device.is_on ? "OFF" : "ON"}`);
+      await api.post(`/control/${mac}?command=${nextIsOn ? "ON" : "OFF"}`);
+      setDevice((prev) => ({ ...prev, is_on: nextIsOn }));
       setTimeout(fetchDevice, 500);
-    } catch (err) {}
+    } catch (err) {
+      setError(err.response?.data?.detail || "Could not switch the device.");
+    }
     setToggling(false);
   };
 
   if (!device) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color="#3b82f6" />
+      <View style={styles.detailLoading}>
+        <TouchableOpacity onPress={onBack} activeOpacity={0.7} style={styles.backRow}>
+          <Icon name="arrow_back" size={20} color={colors.onSurfaceVariant} />
+          <Text style={styles.backLabel}>Back to devices</Text>
+        </TouchableOpacity>
+        {error ? <Text style={styles.emptyText}>{error}</Text> : <ActivityIndicator color={colors.secondary} />}
       </View>
     );
   }
 
+  const isOn = device.is_on;
+  const cost = history?.cost;
+  const alerts = device.recent_alerts ?? [];
+  const chartWidth = width - spacing.marginMobile * 2 - spacing.md * 2;
+
   return (
-    <ScrollView style={styles.page} contentContainerStyle={{ padding: 16 }}>
-      <TouchableOpacity onPress={onBack}><Text style={styles.backBtn}>‹ Back to Devices</Text></TouchableOpacity>
-
+    <ScrollView style={styles.page} contentContainerStyle={styles.pageContent}>
+      {/* Task header */}
       <View style={styles.detailHeader}>
-        <Text style={styles.detailIcon}>{getIcon(device.name, device.type)}</Text>
-        <View style={{ flex: 1 }}>
-          <View style={styles.deviceNameRow}>
-            <Text style={styles.detailName}>{device.name}</Text>
-            <View style={styles.typeTag}><Text style={styles.typeTagText}>{device.type === "socket" ? "Socket" : "Appliance"}</Text></View>
-          </View>
-          <Text style={styles.detailRoom}>📍 {device.room}</Text>
+        <TouchableOpacity onPress={onBack} activeOpacity={0.7} style={styles.iconButton}>
+          <Icon name="arrow_back" size={22} color={colors.onSurfaceVariant} />
+        </TouchableOpacity>
+        <View style={styles.detailTitleWrap}>
+          <Icon name={getIcon(device.name, device.type)} size={22} color={colors.secondary} />
+          <Text style={styles.detailTitle} numberOfLines={1}>{device.name}</Text>
         </View>
-      </View>
-
-      <View style={styles.powerCard}>
-        <View>
-          <Text style={styles.powerLabel}>Current Power</Text>
-          <Text style={styles.powerWatts}>{device.watts} <Text style={styles.powerUnit}>W</Text></Text>
-        </View>
-        <Switch
-          value={device.is_on}
-          onValueChange={togglePower}
+        <TouchableOpacity
+          onPress={togglePower}
           disabled={toggling}
-          trackColor={{ false: "rgba(255,255,255,0.3)", true: "rgba(255,255,255,0.5)" }}
-          thumbColor="#fff"
-        />
+          activeOpacity={0.7}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: isOn }}
+          style={[
+            styles.bigToggle,
+            { backgroundColor: isOn ? colors.secondary : colors.outlineVariant },
+            toggling && { opacity: 0.5 },
+          ]}
+        >
+          <View
+            style={[
+              styles.bigToggleKnob,
+              isOn ? styles.bigToggleKnobOn : styles.bigToggleKnobOff,
+              { borderColor: isOn ? colors.secondary : colors.surfaceTint },
+            ]}
+          />
+        </TouchableOpacity>
       </View>
 
-      <Text style={styles.sectionLabel}>RUNTIME</Text>
-      <View style={styles.runtimeRow}>
-        <View style={styles.runtimeCard}>
-          <Text style={styles.runtimeLabel}>Today</Text>
-          <Text style={styles.runtimeValue}>{device.runtime.today_hours}h</Text>
+      {error ? (
+        <View style={styles.errorBanner}>
+          <Icon name="error" size={20} color={colors.onErrorContainer} />
+          <Text style={styles.errorText}>{error}</Text>
         </View>
-        <View style={styles.runtimeCard}>
-          <Text style={styles.runtimeLabel}>7 Days</Text>
-          <Text style={styles.runtimeValue}>{device.runtime.past_7_days_hours}h</Text>
+      ) : null}
+
+      {/* Current draw */}
+      <View style={[glassCard, styles.detailCard]}>
+        <View style={styles.detailCardTop}>
+          <Text style={styles.detailCardLabel}>Current Draw</Text>
+          <Icon name="bolt" size={24} color={colors.secondary} />
         </View>
-        <View style={styles.runtimeCard}>
-          <Text style={styles.runtimeLabel}>30 Days</Text>
-          <Text style={styles.runtimeValue}>{device.runtime.past_30_days_hours}h</Text>
+        <View style={styles.metricRow}>
+          <Text style={styles.metricValue}>{Math.round(device.watts || 0)}</Text>
+          <Text style={styles.metricUnit}>W</Text>
+        </View>
+        <View style={styles.statusRow}>
+          <View
+            style={[
+              styles.statusDot,
+              { backgroundColor: isOn ? colors.secondaryFixed : colors.outline },
+            ]}
+          />
+          <Text style={styles.statusText}>
+            {device.status !== "online" ? "Device offline" : isOn ? "Drawing power" : "Idle"}
+          </Text>
         </View>
       </View>
 
-      <Text style={styles.sectionLabel}>DEVICE INFO</Text>
-      <View style={styles.card}>
-        <View style={styles.infoRow}><Text style={styles.infoLabel}>MAC Address</Text><Text style={styles.infoValue}>{device.mac}</Text></View>
-        <View style={[styles.infoRow, { borderBottomWidth: 0 }]}><Text style={styles.infoLabel}>Last Seen</Text><Text style={styles.infoValue}>{device.last_seen || "—"}</Text></View>
+      {/* Monthly cost */}
+      <View style={styles.costCardDetail}>
+        <Text style={styles.costLabel}>Estimated Monthly Cost</Text>
+        <View style={styles.metricRow}>
+          <Text style={[styles.metricValue, { color: colors.inverseOnSurface }]}>
+            {(cost?.estimated_fcfa ?? 0).toLocaleString()}
+          </Text>
+          <Text style={[styles.metricUnit, { color: colors.secondaryFixed }]}>FCFA</Text>
+        </View>
+        <View style={styles.costSplit}>
+          <View style={styles.costItem}>
+            <Text style={styles.costItemLabel}>Daily Avg</Text>
+            <Text style={styles.costItemValue}>
+              {(cost?.daily_avg_fcfa ?? 0).toLocaleString()} FCFA
+            </Text>
+          </View>
+          <View style={styles.costItem}>
+            <Text style={styles.costItemLabel}>Projected Usage</Text>
+            <Text style={styles.costItemValue}>{(cost?.projected_kwh ?? 0).toLocaleString()} kWh</Text>
+          </View>
+        </View>
       </View>
+
+      {/* History */}
+      <View style={[glassCard, styles.detailCard]}>
+        <View style={styles.historyHeader}>
+          <Text style={styles.sectionTitle}>Consumption History</Text>
+          <View style={styles.rangeTabs}>
+            {["24h", "7d", "30d"].map((r) => {
+              const picked = range === r;
+              return (
+                <TouchableOpacity
+                  key={r}
+                  onPress={() => setRange(r)}
+                  activeOpacity={0.7}
+                  style={[styles.rangeTab, picked && styles.rangeTabActive]}
+                >
+                  <Text
+                    style={[
+                      styles.rangeTabLabel,
+                      { color: picked ? colors.onSecondaryContainer : colors.onSurfaceVariant },
+                    ]}
+                  >
+                    {r}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        <HistoryBars history={history} width={chartWidth} />
+      </View>
+
+      {/* This device's alerts */}
+      {alerts.length === 0 ? (
+        <View style={[glassCard, styles.insightCard]}>
+          <View style={[styles.insightIcon, { backgroundColor: colors.surfaceContainerLow }]}>
+            <Icon name="check_circle" size={22} color={colors.secondary} />
+          </View>
+          <View style={styles.insightBody}>
+            <Text style={styles.insightTitle}>No alerts</Text>
+            <Text style={styles.insightText}>This device has not triggered any alert.</Text>
+          </View>
+        </View>
+      ) : (
+        alerts.map((a, i) => (
+          <View key={i} style={[glassCard, styles.insightCard]}>
+            <View
+              style={[
+                styles.insightIcon,
+                {
+                  backgroundColor:
+                    a.type === "spike" ? "rgba(255, 218, 214, 0.35)" : colors.surfaceContainerLow,
+                },
+              ]}
+            >
+              <Icon
+                name={ALERT_ICONS[a.type] || "notifications"}
+                size={22}
+                color={a.type === "spike" ? colors.error : colors.secondary}
+              />
+            </View>
+            <View style={styles.insightBody}>
+              <Text style={styles.insightTitle}>{ALERT_TITLES[a.type] || a.type}</Text>
+              <Text style={styles.insightText}>{a.message}</Text>
+            </View>
+          </View>
+        ))
+      )}
     </ScrollView>
   );
 }
 
+/** The mockup's bar chart. Built from Views rather than SVG, exactly as
+ * the mockup builds it from divs. */
+function HistoryBars({ history, width }) {
+  const buckets = history?.buckets ?? [];
+  const measured = buckets.filter((b) => b.watts !== null && b.watts !== undefined);
+  const max = Math.max(history?.max_watts || 0, 1);
+  const HEIGHT = 200;
+
+  if (measured.length === 0) {
+    return (
+      <View style={[styles.chartEmpty, { height: HEIGHT }]}>
+        <Text style={styles.emptyText}>No readings for this period yet.</Text>
+      </View>
+    );
+  }
+
+  const peak = measured.reduce((best, b) => (b.watts > best.watts ? b : best), measured[0]);
+  const last = buckets.length - 1;
+  const tickIndexes = [0, Math.floor(last / 3), Math.floor((2 * last) / 3), last];
+  const axisWidth = 44;
+  const barsWidth = Math.max(width - axisWidth, 1);
+  const barWidth = Math.max(barsWidth / buckets.length - 2, 2);
+
+  return (
+    <View>
+      <View style={[styles.chartRow, { height: HEIGHT }]}>
+        <View style={styles.axisColumn}>
+          <Text style={styles.axisText}>{Math.round(max)}W</Text>
+          <Text style={styles.axisText}>{Math.round(max / 2)}W</Text>
+          <Text style={styles.axisText}>0W</Text>
+        </View>
+
+        <View style={[styles.barsRow, { width: barsWidth }]}>
+          {buckets.map((b, i) => {
+            const pct = b.watts === null ? 0 : Math.max((b.watts / max) * 100, 2);
+            const isPeak = b.watts !== null && b.label === peak.label;
+            return (
+              <View
+                key={i}
+                style={{
+                  width: barWidth,
+                  height: `${pct}%`,
+                  borderTopLeftRadius: 2,
+                  borderTopRightRadius: 2,
+                  backgroundColor:
+                    b.watts === null
+                      ? "rgba(198, 198, 205, 0.2)"
+                      : isPeak
+                        ? colors.tertiaryFixedDim
+                        : "rgba(0, 106, 97, 0.8)",
+                }}
+              />
+            );
+          })}
+        </View>
+      </View>
+
+      <View style={[styles.axisRowDetail, { marginLeft: axisWidth }]}>
+        {tickIndexes.map((i) => (
+          <Text key={i} style={styles.axisText}>{buckets[i]?.label ?? ""}</Text>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  detailLoading: { flex: 1, padding: spacing.marginMobile, gap: spacing.md },
+  backRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  backLabel: { ...type.labelSm, color: colors.onSurfaceVariant },
+
+  detailHeader: {
+    flexDirection: "row", alignItems: "center", gap: spacing.xs,
+    paddingBottom: spacing.xs,
+  },
+  iconButton: { padding: 6, borderRadius: radius.full },
+  detailTitleWrap: { flex: 1, flexDirection: "row", alignItems: "center", gap: 6, minWidth: 0 },
+  detailTitle: { ...type.headlineMd, color: colors.onSurface, flexShrink: 1 },
+
+  bigToggle: { width: 48, height: 24, borderRadius: radius.full, justifyContent: "center" },
+  bigToggleKnob: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: "#ffffff", borderWidth: 4, position: "absolute",
+  },
+  bigToggleKnobOn: { right: 0 },
+  bigToggleKnobOff: { left: 0 },
+
+  errorBanner: {
+    flexDirection: "row", alignItems: "flex-start", gap: spacing.xs,
+    backgroundColor: "rgba(255, 218, 214, 0.4)",
+    borderWidth: 1, borderColor: colors.errorContainer,
+    borderRadius: radius.lg, padding: spacing.sm,
+  },
+  errorText: { ...type.labelSm, color: colors.onErrorContainer, flex: 1 },
+
+  detailCard: { padding: spacing.md, gap: spacing.sm, minHeight: 160 },
+  detailCardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+  detailCardLabel: { ...type.bodyLg, color: colors.onSurfaceVariant },
+  metricRow: { flexDirection: "row", alignItems: "flex-end", gap: spacing.xs },
+  metricValue: { ...type.displayMetrics, color: colors.onSurface },
+  metricUnit: { ...type.dataLabel, color: colors.secondary, marginBottom: 8 },
+  statusRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  statusText: { ...type.labelSm, color: colors.onSurfaceVariant },
+
+  costCardDetail: {
+    backgroundColor: colors.primaryContainer,
+    borderRadius: radius.xl,
+    padding: spacing.md, gap: spacing.sm, minHeight: 160,
+  },
+  costLabel: { ...type.bodyLg, color: colors.primaryFixedDim },
+  costSplit: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
+  costItem: {
+    flex: 1, borderLeftWidth: 2, borderLeftColor: "rgba(0, 106, 97, 0.3)",
+    paddingLeft: spacing.sm,
+  },
+  costItemLabel: { ...type.labelSm, color: colors.primaryFixedDim },
+  costItemValue: { ...type.bodyMd, color: colors.inverseOnSurface, marginTop: 4 },
+
+  historyHeader: { gap: spacing.sm },
+  sectionTitle: { ...type.headlineMd, color: colors.onSurface },
+  rangeTabs: {
+    flexDirection: "row", alignSelf: "flex-start",
+    backgroundColor: colors.surfaceContainerLow,
+    borderRadius: radius.lg, padding: 4,
+  },
+  rangeTab: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.DEFAULT },
+  rangeTabActive: { backgroundColor: colors.secondaryContainer },
+  rangeTabLabel: { ...type.labelSm },
+
+  chartRow: { flexDirection: "row", alignItems: "flex-end", marginTop: spacing.sm },
+  axisColumn: { width: 44, height: "100%", justifyContent: "space-between", paddingBottom: 2 },
+  axisText: { ...type.dataLabel, fontSize: 11, color: colors.onSurfaceVariant, opacity: 0.6 },
+  barsRow: { flexDirection: "row", alignItems: "flex-end", height: "100%", gap: 2 },
+  axisRowDetail: { flexDirection: "row", justifyContent: "space-between", marginTop: spacing.xs },
+  chartEmpty: { alignItems: "center", justifyContent: "center" },
+
+  insightCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md },
+  insightIcon: {
+    width: 48, height: 48, borderRadius: 24,
+    alignItems: "center", justifyContent: "center",
+  },
+  insightBody: { flex: 1 },
+  insightTitle: { ...type.bodyMd, color: colors.onSurface },
+  insightText: { ...type.labelSm, color: colors.onSurfaceVariant, marginTop: 4 },
+
   modalScrim: { flex: 1, backgroundColor: "rgba(11, 28, 48, 0.4)", justifyContent: "flex-end" },
   modalSheet: {
     backgroundColor: colors.surfaceContainerLowest,
@@ -641,7 +943,6 @@ const styles = StyleSheet.create({
   typeTagText: { fontSize: 9, fontWeight: "700", color: "#3b82f6", textTransform: "uppercase" },
 
   backBtn: { color: "#3b82f6", fontSize: 14, fontWeight: "600", marginBottom: 16 },
-  detailHeader: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 20 },
   detailIcon: { fontSize: 36 },
   detailName: { fontSize: 20, fontWeight: "700", color: "#0f172a" },
   detailRoom: { fontSize: 13, color: "#94a3b8", marginTop: 2 },
