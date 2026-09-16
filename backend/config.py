@@ -12,6 +12,7 @@ file that gets committed.
 """
 
 import os
+import threading
 from pathlib import Path
 from urllib.parse import quote_plus
 
@@ -75,15 +76,91 @@ DATABASE_URL = (
 )
 
 
+# ── Connection pool ─────────────────────────────────────────────────────
+# Every query in this backend used to open its own TCP connection and
+# authenticate, then throw it away: a dashboard load cost a dozen
+# handshakes, and the MQTT ingest path paid six per reading per device.
+# A pool keeps a handful of authenticated connections warm and hands them
+# out instead.
+#
+# Nothing at the call sites changes. A pooled connection is returned to
+# the pool by the same `conn.close()` the code already calls, so the
+# hundred-odd existing call sites keep working unmodified — and a call
+# site that forgets to close still behaves exactly as it did before,
+# because the connection is returned when it is garbage collected.
+#
+# `maxconnections=0` is deliberate: the pool caches up to POOL_SIZE idle
+# connections but never refuses a new one under load. Exhaustion would
+# turn a busy moment into a deadlock, which is worse than the cost it
+# would save.
+POOL_SIZE = int(_optional("ENERGIBOX_DB_POOL_SIZE", "8"))
+
+_CONNECT_KWARGS = {
+    "host": DB_HOST,
+    "port": DB_PORT,
+    "user": DB_USER,
+    "password": DB_PASSWORD,
+    "database": DB_NAME,
+}
+
+try:
+    from dbutils.pooled_db import PooledDB
+except ImportError:  # not installed yet — keep working, unpooled
+    PooledDB = None
+
+_pool = None
+_pool_lock = threading.Lock()
+
+
+def _get_pool():
+    """Build the pool on first use, never at import.
+
+    Building it lazily means a database that is down at startup costs a
+    failed request, not a process that refuses to boot — the behaviour
+    /health already reports on.
+    """
+    global _pool
+    if _pool is not None or PooledDB is None or POOL_SIZE <= 0:
+        return _pool
+    with _pool_lock:
+        if _pool is None:
+            _pool = PooledDB(
+                creator=pymysql,
+                # Nothing is opened until something asks, so an unreachable
+                # server does not turn into an import-time exception.
+                mincached=0,
+                maxcached=POOL_SIZE,
+                maxconnections=0,
+                # Check the connection when it leaves the pool: MySQL closes
+                # idle connections after wait_timeout, and a borrower must
+                # never be handed a dead one.
+                ping=1,
+                # Roll back on return. Without this a SELECT-only borrower
+                # hands back an open InnoDB transaction, and the next
+                # borrower reads that stale snapshot.
+                reset=True,
+                **_CONNECT_KWARGS,
+            )
+    return _pool
+
+
+def pooling_enabled():
+    """Whether connections are being reused. Reported by /health."""
+    return _get_pool() is not None
+
+
 def get_connection():
-    """Open a new raw pymysql connection using the configured credentials."""
-    return pymysql.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        user=DB_USER,
-        password=DB_PASSWORD,
-        database=DB_NAME,
-    )
+    """A database connection, from the pool when one is available.
+
+    Returns a pooled connection whose close() hands it back, or a plain
+    pymysql connection when DBUtils is not installed or pooling is turned
+    off with ENERGIBOX_DB_POOL_SIZE=0. Both satisfy the same contract, so
+    no caller needs to know which it got.
+    """
+    pool = _get_pool()
+    if pool is None:
+        return pymysql.connect(**_CONNECT_KWARGS)
+    return pool.connection()
 
 
 # ── Authentication ──────────────────────────────────────────────────────

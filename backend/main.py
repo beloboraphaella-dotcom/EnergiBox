@@ -12,7 +12,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 import energy
 import tariff
-from config import CORS_ORIGINS, get_connection as get_raw_db
+from config import CORS_ORIGINS, get_connection as get_raw_db, pooling_enabled
 from database import engine, Base
 from schemas import (
     AdminCreateUserRequest,
@@ -318,6 +318,7 @@ def health():
             # difference decides whether every kWh is measured or assumed,
             # so it should not take reading the source to find out.
             "energy": "measured" if energy.uses_intervals() else "assumed_cadence",
+            "db_pool": "enabled" if pooling_enabled() else "disabled",
             "status": "healthy" if healthy else "degraded",
         },
     )

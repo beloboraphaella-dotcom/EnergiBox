@@ -13,6 +13,10 @@ pydantic>=2.0
 # Database
 PyMySQL>=1.1
 SQLAlchemy>=2.0
+# Connection pooling. Optional in the sense that config.py falls back to
+# opening a connection per query without it — which is what the backend
+# did before — but every deployment should have it installed.
+DBUtils>=3.0
 
 # Auth — bcrypt replaced the previous unsalted SHA-256 hashing.
 bcrypt>=4.1
