@@ -349,11 +349,13 @@ def estimate_bill(home_id: int, user: dict = Depends(get_scoped_user)):
     """, (home_id,))
     kwh = cursor.fetchone()[0] or 0
     conn.close()
-    fcfa = round(kwh * 79, 0)
+    # Billed by threshold: the month's total picks the rate that prices
+    # every kWh of it, so the figure is what ENEO would charge if the
+    # month closed now.
     return {
         "kwh_consumed": round(kwh, 3),
-        "estimated_bill_fcfa": fcfa,
-        "tariff_per_kwh": 79
+        "estimated_bill_fcfa": round(tariff.monthly_cost(kwh), 0),
+        "tariff_per_kwh": tariff.rate_for_month(kwh)
     }
 
 @app.get("/alerts")
@@ -462,7 +464,7 @@ def get_dashboard(home_id: int, user: dict = Depends(get_scoped_user)):
         ],
         "bill": {
             "kwh_consumed": round(kwh, 3),
-            "estimated_fcfa": round(kwh * 79, 0)
+            "estimated_fcfa": round(tariff.monthly_cost(kwh), 0)
         },
         "unread_alerts": unread_alerts
     }
@@ -721,12 +723,13 @@ def delete_monitored_point(point_id: int, user: dict = Depends(get_point_owner))
 
 @app.get("/tariffs")
 def get_tariffs(user: dict = Depends(get_current_user)):
-    """The published tariff schedule, plus what this app currently bills at.
+    """The tariff schedule this app bills at, and how far it is verified.
 
-    The two differ, and the response says so rather than hiding it: the
-    schedule is progressive, the billing queries apply a single band's
-    rate to everything. Surfacing both is what lets the settings screen
-    show the real bands without pretending the app already honours them.
+    Every cost in the app now goes through tariff.py, so there is no
+    longer a gap between what this endpoint publishes and what the
+    billing queries apply. What the response still separates is how much
+    of the schedule real bills confirm: the 50 and 79 bands are checked
+    against five ENEO bills, the bands above 400 kWh are published-only.
     """
     return {
         "source": tariff.SOURCE,
@@ -734,15 +737,32 @@ def get_tariffs(user: dict = Depends(get_current_user)):
             "residential": tariff.bands_as_dicts("residential"),
             "non_residential": tariff.bands_as_dicts("non_residential"),
         },
-        "vat_exempt_below_kwh": tariff.VAT_EXEMPT_BELOW_KWH,
-        "time_of_use": tariff.TIME_OF_USE,
-        "applied": {
-            "fcfa_per_kwh": tariff.APPLIED_FLAT_RATE_FCFA,
-            "matches_schedule": False,
+        "mode": tariff.DEFAULT_MODE,
+        "mode_note": (
+            "Threshold: the month's total volume picks one rate, applied to "
+            "every kWh of it. Confirmed on five ENEO LV-DOMESTIC bills."
+        ),
+        "vat": {
+            "rate": tariff.VAT_RATE,
+            "charged": tariff.VAT_OBSERVED_ON_LV_DOMESTIC,
             "note": (
-                "Billing currently applies a single flat rate. It is the "
-                "111-400 kWh residential band, so consumption outside that "
-                "band is mis-costed."
+                "No tax was charged on any bill observed, including at "
+                "216 kWh, so none is added here."
+            ),
+        },
+        "fixed_charge_fcfa": tariff.FIXED_CHARGE_FCFA,
+        "time_of_use": tariff.TIME_OF_USE,
+        "verified": {
+            "bills": tariff.SOURCE["bills_observed"],
+            "period": tariff.SOURCE["bills_period"],
+            "up_to_kwh": tariff.SOURCE["bands_verified_up_to_kwh"],
+        },
+        "applied": {
+            "fcfa_per_kwh": None,
+            "matches_schedule": True,
+            "note": (
+                "Costs are computed from the bands above, by threshold, so "
+                "there is no single rate to report."
             ),
         },
     }
@@ -907,15 +927,16 @@ def get_device_history(
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT mp.id FROM monitored_points mp
+        SELECT mp.id, rm.home_id FROM monitored_points mp
         JOIN energiboxes e ON mp.energibox_id = e.id
+        JOIN rooms rm ON mp.room_id = rm.id
         WHERE e.mac_address = %s
     """, (mac,))
     row = cursor.fetchone()
     if not row:
         conn.close()
         raise HTTPException(status_code=404, detail="Device not found")
-    point_id = row[0]
+    point_id, device_home_id = row[0], row[1]
 
     if window == "24h":
         cursor.execute("""
@@ -960,10 +981,25 @@ def get_device_history(
         AND MONTH(timestamp) = MONTH(NOW()) AND YEAR(timestamp) = YEAR(NOW())
     """, (point_id,))
     month_kwh = cursor.fetchone()[0] or 0
+
+    # The whole home's month too: one device is a slice of a bill, and
+    # the rate that prices it comes from the home's total volume, not
+    # from the slice. Billing at the slice's own rate would cost this
+    # device 50 FCFA/kWh inside a 180 kWh month billed at 79.
+    cursor.execute("""
+        SELECT SUM(r.watts) / 1000 / 1800
+        FROM readings r
+        JOIN monitored_points mp ON r.monitored_point_id = mp.id
+        JOIN rooms rm ON mp.room_id = rm.id
+        WHERE rm.home_id = %s
+        AND MONTH(r.timestamp) = MONTH(NOW()) AND YEAR(r.timestamp) = YEAR(NOW())
+    """, (device_home_id,))
+    home_month_kwh = cursor.fetchone()[0] or 0
     conn.close()
 
     day_of_month = datetime.now().day or 1
     projected_kwh = (month_kwh / day_of_month) * 30
+    home_projected_kwh = (home_month_kwh / day_of_month) * 30
     measured = [b["watts"] for b in buckets if b["watts"] is not None]
 
     return {
@@ -972,10 +1008,12 @@ def get_device_history(
         "max_watts": round(max(measured), 1) if measured else 0,
         "cost": {
             "month_kwh": round(month_kwh, 3),
-            "estimated_fcfa": round(month_kwh * 79, 0),
-            "daily_avg_fcfa": round((month_kwh * 79) / day_of_month, 0),
+            "estimated_fcfa": round(tariff.cost_of_share(month_kwh, home_month_kwh), 0),
+            "daily_avg_fcfa": round(
+                tariff.cost_of_share(month_kwh, home_month_kwh) / day_of_month, 0),
             "projected_kwh": round(projected_kwh, 1),
-            "projected_fcfa": round(projected_kwh * 79, 0),
+            "projected_fcfa": round(
+                tariff.cost_of_share(projected_kwh, home_projected_kwh), 0),
         },
     }
 
@@ -1311,8 +1349,11 @@ def get_daily_history(home_id: int, month: int = None, year: int = None, user: d
         "total_kwh": round(current_total, 3),
         "avg_per_day_kwh": round(current_total / days, 3),
         "change_vs_prev": round(change, 1),
-        "estimated_fcfa": round(current_total * 79, 0),
-        "avg_fcfa_per_day": round((current_total / days) * 79, 0),
+        "estimated_fcfa": round(tariff.monthly_cost(current_total), 0),
+        # The month's cost spread over the days it was measured on, not
+        # a day's kWh priced on its own: a single day never reaches a
+        # band of its own.
+        "avg_fcfa_per_day": round(tariff.monthly_cost(current_total) / days, 0),
         "bars": [
             {"day": row[0], "kwh": round(row[1], 3)}
             for row in rows
@@ -1340,12 +1381,25 @@ def get_weekly_history(home_id: int, user: dict = Depends(get_scoped_user)):
     rows = cursor.fetchall()
     total = sum(r[1] for r in rows)
     days = len(rows) or 1
+
+    # A week is a slice of a month, so its rate comes from the month it
+    # sits in. Pricing seven days as if they were a whole month would
+    # bill them at 50 FCFA/kWh inside a month billed at 79.
+    cursor.execute("""
+        SELECT SUM(r.watts) / 1000 / 1800
+        FROM readings r
+        JOIN monitored_points mp ON r.monitored_point_id = mp.id
+        JOIN rooms rm ON mp.room_id = rm.id
+        WHERE rm.home_id = %s
+        AND MONTH(r.timestamp) = MONTH(NOW()) AND YEAR(r.timestamp) = YEAR(NOW())
+    """, (home_id,))
+    month_kwh = cursor.fetchone()[0] or 0
     conn.close()
 
     return {
         "total_kwh": round(total, 3),
         "avg_per_day_kwh": round(total / days, 3),
-        "estimated_fcfa": round(total * 79, 0),
+        "estimated_fcfa": round(tariff.cost_of_share(total, month_kwh), 0),
         "bars": [
             {
                 "day": str(row[0]),
@@ -1387,7 +1441,9 @@ def get_yearly_history(home_id: int, year: int = None, user: dict = Depends(get_
     return {
         "year": year,
         "total_kwh": round(total, 3),
-        "estimated_fcfa": round(total * 79, 0),
+        # A year is priced month by month, never as one volume: twelve
+        # months of 150 kWh are twelve bills at 79, not one at 99.
+        "estimated_fcfa": round(sum(tariff.monthly_cost(r[1] or 0) for r in rows), 0),
         "bars": [
             {
                 "month": months[int(row[0]) - 1],
@@ -1429,7 +1485,9 @@ def get_history_by_appliance(home_id: int, month: int = None, year: int = None, 
             "name": row[0],
             "kwh": round(row[1], 3),
             "percentage": round((row[1] / total * 100) if total > 0 else 0, 1),
-            "estimated_fcfa": round(row[1] * 79, 0)
+            # Each appliance's share of the month, priced at the rate the
+            # month's total attracts, so the shares add up to the bill.
+            "estimated_fcfa": round(tariff.cost_of_share(row[1], total), 0)
         }
         for row in rows
     ]
@@ -1510,8 +1568,8 @@ def get_overview(home_id: int, user: dict = Depends(get_scoped_user)):
         "month": {
             "kwh": round(month_kwh, 3),
             "change_vs_last_month": pct_change(month_kwh, last_month_kwh),
-            "estimated_fcfa": round(month_kwh * 79, 0),
-            "projected_fcfa": round(projected_kwh * 79, 0)
+            "estimated_fcfa": round(tariff.monthly_cost(month_kwh), 0),
+            "projected_fcfa": round(tariff.monthly_cost(projected_kwh), 0)
         },
         "devices": {
             "total": total_devices,

@@ -102,7 +102,9 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
   };
 
   const bands = tariffs?.bands?.residential ?? [];
-  const applied = tariffs?.applied;
+  // How far the schedule is confirmed by real bills. Bands starting
+  // beyond that are published figures and are labelled as such.
+  const verified = tariffs?.verified;
 
   const RULES = [
     { icon: "warning", title: "Consumption spike",
@@ -177,25 +179,26 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
 
         <View style={styles.bandTable}>
           {bands.map((band, i) => {
-            const isApplied = applied && band.fcfa_per_kwh === applied.fcfa_per_kwh;
-            const last = i === bands.length - 1;
+            const isVerified = verified && band.from_kwh <= verified.up_to_kwh;
             return (
               <View
                 key={i}
                 style={[
                   styles.bandRow,
                   i > 0 && styles.bandRowDivider,
-                  isApplied && styles.bandRowApplied,
+                  isVerified && styles.bandRowApplied,
                 ]}
               >
                 <Text style={styles.bandRange}>
-                  {last && band.to_kwh >= 2000
+                  {/* The last band is open-ended: the API sends to_kwh
+                      as null, which must not be printed. */}
+                  {band.to_kwh == null || band.to_kwh >= 2000
                     ? `${band.from_kwh}+ kWh`
                     : `${band.from_kwh} – ${band.to_kwh} kWh`}
                 </Text>
                 <View style={styles.bandRight}>
-                  {isApplied ? (
-                    <Text style={styles.bandApplied}>used by this app</Text>
+                  {isVerified ? (
+                    <Text style={styles.bandApplied}>checked on a bill</Text>
                   ) : null}
                   <Text style={styles.bandPrice}>{band.fcfa_per_kwh} FCFA</Text>
                 </View>
@@ -204,22 +207,30 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
           })}
         </View>
 
-        {applied && !applied.matches_schedule ? (
-          <View style={styles.warn}>
-            <Icon name="warning" size={20} color={colors.onErrorContainer} />
-            <Text style={styles.warnText}>
-              Every cost in this app is computed at a flat {applied.fcfa_per_kwh} FCFA/kWh.
-              That is one band of the schedule above, so consumption outside 111–400 kWh
-              per month is mis-costed.
-            </Text>
-          </View>
+        {/* How the bands apply is the part that changes what a household
+            should do, so it is stated rather than implied. */}
+        <View style={styles.info}>
+          <Icon name="info" size={20} color={colors.onSecondaryContainer} />
+          <Text style={styles.infoText}>
+            The month's total volume picks one rate, applied to every kWh of it — not each
+            band in turn. A month ending at 130 kWh is billed 130 × 79; cutting it to
+            110 kWh bills 110 × 50, so 20 kWh less costs 4 770 FCFA less. Every cost in
+            this app follows that rule.
+          </Text>
+        </View>
+
+        {tariffs?.vat && tariffs.vat.charged === false ? (
+          <Text style={styles.sourceText}>
+            No tax was charged on any of the bills checked, up to 216 kWh, so the app adds
+            none.
+          </Text>
         ) : null}
 
         {tariffs?.source ? (
           <Text style={styles.sourceText}>
             Source: {tariffs.source.regulator}, decision {tariffs.source.decision}.
-            {tariffs.source.may_be_outdated
-              ? " These figures may be out of date — verify against a recent bill."
+            {verified
+              ? ` Checked against ${verified.bills} ENEO bills (${verified.period}), up to ${verified.up_to_kwh} kWh per month. The bands above 400 kWh are published figures, not yet seen on a bill.`
               : ""}
           </Text>
         ) : null}
@@ -390,13 +401,13 @@ const styles = StyleSheet.create({
   bandApplied: { ...type.labelSm, fontSize: 11, color: colors.onSecondaryContainer },
   bandPrice: { ...type.dataLabel, color: colors.onSurface },
 
-  warn: {
+  info: {
     flexDirection: "row", alignItems: "flex-start", gap: spacing.xs,
-    backgroundColor: "rgba(255, 218, 214, 0.35)",
-    borderWidth: 1, borderColor: "rgba(255, 218, 214, 0.6)",
+    backgroundColor: "rgba(134, 242, 228, 0.3)",
+    borderWidth: 1, borderColor: "rgba(134, 242, 228, 0.55)",
     borderRadius: radius.lg, padding: 12,
   },
-  warnText: { ...type.labelSm, color: colors.onErrorContainer, flex: 1, lineHeight: 18 },
+  infoText: { ...type.labelSm, color: colors.onSecondaryContainer, flex: 1, lineHeight: 18 },
   sourceText: { ...type.labelSm, color: colors.outline, lineHeight: 18 },
 
   ruleRow: { flexDirection: "row", gap: spacing.xs + 4, alignItems: "flex-start" },

@@ -9,7 +9,8 @@ pip install -r backend/requirements.txt
 python backend/tests/test_api.py       # routing, auth guards, request bodies
 python backend/tests/test_auth.py      # password hashing and the bcrypt migration
 python backend/tests/test_hardening.py # revocation, rate limiting, health, MQTT
-python backend/tests/test_advisor.py   # tariff arithmetic and suggestion building
+python backend/tests/test_advisor.py   # suggestion building
+python backend/tests/test_tariff.py    # the tariff, against real ENEO bills
 ```
 
 Each exits non-zero on the first failure, so they drop straight into CI.
@@ -24,9 +25,16 @@ covers the SHA-256 -> bcrypt migration: a legacy hash still authenticates,
 gets upgraded in place exactly once, and is never upgraded on a failed or
 suspended login.
 
-`test_advisor.py` covers `tariff.py`'s progressive-band arithmetic — a
-saving is cost-before minus cost-after, never a reduction times a rate —
-and checks that the advisor builds suggestions from measurable volume.
+`test_tariff.py` replays fifteen month/amount pairs read off five real
+ENEO bills and asserts `tariff.py` reproduces each to the franc. It is
+what settles that ENEO bills by threshold rather than by block: no bill
+above 110 kWh is explicable by block pricing. It also pins down that a
+slice of a month — a week, a day, one appliance — is priced at the rate
+the month's total volume attracts, never at its own.
+
+`test_advisor.py` covers the advisor: a saving is cost-before minus
+cost-after, never a reduction times a rate, and suggestions are built
+from measurable volume.
 It also asserts the removed premise stays removed: no PEAK_RATE,
 OFF_PEAK_RATE or peak-hour constants, and no suggestion telling a
 household to shift usage to cheaper hours, because the published tariff

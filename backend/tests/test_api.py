@@ -117,7 +117,7 @@ check("POST /admin/users refuse un token non-admin (403)", r.status_code == 403,
 print("\n== /devices/{mac}/history ==")
 
 class _HistoryDB:
-    """Fake MySQL that answers the endpoint's three queries in order."""
+    """Fake MySQL that answers the endpoint's four queries in order."""
     lastrowid = 1
     def __init__(self, found=True):
         self.found, self.calls, self._next = found, [], None
@@ -126,7 +126,9 @@ class _HistoryDB:
         flat = " ".join(sql.split())
         self.calls.append((flat, params))
         if "FROM monitored_points mp" in flat:
-            self._next = (7,) if self.found else None
+            # (point id, home id): the endpoint needs the home to know
+            # which tariff band prices this device's share of the month.
+            self._next = (7, 1) if self.found else None
         elif "HOUR(timestamp)" in flat:
             self._rows = [(h, 3600.0, 1800) for h in (9, 10, 11)]
         elif "DATE(timestamp)" in flat:
@@ -163,7 +165,12 @@ check("la valeur SQL est transmise telle quelle",
       [b["watts"] for b in body["buckets"] if b["watts"] is not None][:3])
 check("la derniere tranche est l'heure courante",
       body["buckets"][-1]["label"] == f"{datetime.now().hour:02d}:00", body["buckets"][-1]["label"])
-check("le cout mensuel est calcule", body["cost"]["estimated_fcfa"] == round(4.5 * 79, 0), body["cost"])
+# The stub answers both month queries with 4.5 kWh, so the device is the
+# whole home's month and its share is priced at that month's rate.
+import tariff as _tariff
+check("le cout mensuel suit le bareme, pas un tarif fixe",
+      body["cost"]["estimated_fcfa"] == round(_tariff.cost_of_share(4.5, 4.5), 0),
+      body["cost"])
 check("la projection est presente", body["cost"]["projected_kwh"] > 0, body["cost"])
 
 r, _ = _history(query="?range=7d")
@@ -204,29 +211,21 @@ check("les bandes residentielles sont progressives",
 check("les bandes se suivent sans trou",
       all(tariffs["bands"]["residential"][i]["to_kwh"] + 1 == tariffs["bands"]["residential"][i + 1]["from_kwh"]
           for i in range(len(tariffs["bands"]["residential"]) - 1)))
-check("le tarif applique est expose", tariffs["applied"]["fcfa_per_kwh"] == 79, tariffs["applied"])
-check("l'ecart avec le bareme est declare", tariffs["applied"]["matches_schedule"] is False)
+check("le mode de facturation est expose", tariffs["mode"] == "threshold", tariffs["mode"])
+check("plus d'ecart entre le bareme et la facturation",
+      tariffs["applied"]["matches_schedule"] is True
+      and tariffs["applied"]["fcfa_per_kwh"] is None, tariffs["applied"])
+check("aucune TVA n'est ajoutee", tariffs["vat"]["charged"] is False, tariffs["vat"])
+check("aucune charge fixe", tariffs["fixed_charge_fcfa"] == 0)
 check("l'absence de tarification horaire est declaree", tariffs["time_of_use"] is False)
+check("l'etendue de la verification est declaree",
+      tariffs["verified"]["bills"] == 5 and tariffs["verified"]["up_to_kwh"] == 216,
+      tariffs["verified"])
 check("la source est attribuee",
-      tariffs["source"]["regulator"] == "ARSEL" and tariffs["source"]["may_be_outdated"] is True,
+      tariffs["source"]["regulator"] == "ARSEL"
+      and tariffs["source"]["verified_against_bills"] is True,
       tariffs["source"])
 check("/tariffs exige un jeton", client.get("/tariffs").status_code in (401, 403))
-
-# The flat rate the billing queries multiply by must stay the number the
-# endpoint advertises, or the settings screen would describe a rate the
-# app does not actually bill at. The constant now lives in tariff.py.
-import re as _re
-import tariff as _tariff
-_src = pathlib.Path(__file__).resolve().parent.parent.joinpath("main.py").read_text()
-# Only lines that actually produce FCFA count: a "* 100" elsewhere is a
-# percentage, not a tariff.
-_fcfa_lines = [l for l in _src.splitlines() if "fcfa" in l.lower()]
-_rates = {m for line in _fcfa_lines for m in _re.findall(r"\*\s*(\d+)", line)}
-check("le tarif annonce est celui des requetes de facturation",
-      _tariff.APPLIED_FLAT_RATE_FCFA == 79 and str(_tariff.APPLIED_FLAT_RATE_FCFA) in _rates,
-      sorted(_rates))
-check("aucun autre tarif n'est code en dur dans les calculs FCFA",
-      _rates <= {str(_tariff.APPLIED_FLAT_RATE_FCFA)}, sorted(_rates))
 
 print("\n" + ("TOUS LES TESTS PASSENT" if not fails else f"{len(fails)} ECHEC(S): {fails}"))
 sys.exit(1 if fails else 0)

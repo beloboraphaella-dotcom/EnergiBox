@@ -15,12 +15,19 @@ the advisor now looks for volume it can name and price:
             Waste by definition, and the kWh is measurable.
   dominant  the one device responsible for an outsized share of the
             month, so effort goes where it pays.
-  headroom  how close the home is to the next band, and what the kWh
-            beyond it would cost.
+  band      where the month will land in the tariff. ENEO bills by
+            threshold: the month's total volume picks one rate applied
+            to every kWh of it. So a month projected at 130 kWh is
+            billed 130x79, and shedding 20 kWh to finish at 110 re-prices
+            all of it at 50 — 4 770 FCFA, 46% of the bill. When the home
+            is already in the cheapest band, the same arithmetic runs the
+            other way and becomes a warning.
 
-Every figure is priced with tariff.saving_from_reduction — cost before
-minus cost after — because under a progressive tariff a saving is not a
-reduction times a rate.
+Every figure is priced with tariff.saving_from_reduction or
+tariff.band_drop — cost before minus cost after — because under a
+progressive tariff a saving is not a reduction times a rate, and under
+threshold pricing the reduction that matters is the one that changes
+which rate the whole month is billed at.
 """
 
 from datetime import datetime
@@ -42,6 +49,8 @@ MIN_SAMPLES_PER_HOUR = 50
 MIN_SAVING_FCFA = 100
 # A device has to matter before it is worth naming.
 DOMINANT_SHARE = 0.35
+# Close enough to the next band that crossing it is worth warning about.
+BAND_WARNING_KWH = 20
 
 
 def _home_ids():
@@ -246,32 +255,66 @@ def build_suggestions(home_id):
                     "estimated_saving_fcfa": round(saving),
                 })
 
-    # ── Distance to the next band ──
-    headroom = tariff.band_headroom(projected)
-    if headroom and devices and headroom["kwh_to_next"] > 0:
-        saving = tariff.saving_from_reduction(
-            projected + headroom["kwh_to_next"] + 1, headroom["kwh_to_next"] + 1
+    # ── Which band the month will be billed in ──
+    # Threshold pricing makes this the single biggest lever in the app:
+    # dropping a band re-prices every kWh of the month, not just the ones
+    # above the boundary.
+    drop = tariff.band_drop(projected)
+    if devices and drop and drop["saving_fcfa"] >= MIN_SAVING_FCFA:
+        fallback = (
+            f"You are on track for {projected:.0f} kWh this month, billed at "
+            f"{drop['current_rate']} FCFA for every kWh. Finishing at "
+            f"{drop['target_kwh']} kWh instead — {drop['kwh_to_cut']:.0f} kWh less — "
+            f"re-prices the whole month at {drop['target_rate']} FCFA and saves about "
+            f"{drop['saving_fcfa']:.0f} FCFA."
         )
-        if saving >= MIN_SAVING_FCFA:
+        text = generate_ai_phrasing(
+            f"Projected monthly consumption: {projected:.0f} kWh\n"
+            f"Rate it would be billed at: {drop['current_rate']} FCFA per kWh, "
+            f"on every kWh of the month\n"
+            f"kWh to cut to reach the cheaper band: {drop['kwh_to_cut']:.0f}\n"
+            f"Rate the whole month would then be billed at: "
+            f"{drop['target_rate']} FCFA per kWh\n"
+            f"Saving: {drop['saving_fcfa']:.0f} FCFA"
+        ) or fallback
+
+        # Pinned to the biggest consumer: ai_suggestions is keyed by
+        # device, and that is where acting on it would start.
+        suggestions.append({
+            "monitored_point_id": devices[0]["id"],
+            "suggestion_text": text,
+            "estimated_saving_fcfa": round(drop["saving_fcfa"]),
+        })
+    elif devices:
+        # Already in the cheapest band the home can reach. The same
+        # arithmetic then warns instead of promising: crossing the
+        # boundary re-prices the whole month upward.
+        headroom = tariff.band_headroom(projected)
+        crossing = tariff.band_crossing_cost(projected)
+        if (headroom and crossing and crossing >= MIN_SAVING_FCFA
+                and 0 < headroom["kwh_to_next"] <= BAND_WARNING_KWH):
             fallback = (
-                f"You are on track for {projected:.0f} kWh this month, "
-                f"{headroom['kwh_to_next']:.0f} kWh short of the next tariff band. "
-                f"Every kWh past it costs {headroom['next_rate']} FCFA instead of "
-                f"{headroom['band_rate']} FCFA."
+                f"You are on track for {projected:.0f} kWh, only "
+                f"{headroom['kwh_to_next']:.0f} kWh under the "
+                f"{headroom['band_to_kwh']} kWh limit. Going past it re-prices the "
+                f"whole month at {headroom['next_rate']} FCFA instead of "
+                f"{headroom['band_rate']} FCFA — about {crossing:.0f} FCFA more. "
+                f"Staying under it is worth more than anything else this month."
             )
             text = generate_ai_phrasing(
                 f"Projected monthly consumption: {projected:.0f} kWh\n"
-                f"Current band rate: {headroom['band_rate']} FCFA per kWh\n"
-                f"kWh before the next band: {headroom['kwh_to_next']:.0f}\n"
-                f"Rate beyond it: {headroom['next_rate']} FCFA per kWh"
+                f"Limit of the current band: {headroom['band_to_kwh']} kWh\n"
+                f"kWh of margin left: {headroom['kwh_to_next']:.0f}\n"
+                f"Current rate: {headroom['band_rate']} FCFA per kWh\n"
+                f"Rate if the limit is passed, applied to the whole month: "
+                f"{headroom['next_rate']} FCFA per kWh\n"
+                f"Extra cost of passing it: {crossing:.0f} FCFA"
             ) or fallback
 
-            # Pinned to the biggest consumer: ai_suggestions is keyed by
-            # device, and that is where acting on it would start.
             suggestions.append({
                 "monitored_point_id": devices[0]["id"],
                 "suggestion_text": text,
-                "estimated_saving_fcfa": round(saving),
+                "estimated_saving_fcfa": round(crossing),
             })
 
     return suggestions

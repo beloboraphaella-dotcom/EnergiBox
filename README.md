@@ -125,18 +125,20 @@ These are open, understood, and deliberately not papered over:
 - **Energy figures assume a perfect 2-second sample rate.** `SUM(watts)/1000/1800`
   under-counts whenever a device is offline. Integrating over real timestamp
   deltas would fix it.
-- **Billing still applies one flat rate.** Cameroon's published
-  low-voltage tariff is progressive by monthly volume — 50 FCFA/kWh up to
-  110 kWh, then 79, 94 and 99 — and `backend/tariff.py` implements that
-  arithmetic, but the billing queries in `main.py` still multiply by a
-  flat 79. That is the 111-400 kWh band, so anything outside it is
-  mis-costed. `GET /tariffs` reports the discrepancy, and the settings
-  screen shows it. Migrating the queries needs a real ENEO bill to
-  confirm current rates and whether bands apply per block or per
-  threshold.
-- **The tariff schedule is from 2012.** Both the regulator and the
-  operator still publish it and both note it may be out of date; a
-  harmonisation was announced for November 2024.
+- **The tariff is verified up to 216 kWh, not beyond.** Every cost now
+  goes through `backend/tariff.py`, which is checked against five real
+  ENEO LV-DOMESTIC bills (April 2024 to November 2025) and the fifteen
+  months of consumption they print: 50 FCFA/kWh at or below 110 kWh and
+  79 above it, applied *by threshold* — the month's total volume picks
+  one rate charged on every kWh of it, which `backend/tests/test_tariff.py`
+  reproduces to the franc. The 94 and 99 bands (above 400 and 800 kWh)
+  are published figures that no bill in hand confirms, and that household
+  never exceeded 216 kWh. A bill from a heavier consumer would settle
+  them.
+- **No tax and no fixed charge are applied**, because none appeared on
+  any bill observed — including at 216 kWh, above the 110 kWh exemption
+  the regulator documents. That is an observation, not a rule, and a bill
+  showing VAT would change it.
 - **A new database connection per query.** No pooling, and the MQTT path
   opens roughly six per reading per device. This will not scale.
 - **Rate limiting is per process.** `backend/rate_limit.py` is in-memory, so

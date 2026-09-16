@@ -129,7 +129,10 @@ export default function Settings({ token, user, homeId, onLogout, onUpdateUser }
   const labelClass = "font-label-sm text-label-sm text-on-surface-variant block mb-2";
 
   const bands = tariffs?.bands?.residential ?? [];
-  const applied = tariffs?.applied;
+  // How far the schedule is confirmed by real bills. Bands starting
+  // beyond that are published figures and are labelled as such rather
+  // than shown with the same authority.
+  const verified = tariffs?.verified;
 
   return (
     <div className="max-w-4xl mx-auto py-lg space-y-lg">
@@ -207,23 +210,25 @@ export default function Settings({ token, user, homeId, onLogout, onUpdateUser }
 
             <div className="rounded-lg border border-outline-variant/30 overflow-hidden">
               {bands.map((b, i) => {
-                const isApplied = applied && b.fcfa_per_kwh === applied.fcfa_per_kwh;
+                const isVerified = verified && b.from_kwh <= verified.up_to_kwh;
                 return (
                   <div
                     key={i}
                     className={
                       "flex items-center justify-between px-3 py-2.5 font-body-md text-body-md " +
                       (i > 0 ? "border-t border-outline-variant/20 " : "") +
-                      (isApplied ? "bg-secondary-container/40" : "bg-surface-container-low")
+                      (isVerified ? "bg-secondary-container/40" : "bg-surface-container-low")
                     }
                   >
                     <span className="text-on-surface-variant">
-                      {b.to_kwh >= 2000 && i === bands.length - 1
+                      {/* The last band is open-ended: the API sends
+                          to_kwh as null, which must not be printed. */}
+                      {b.to_kwh == null || b.to_kwh >= 2000
                         ? `${b.from_kwh}+ kWh`
                         : `${b.from_kwh} – ${b.to_kwh} kWh`}
                     </span>
                     <span className="flex items-center gap-2">
-                      {isApplied && (
+                      {isVerified && (
                         <span className="font-label-sm text-label-sm text-on-secondary-container">
                           {t("settings.appliedBand")}
                         </span>
@@ -237,17 +242,23 @@ export default function Settings({ token, user, homeId, onLogout, onUpdateUser }
               })}
             </div>
 
-            {applied && !applied.matches_schedule && (
-              <div className="flex items-start gap-3 bg-error-container/30 border border-error-container/50 rounded-lg p-3">
-                <Icon
-                  name="warning"
-                  className="text-on-error-container shrink-0"
-                  style={{ fontSize: "20px" }}
-                />
-                <p className="font-label-sm text-label-sm text-on-error-container leading-relaxed">
-                  {t("settings.billingMismatch", { rate: applied.fcfa_per_kwh })}
-                </p>
-              </div>
+            {/* How the bands apply is the part that changes what a
+                household should do, so it is stated, not implied. */}
+            <div className="flex items-start gap-3 bg-secondary-container/30 border border-secondary-container/50 rounded-lg p-3">
+              <Icon
+                name="info"
+                className="text-on-secondary-container shrink-0"
+                style={{ fontSize: "20px" }}
+              />
+              <p className="font-label-sm text-label-sm text-on-secondary-container leading-relaxed">
+                {t("settings.billingThreshold")}
+              </p>
+            </div>
+
+            {tariffs?.vat && tariffs.vat.charged === false && (
+              <p className="font-label-sm text-label-sm text-outline leading-relaxed">
+                {t("settings.billingNoVat")}
+              </p>
             )}
 
             {tariffs?.source && (
@@ -256,7 +267,12 @@ export default function Settings({ token, user, homeId, onLogout, onUpdateUser }
                   regulator: tariffs.source.regulator,
                   decision: tariffs.source.decision,
                 })}{" "}
-                {tariffs.source.may_be_outdated && t("settings.tariffStale")}
+                {verified &&
+                  t("settings.tariffVerified", {
+                    bills: verified.bills,
+                    period: verified.period,
+                    upTo: verified.up_to_kwh,
+                  })}
               </p>
             )}
           </div>

@@ -18,28 +18,35 @@ def check(label, cond, extra=""):
     if not cond: fails.append(label)
 
 # ── Tariff arithmetic ───────────────────────────────────────────────────
+# The schedule itself, and its agreement with real ENEO bills, is covered
+# by test_tariff.py. What matters here is that the advisor prices with the
+# mode the bills established.
 print("\n== bareme progressif ==")
+check("le mode par defaut est celui des factures", tariff.DEFAULT_MODE == "threshold")
 check("110 kWh = 110x50", tariff.monthly_cost(110) == 110 * 50, tariff.monthly_cost(110))
-check("400 kWh = 110x50 + 290x79", tariff.monthly_cost(400) == 110 * 50 + 290 * 79)
-check("800 kWh ajoute 400x94", tariff.monthly_cost(800) == 110 * 50 + 290 * 79 + 400 * 94)
-check("au-dela de 800, tranche a 99", tariff.monthly_cost(900) == tariff.monthly_cost(800) + 100 * 99)
-check("volume negatif traite comme zero", tariff.monthly_cost(-50) == 0)
-check("mode seuil : 401 kWh entierement a 94",
-      tariff.monthly_cost(401, mode="threshold") == 401 * 94)
+check("155 kWh = 155x79 (seuil, comme sur la facture)",
+      tariff.monthly_cost(155) == 155 * 79, tariff.monthly_cost(155))
+check("mode bloc conserve pour comparaison",
+      tariff.monthly_cost(400, mode="block") == 110 * 50 + 290 * 79)
 check("le mode bloc ne surestime jamais le seuil",
       tariff.monthly_cost(401, mode="block") < tariff.monthly_cost(401, mode="threshold"))
-check("tarif marginal a 110 = 79", tariff.marginal_rate(110) == 79)
-check("tarif marginal a 500 = 94", tariff.marginal_rate(500) == 94)
+check("volume negatif traite comme zero", tariff.monthly_cost(-50) == 0)
+check("tarif du mois a 155 kWh = 79", tariff.rate_for_month(155) == 79)
+check("tarif du mois a 90 kWh = 50", tariff.rate_for_month(90) == 50)
 
 print("\n== economies ==")
 s = tariff.saving_from_reduction(450, 60)
 check("economie = cout avant - cout apres",
       abs(s - (tariff.monthly_cost(450) - tariff.monthly_cost(390))) < 1e-9, s)
-check("une economie traversant une tranche n'est pas lineaire",
-      abs(s - 60 * 79) > 1 and abs(s - 60 * 94) > 1, s)
 check("aucune reduction, aucune economie", tariff.saving_from_reduction(450, 0) == 0)
 check("reduction superieure au volume : jamais negatif",
       tariff.saving_from_reduction(100, 500) == tariff.monthly_cost(100))
+d = tariff.band_drop(130)
+check("130 kWh : couper 20 kWh reprice tout le mois",
+      d and d["kwh_to_cut"] == 20 and d["target_rate"] == 50
+      and d["saving_fcfa"] == 130 * 79 - 110 * 50, d)
+check("deja dans la tranche la moins chere : rien a descendre",
+      tariff.band_drop(90) is None)
 h = tariff.band_headroom(385)
 check("385 kWh : 15 avant la tranche a 94",
       h and h["kwh_to_next"] == 15 and h["next_rate"] == 94, h)
@@ -113,16 +120,36 @@ check("aucune economie n'est negative", all(s["estimated_saving_fcfa"] >= 0 for 
 check("chaque conseil porte un appareil reel",
       all(s["monitored_point_id"] in {1, 2, 3} for s in out))
 
-# Headroom only fires when the projection is under a bounded band.
+# Under threshold pricing the band advice points downward: dropping a
+# band re-prices the whole month, which is the biggest lever there is.
 near = build(190.0, DEVICES, {}, day=15)   # projects to 380 kWh
-head = [s for s in near if "band" in s["suggestion_text"].lower()]
-check("la proximite d'une tranche est signalee", len(head) == 1, [s["suggestion_text"] for s in near])
-check("elle annonce le tarif au-dela",
-      head and "94 FCFA" in head[0]["suggestion_text"], head[0]["suggestion_text"] if head else "")
+drop = [s for s in near if "finishing at" in s["suggestion_text"].lower()]
+check("descendre d'une tranche est conseille", len(drop) == 1,
+      [s["suggestion_text"] for s in near])
+check("le conseil nomme le volume a atteindre",
+      drop and "110 kWh" in drop[0]["suggestion_text"],
+      drop[0]["suggestion_text"] if drop else "")
+check("l'economie est celle du mois entier reprice",
+      drop and drop[0]["estimated_saving_fcfa"] == round(tariff.band_drop(380)["saving_fcfa"]),
+      drop[0]["estimated_saving_fcfa"] if drop else "")
+
+# A home already in the cheapest band cannot descend, so the same
+# arithmetic becomes a warning about crossing upward.
+under = build(52.0, DEVICES, {}, day=15)   # projects to 104 kWh, 6 under 110
+warn = [s for s in under if "staying under" in s["suggestion_text"].lower()]
+check("le franchissement d'une tranche est signale", len(warn) == 1,
+      [s["suggestion_text"] for s in under])
+check("il chiffre le surcout du franchissement",
+      warn and warn[0]["estimated_saving_fcfa"] == round(tariff.band_crossing_cost(104)),
+      warn[0]["estimated_saving_fcfa"] if warn else "")
+check("aucun conseil ne promet une economie dans la tranche la moins chere",
+      not any("finishing at" in s["suggestion_text"].lower() for s in under))
 
 far = build(600.0, DEVICES, {}, day=15)    # projects to 1200 kWh, past the last band
-check("aucun conseil de tranche au-dela de la derniere",
-      not any("band" in s["suggestion_text"].lower() for s in far))
+check("au-dela de la derniere tranche, le conseil descend encore",
+      any("finishing at" in s["suggestion_text"].lower() for s in far))
+check("aucun avertissement de franchissement au-dela de la derniere tranche",
+      not any("staying under" in s["suggestion_text"].lower() for s in far))
 
 check("un foyer sans releve ne recoit rien", build(0.0, [], {}) == [])
 
