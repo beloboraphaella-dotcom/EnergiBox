@@ -10,6 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
+import energy
 import tariff
 from config import CORS_ORIGINS, get_connection as get_raw_db
 from database import engine, Base
@@ -39,6 +40,29 @@ def normalize_mac(raw: str):
     return ":".join(hex_only[i:i + 2] for i in range(0, 12, 2))
 
 Base.metadata.create_all(bind=engine)
+
+
+def _probe_energy_schema():
+    """Decide once, at startup, how energy is computed.
+
+    With migration 002 applied, every kWh is integrated over the interval
+    each reading actually stands for; without it, the old fixed-cadence
+    assumption is used unchanged. Probing here rather than per request
+    keeps the decision stable for the life of the process — and a database
+    that is down at boot only costs accuracy, not startup.
+    """
+    try:
+        conn = get_raw_db()
+        try:
+            energy.probe(conn)
+        finally:
+            conn.close()
+    except Exception as exc:
+        print(f"energy: database unreachable at startup ({exc!r}) — "
+              f"assuming the fixed cadence")
+
+
+_probe_energy_schema()
 mqtt_client = start_mqtt()
 scheduler_thread = start_scheduler()
 
@@ -290,6 +314,10 @@ def health():
         content={
             "database": database,
             "mqtt": mqtt_state,
+            # Not a health condition — the app works either way — but the
+            # difference decides whether every kWh is measured or assumed,
+            # so it should not take reading the source to find out.
+            "energy": "measured" if energy.uses_intervals() else "assumed_cadence",
             "status": "healthy" if healthy else "degraded",
         },
     )
@@ -338,8 +366,8 @@ def get_readings_by_device(mac: str, user: dict = Depends(get_mac_owner)):
 def estimate_bill(home_id: int, user: dict = Depends(get_scoped_user)):
     conn = get_raw_db()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT SUM(r.watts) / 1000 / 1800
+    cursor.execute(f"""
+        SELECT {energy.kwh('r.')}
         FROM readings r
         JOIN monitored_points mp ON r.monitored_point_id = mp.id
         JOIN rooms rm ON mp.room_id = rm.id
@@ -431,8 +459,8 @@ def get_dashboard(home_id: int, user: dict = Depends(get_scoped_user)):
     latest = cursor.fetchall()
 
     # Bill estimate
-    cursor.execute("""
-        SELECT SUM(r.watts) / 1000 / 1800
+    cursor.execute(f"""
+        SELECT {energy.kwh('r.')}
         FROM readings r
         JOIN monitored_points mp ON r.monitored_point_id = mp.id
         JOIN rooms rm ON mp.room_id = rm.id
@@ -829,21 +857,23 @@ def get_device_detail(mac: str, user: dict = Depends(get_mac_owner)):
 
     monitored_point_id = row[0]
 
+    # Hours the appliance was actually drawing, summed from the span each
+    # reading stands for. Counting rows and dividing by an assumed cadence
+    # answered "how many readings arrived", which is a different question
+    # as soon as a box goes quiet.
     def runtime_hours(days):
-        cursor.execute("""
-            SELECT COUNT(*) FROM readings
+        cursor.execute(f"""
+            SELECT {energy.hours()} FROM readings
             WHERE monitored_point_id = %s AND watts > 1
             AND timestamp >= DATE_SUB(NOW(), INTERVAL %s DAY)
         """, (monitored_point_id, days))
-        count = cursor.fetchone()[0] or 0
-        return round(count / 1800, 1)
+        return round(cursor.fetchone()[0] or 0, 1)
 
-    today_count_query = """
-        SELECT COUNT(*) FROM readings
+    cursor.execute(f"""
+        SELECT {energy.hours()} FROM readings
         WHERE monitored_point_id = %s AND watts > 1 AND DATE(timestamp) = CURDATE()
-    """
-    cursor.execute(today_count_query, (monitored_point_id,))
-    today_hours = round((cursor.fetchone()[0] or 0) / 1800, 1)
+    """, (monitored_point_id,))
+    today_hours = round(cursor.fetchone()[0] or 0, 1)
 
     week_hours = runtime_hours(7)
     month_hours = runtime_hours(30)
@@ -911,11 +941,10 @@ def get_device_history(
     only carries the last 30 raw readings.
 
     Buckets are average watts over the bucket, so the chart's Y axis reads
-    in W whatever the range. That is SUM(watts) divided by the number of
-    samples the bucket holds at one reading every 2 seconds — 1800 for an
-    hour, 43200 for a day — the same constant the rest of the backend
-    assumes. Empty buckets come back as null rather than zero, so the
-    client can tell "drew nothing" from "no data".
+    in W whatever the range: the energy measured in the bucket divided by
+    the bucket's own length (energy.avg_watts). Empty buckets come back as
+    null rather than zero, so the client can tell "drew nothing" from "no
+    data".
 
     The query parameter is named `range`, which would shadow the builtin
     inside this function, hence the alias.
@@ -939,8 +968,8 @@ def get_device_history(
     point_id, device_home_id = row[0], row[1]
 
     if window == "24h":
-        cursor.execute("""
-            SELECT HOUR(timestamp) AS bucket, SUM(watts) / 1800 AS avg_watts, COUNT(*) AS samples
+        cursor.execute(f"""
+            SELECT HOUR(timestamp) AS bucket, {energy.avg_watts(3600)} AS avg_watts, COUNT(*) AS samples
             FROM readings
             WHERE monitored_point_id = %s AND timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
             GROUP BY HOUR(timestamp)
@@ -960,8 +989,8 @@ def get_device_history(
         ]
     else:
         days = 7 if window == "7d" else 30
-        cursor.execute("""
-            SELECT DATE(timestamp) AS bucket, SUM(watts) / 43200 AS avg_watts, COUNT(*) AS samples
+        cursor.execute(f"""
+            SELECT DATE(timestamp) AS bucket, {energy.avg_watts(86400)} AS avg_watts, COUNT(*) AS samples
             FROM readings
             WHERE monitored_point_id = %s AND timestamp >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
             GROUP BY DATE(timestamp)
@@ -974,8 +1003,8 @@ def get_device_history(
 
     # Month-to-date energy and cost for this device, projected the same way
     # /stats/overview projects the whole home.
-    cursor.execute("""
-        SELECT SUM(watts) / 1000 / 1800
+    cursor.execute(f"""
+        SELECT {energy.kwh()}
         FROM readings
         WHERE monitored_point_id = %s
         AND MONTH(timestamp) = MONTH(NOW()) AND YEAR(timestamp) = YEAR(NOW())
@@ -986,8 +1015,8 @@ def get_device_history(
     # the rate that prices it comes from the home's total volume, not
     # from the slice. Billing at the slice's own rate would cost this
     # device 50 FCFA/kWh inside a 180 kWh month billed at 79.
-    cursor.execute("""
-        SELECT SUM(r.watts) / 1000 / 1800
+    cursor.execute(f"""
+        SELECT {energy.kwh('r.')}
         FROM readings r
         JOIN monitored_points mp ON r.monitored_point_id = mp.id
         JOIN rooms rm ON mp.room_id = rm.id
@@ -1261,18 +1290,17 @@ def get_hourly_history(home_id: int, user: dict = Depends(get_scoped_user)):
     overview chart plots.
 
     Returns average watts for the whole household rather than kWh, because
-    the chart is a power curve. Note the aggregate is SUM(watts) / 1800,
-    not AVG(watts): rows from every device in the home land in the same
-    hour, so AVG would return the mean draw of a single device instead of
-    what the house pulled. 1800 is the samples-per-hour constant the rest
-    of the backend already assumes (one reading every 2 seconds).
+    the chart is a power curve. Note it is a SUM divided by the hour, not
+    AVG(watts): rows from every device in the home land in the same hour,
+    so AVG would return the mean draw of a single device instead of what
+    the house pulled.
 
     An hour with no readings is reported as null so the client can tell
     "the house drew nothing" apart from "we have no data"."""
     conn = get_raw_db()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT HOUR(r.timestamp) AS hour, SUM(r.watts) / 1800 AS avg_watts, COUNT(*) AS samples
+    cursor.execute(f"""
+        SELECT HOUR(r.timestamp) AS hour, {energy.avg_watts(3600, 'r.')} AS avg_watts, COUNT(*) AS samples
         FROM readings r
         JOIN monitored_points mp ON r.monitored_point_id = mp.id
         JOIN rooms rm ON mp.room_id = rm.id
@@ -1309,10 +1337,10 @@ def get_daily_history(home_id: int, month: int = None, year: int = None, user: d
         row = cursor.fetchone()
         month, year = row[0], row[1]
 
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT
             DAY(r.timestamp) as day,
-            SUM(r.watts) / 1000 / 1800 as kwh
+            {energy.kwh('r.')} as kwh
         FROM readings r
         JOIN monitored_points mp ON r.monitored_point_id = mp.id
         JOIN rooms rm ON mp.room_id = rm.id
@@ -1327,8 +1355,8 @@ def get_daily_history(home_id: int, month: int = None, year: int = None, user: d
     prev_month = month - 1 if month > 1 else 12
     prev_year = year if month > 1 else year - 1
 
-    cursor.execute("""
-        SELECT SUM(r.watts) / 1000 / 1800
+    cursor.execute(f"""
+        SELECT {energy.kwh('r.')}
         FROM readings r
         JOIN monitored_points mp ON r.monitored_point_id = mp.id
         JOIN rooms rm ON mp.room_id = rm.id
@@ -1366,10 +1394,10 @@ def get_weekly_history(home_id: int, user: dict = Depends(get_scoped_user)):
     conn = get_raw_db()
     cursor = conn.cursor()
 
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT
             DATE(r.timestamp) as date,
-            SUM(r.watts) / 1000 / 1800 as kwh
+            {energy.kwh('r.')} as kwh
         FROM readings r
         JOIN monitored_points mp ON r.monitored_point_id = mp.id
         JOIN rooms rm ON mp.room_id = rm.id
@@ -1385,8 +1413,8 @@ def get_weekly_history(home_id: int, user: dict = Depends(get_scoped_user)):
     # A week is a slice of a month, so its rate comes from the month it
     # sits in. Pricing seven days as if they were a whole month would
     # bill them at 50 FCFA/kWh inside a month billed at 79.
-    cursor.execute("""
-        SELECT SUM(r.watts) / 1000 / 1800
+    cursor.execute(f"""
+        SELECT {energy.kwh('r.')}
         FROM readings r
         JOIN monitored_points mp ON r.monitored_point_id = mp.id
         JOIN rooms rm ON mp.room_id = rm.id
@@ -1419,10 +1447,10 @@ def get_yearly_history(home_id: int, year: int = None, user: dict = Depends(get_
         cursor.execute("SELECT YEAR(NOW())")
         year = cursor.fetchone()[0]
 
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT
             MONTH(r.timestamp) as month,
-            SUM(r.watts) / 1000 / 1800 as kwh
+            {energy.kwh('r.')} as kwh
         FROM readings r
         JOIN monitored_points mp ON r.monitored_point_id = mp.id
         JOIN rooms rm ON mp.room_id = rm.id
@@ -1464,10 +1492,10 @@ def get_history_by_appliance(home_id: int, month: int = None, year: int = None, 
         row = cursor.fetchone()
         month, year = row[0], row[1]
 
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT
             mp.name,
-            SUM(r.watts) / 1000 / 1800 as kwh
+            {energy.kwh('r.')} as kwh
         FROM readings r
         JOIN monitored_points mp ON r.monitored_point_id = mp.id
         JOIN rooms rm ON mp.room_id = rm.id
@@ -1499,7 +1527,7 @@ def get_overview(home_id: int, user: dict = Depends(get_scoped_user)):
 
     def readings_sum(where_clause):
         cursor.execute(f"""
-            SELECT SUM(r.watts) / 1000 / 1800
+            SELECT {energy.kwh('r.')}
             FROM readings r
             JOIN monitored_points mp ON r.monitored_point_id = mp.id
             JOIN rooms rm ON mp.room_id = rm.id

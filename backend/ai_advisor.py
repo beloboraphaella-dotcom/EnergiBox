@@ -34,11 +34,9 @@ from datetime import datetime
 
 import anthropic
 
+import energy
 import tariff
 from config import get_connection as get_db
-
-# One reading every 2 seconds, the constant the whole backend assumes.
-SAMPLES_PER_HOUR = 1800
 
 # A device is "drawing" above this many watts. Below it, standby noise.
 IDLE_WATTS = 5
@@ -70,14 +68,14 @@ def month_to_date(home_id):
     """
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT SUM(r.watts) / 1000 / %s
+    cursor.execute(f"""
+        SELECT {energy.kwh('r.')}
         FROM readings r
         JOIN monitored_points mp ON r.monitored_point_id = mp.id
         JOIN rooms rm ON mp.room_id = rm.id
         WHERE rm.home_id = %s
         AND MONTH(r.timestamp) = MONTH(NOW()) AND YEAR(r.timestamp) = YEAR(NOW())
-    """, (SAMPLES_PER_HOUR, home_id))
+    """, (home_id,))
     kwh = cursor.fetchone()[0] or 0
     conn.close()
 
@@ -89,8 +87,8 @@ def device_month_kwh(home_id):
     """Every device in the home with its month-to-date kWh, biggest first."""
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT mp.id, mp.name, SUM(r.watts) / 1000 / %s AS kwh
+    cursor.execute(f"""
+        SELECT mp.id, mp.name, {energy.kwh('r.')} AS kwh
         FROM readings r
         JOIN monitored_points mp ON r.monitored_point_id = mp.id
         JOIN rooms rm ON mp.room_id = rm.id
@@ -98,7 +96,7 @@ def device_month_kwh(home_id):
         AND MONTH(r.timestamp) = MONTH(NOW()) AND YEAR(r.timestamp) = YEAR(NOW())
         GROUP BY mp.id, mp.name
         ORDER BY kwh DESC
-    """, (SAMPLES_PER_HOUR, home_id))
+    """, (home_id,))
     rows = cursor.fetchall()
     conn.close()
     return [{"id": r[0], "name": r[1], "kwh": float(r[2] or 0)} for r in rows]
@@ -133,13 +131,13 @@ def standby_waste(monitored_point_id):
 
     placeholders = ", ".join(["%s"] * len(idle_hours))
     cursor.execute(f"""
-        SELECT SUM(watts) / 1000 / %s
+        SELECT {energy.kwh()}
         FROM readings
         WHERE monitored_point_id = %s
         AND HOUR(timestamp) IN ({placeholders})
         AND watts > %s
         AND MONTH(timestamp) = MONTH(NOW()) AND YEAR(timestamp) = YEAR(NOW())
-    """, (SAMPLES_PER_HOUR, monitored_point_id, *idle_hours, IDLE_WATTS))
+    """, (monitored_point_id, *idle_hours, IDLE_WATTS))
     wasted = cursor.fetchone()[0] or 0
     conn.close()
     return float(wasted), sorted(idle_hours)

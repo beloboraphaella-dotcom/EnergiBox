@@ -86,6 +86,12 @@ CREATE TABLE IF NOT EXISTS readings (
     monitored_point_id  INT      NOT NULL,
     watts               FLOAT    NOT NULL,
     timestamp           DATETIME NOT NULL,
+    -- Seconds since this device's previous reading, written at ingest and
+    -- capped at energy.MAX_INTERVAL_S. Energy is SUM(watts * interval_s),
+    -- so a box that drops off the network no longer silently lowers the
+    -- bill. NULL on rows written before migration 002, which energy.py
+    -- reads as the nominal 2-second cadence.
+    interval_s          SMALLINT UNSIGNED NULL,
     KEY idx_readings_point_time (monitored_point_id, timestamp),
     CONSTRAINT fk_readings_point FOREIGN KEY (monitored_point_id) REFERENCES monitored_points (id)
 ) ENGINE=InnoDB;

@@ -133,7 +133,8 @@ class _HistoryDB:
             self._rows = [(h, 3600.0, 1800) for h in (9, 10, 11)]
         elif "DATE(timestamp)" in flat:
             self._rows = [("2026-09-14", 120.0, 43200), ("2026-09-15", 140.0, 43200)]
-        elif "/ 1000 / 1800" in flat:
+        elif "3600000" in flat or "/ 1000 / 1800" in flat:
+            # Whichever way energy is computed, this is a kWh query.
             self._next = (4.5,)
     def fetchone(self): return self._next
     def fetchall(self): return getattr(self, "_rows", [])
@@ -159,7 +160,12 @@ check("les heures sans relevé valent null, pas zéro",
 # and the endpoint only rounds it. What is worth asserting is the divisor
 # actually present in the query.
 hourly_sql = next(c[0] for c in db.calls if "HOUR(timestamp)" in c[0])
-check("la requete horaire divise par 1800", "SUM(watts) / 1800" in hourly_sql, hourly_sql[:80])
+# Buckets are mean power: the energy measured in the bucket over the
+# bucket's own length, not a row count over an assumed sample rate.
+check("la tranche horaire est ramenee a 3600 s", "/ 3600 AS avg_watts" in hourly_sql,
+      hourly_sql[:110])
+check("la tranche horaire integre les intervalles mesures",
+      "interval_s" in hourly_sql, hourly_sql[:110])
 check("la valeur SQL est transmise telle quelle",
       any(b["watts"] == 3600.0 for b in body["buckets"]),
       [b["watts"] for b in body["buckets"] if b["watts"] is not None][:3])
@@ -178,7 +184,8 @@ check("7d renvoie des tranches journalieres",
       r.status_code == 200 and len(r.json()["buckets"]) == 2, r.status_code)
 r7, db7 = _history(query="?range=7d")
 daily_sql = next(c[0] for c in db7.calls if "DATE(timestamp)" in c[0])
-check("la requete journaliere divise par 43200", "SUM(watts) / 43200" in daily_sql, daily_sql[:80])
+check("la tranche journaliere est ramenee a 86400 s", "/ 86400 AS avg_watts" in daily_sql,
+      daily_sql[:110])
 check("la valeur journaliere est transmise telle quelle",
       r7.json()["buckets"][0]["watts"] == 120.0, r7.json()["buckets"][0])
 

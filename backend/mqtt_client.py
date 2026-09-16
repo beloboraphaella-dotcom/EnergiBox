@@ -1,7 +1,9 @@
 import paho.mqtt.client as mqtt
 import json
+import threading
 from datetime import datetime
 
+import energy
 from alert_engine import check_spike
 from config import (
     MQTT_BROKER,
@@ -10,6 +12,27 @@ from config import (
     MQTT_USERNAME,
     get_connection as get_db,
 )
+
+# Timestamp of the last reading stored for each monitored point, so the
+# gap a reading stands for costs no query. Only the first message of each
+# device after a restart falls through to the database. Guarded because
+# paho delivers messages on its own thread.
+_last_reading_at = {}
+_last_reading_lock = threading.Lock()
+
+
+def _previous_reading_at(cursor, monitored_point_id):
+    """When this device last reported, from memory or from the table."""
+    with _last_reading_lock:
+        known = _last_reading_at.get(monitored_point_id)
+    if known is not None:
+        return known
+    cursor.execute(
+        "SELECT MAX(timestamp) FROM readings WHERE monitored_point_id = %s",
+        (monitored_point_id,),
+    )
+    row = cursor.fetchone()
+    return row[0] if row else None
 
 def get_monitored_point(mac):
     """Get monitored point id and name from MAC address"""
@@ -26,16 +49,36 @@ def get_monitored_point(mac):
     return result
 
 def save_reading(monitored_point_id, watts):
-    """Save a reading to the database"""
+    """Store a reading, and the span of time it stands for.
+
+    `interval_s` is the gap since this device's previous reading, capped
+    by energy.clamp_interval. Writing it here is what lets every kWh in
+    the app be an integral instead of a guess about the sample rate — see
+    energy.py. When migration 002 has not been applied the column is
+    absent and the insert falls back to its original form.
+    """
     try:
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO readings (monitored_point_id, watts, timestamp)
-            VALUES (%s, %s, %s)
-        """, (monitored_point_id, watts, datetime.now()))
+        now = datetime.now()
+
+        if energy.uses_intervals():
+            previous = _previous_reading_at(cursor, monitored_point_id)
+            gap = (now - previous).total_seconds() if previous else None
+            cursor.execute("""
+                INSERT INTO readings (monitored_point_id, watts, timestamp, interval_s)
+                VALUES (%s, %s, %s, %s)
+            """, (monitored_point_id, watts, now, energy.clamp_interval(gap)))
+        else:
+            cursor.execute("""
+                INSERT INTO readings (monitored_point_id, watts, timestamp)
+                VALUES (%s, %s, %s)
+            """, (monitored_point_id, watts, now))
+
         conn.commit()
         conn.close()
+        with _last_reading_lock:
+            _last_reading_at[monitored_point_id] = now
     except Exception as e:
         print(f"Database error: {e}")
 
