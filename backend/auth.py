@@ -1,6 +1,9 @@
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
+import base64
+import bcrypt
 import hashlib
+import hmac
 
 from config import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -9,13 +12,62 @@ from config import (
     get_connection as get_db,
 )
 
+# ── Password hashing ────────────────────────────────────────────────────
+# Passwords are hashed with bcrypt. Accounts created before the migration
+# still carry an unsalted SHA-256 digest; verify_password recognises both,
+# and login_user silently upgrades a legacy hash once the user proves the
+# password. No password reset is forced on anyone.
+#
+# bcrypt ignores everything past 72 bytes, which would make two different
+# long passwords interchangeable. Pre-hashing with SHA-256 and base64
+# (44 bytes, no NUL) removes that limit — the same construction Passlib
+# calls bcrypt_sha256.
+
+BCRYPT_ROUNDS = 12
+_LEGACY_SHA256_LENGTH = 64
+
+
+def _bcrypt_input(password: str) -> bytes:
+    return base64.b64encode(hashlib.sha256(password.encode("utf-8")).digest())
+
+
 def hash_password(password: str) -> str:
-    """Hash password using SHA256"""
-    return hashlib.sha256(password.encode()).hexdigest()
+    """Hash a password with bcrypt (over a SHA-256 pre-hash)."""
+    return bcrypt.hashpw(_bcrypt_input(password), bcrypt.gensalt(BCRYPT_ROUNDS)).decode()
+
+
+def _is_legacy_hash(stored_hash: str) -> bool:
+    """True for the unsalted SHA-256 hex digests written before bcrypt."""
+    return not stored_hash.startswith("$2") and len(stored_hash) == _LEGACY_SHA256_LENGTH
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify password against hash"""
-    return hash_password(plain_password) == hashed_password
+    """Verify a password against either a bcrypt or a legacy SHA-256 hash."""
+    if not hashed_password:
+        return False
+
+    if _is_legacy_hash(hashed_password):
+        legacy = hashlib.sha256(plain_password.encode("utf-8")).hexdigest()
+        return hmac.compare_digest(legacy, hashed_password)
+
+    try:
+        return bcrypt.checkpw(_bcrypt_input(plain_password), hashed_password.encode())
+    except ValueError:
+        # Malformed/truncated hash in the database — treat as a failed
+        # login rather than letting the exception reach the caller.
+        return False
+
+
+def _upgrade_legacy_hash(user_id: int, plain_password: str):
+    """Re-hash a just-verified legacy password with bcrypt, in place."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE users SET password_hash = %s WHERE id = %s",
+        (hash_password(plain_password), user_id)
+    )
+    conn.commit()
+    conn.close()
 
 def create_access_token(user_id: int, email: str, role: str = "owner") -> str:
     """Generate a JWT token for a user"""
@@ -115,6 +167,10 @@ def login_user(email: str, password: str):
 
     if is_suspended:
         return None, "This account has been suspended"
+
+    # The password is correct, so this is the one moment we can re-hash it.
+    if _is_legacy_hash(password_hash):
+        _upgrade_legacy_hash(user_id, password)
 
     token = create_access_token(user_id, user_email, role)
     return {

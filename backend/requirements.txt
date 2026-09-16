@@ -1,0 +1,26 @@
+# EnergiBox backend dependencies.
+#   pip install -r backend/requirements.txt
+#
+# Versions are lower bounds, not pins — no lockfile exists yet.
+
+fastapi>=0.110
+uvicorn[standard]>=0.27
+
+# Pydantic v2 is required: schemas.py uses field_validator, which does not
+# exist in v1. Check with `pip show pydantic` before upgrading an old env.
+pydantic>=2.0
+
+# Database
+PyMySQL>=1.1
+SQLAlchemy>=2.0
+
+# Auth — bcrypt replaced the previous unsalted SHA-256 hashing.
+bcrypt>=4.1
+python-jose[cryptography]>=3.3
+
+# Devices
+paho-mqtt>=1.6,<2.0
+
+# Optional: only used by ai_advisor.py to phrase suggestions. Without it
+# (or without ANTHROPIC_API_KEY) the advisor falls back to its template.
+anthropic>=0.40

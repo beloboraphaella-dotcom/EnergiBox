@@ -35,10 +35,12 @@ export default function SignupScreen({ onSignupSuccess, onBackToLogin }) {
     setError("");
     try {
       await api.post(
-        `/auth/register?name=${encodeURIComponent(name.trim())}&email=${encodeURIComponent(email.trim())}&password=${encodeURIComponent(password)}`
+        "/auth/register",
+        { name: name.trim(), email: email.trim(), password }
       );
       const loginRes = await api.post(
-        `/auth/login?email=${encodeURIComponent(email.trim())}&password=${encodeURIComponent(password)}`
+        "/auth/login",
+        { email: email.trim(), password }
       );
       onSignupSuccess(loginRes.data.access_token, loginRes.data.user);
     } catch (err) {

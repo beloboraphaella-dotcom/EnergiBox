@@ -20,7 +20,8 @@ export default function LoginScreen({ onLogin, onGoToSignup }) {
     setError("");
     try {
       const res = await api.post(
-        `/auth/login?email=${encodeURIComponent(email.trim())}&password=${encodeURIComponent(password)}`
+        "/auth/login",
+        { email: email.trim(), password }
       );
       onLogin(res.data.access_token, res.data.user);
     } catch (err) {

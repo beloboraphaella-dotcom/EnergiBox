@@ -106,8 +106,9 @@ export default function Admin({ token, currentUserId }) {
     setFormError("");
     try {
       await axios.post(
-        `${API}/admin/users?name=${encodeURIComponent(name.trim())}&email=${encodeURIComponent(email.trim())}&password=${encodeURIComponent(password)}`,
-        null, authHeaders
+        `${API}/admin/users`,
+        { name: name.trim(), email: email.trim(), password },
+        authHeaders
       );
       await fetchUsers();
       await fetchStats();
@@ -131,8 +132,9 @@ export default function Admin({ token, currentUserId }) {
     setFormError("");
     try {
       await axios.put(
-        `${API}/admin/users/${modal.resetPw.id}/reset-password?new_password=${encodeURIComponent(newPassword)}`,
-        null, authHeaders
+        `${API}/admin/users/${modal.resetPw.id}/reset-password`,
+        { new_password: newPassword },
+        authHeaders
       );
       closeModal();
     } catch (err) {

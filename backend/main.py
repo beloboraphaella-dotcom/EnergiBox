@@ -2,11 +2,21 @@ from auth import (
     register_user, login_user, decode_token, update_user_name, change_password,
     list_all_users, set_user_suspended, delete_user, admin_set_password
 )
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from config import CORS_ORIGINS, get_connection as get_raw_db
 from database import engine, Base
+from schemas import (
+    AdminCreateUserRequest,
+    AdminResetPasswordRequest,
+    ChangePasswordRequest,
+    LoginRequest,
+    RegisterRequest,
+    UpdateProfileRequest,
+)
 from mqtt_client import start_mqtt
 from scheduler import start_scheduler
 import re
@@ -36,6 +46,29 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    """Pydantic reports validation failures as a list of error objects under
+    `detail`, but every client renders `detail` straight into the UI as a
+    string — an array there would crash the React render. Flatten it to the
+    first human-readable message so a 422 behaves like any other error."""
+    errors = exc.errors()
+    if not errors:
+        return JSONResponse(status_code=422, content={"detail": "Invalid request"})
+
+    first = errors[0]
+    message = first.get("msg", "Invalid request")
+    # Pydantic prefixes messages raised by a custom validator.
+    if message.startswith("Value error, "):
+        message = message[len("Value error, "):]
+
+    # loc is like ("body", "password"); skip the container and keep the field.
+    location = [str(part) for part in first.get("loc", ()) if str(part) != "body"]
+    field = location[-1] if location else None
+
+    detail = f"{field}: {message}" if field else message
+    return JSONResponse(status_code=422, content={"detail": detail})
 
 def _derive_is_on(watts, last_commanded_state):
     """Once a device has been sent a command, that command is the source
@@ -219,16 +252,18 @@ def health():
     }
 
 @app.get("/readings")
-def get_readings():
+def get_readings(home_id: int, user: dict = Depends(get_scoped_user)):
     conn = get_raw_db()
     cursor = conn.cursor()
     cursor.execute("""
         SELECT mp.name, r.watts, r.timestamp
         FROM readings r
         JOIN monitored_points mp ON r.monitored_point_id = mp.id
+        JOIN rooms rm ON mp.room_id = rm.id
+        WHERE rm.home_id = %s
         ORDER BY r.timestamp DESC
         LIMIT 20
-    """)
+    """, (home_id,))
     rows = cursor.fetchall()
     conn.close()
     return [
@@ -237,7 +272,7 @@ def get_readings():
     ]
 
 @app.get("/readings/{mac}")
-def get_readings_by_device(mac: str):
+def get_readings_by_device(mac: str, user: dict = Depends(get_mac_owner)):
     conn = get_raw_db()
     cursor = conn.cursor()
     cursor.execute("""
@@ -305,16 +340,17 @@ def get_alerts(home_id: int, user: dict = Depends(get_scoped_user)):
     ]
 
 @app.get("/alerts/unread")
-def get_unread_alerts():
+def get_unread_alerts(home_id: int, user: dict = Depends(get_scoped_user)):
     conn = get_raw_db()
     cursor = conn.cursor()
     cursor.execute("""
         SELECT mp.name, a.type, a.message, a.created_at
         FROM alerts a
         JOIN monitored_points mp ON a.monitored_point_id = mp.id
-        WHERE a.read_status = FALSE
+        JOIN rooms r ON mp.room_id = r.id
+        WHERE r.home_id = %s AND a.read_status = FALSE
         ORDER BY a.created_at DESC
-    """)
+    """, (home_id,))
     rows = cursor.fetchall()
     conn.close()
     return {
@@ -766,10 +802,8 @@ def control_device(mac: str, command: str, user: dict = Depends(get_mac_owner)):
         "command": command
     }
 @app.post("/auth/register")
-def register(name: str, email: str, password: str):
-    if not EMAIL_REGEX.match(email):
-        raise HTTPException(status_code=400, detail="Enter a valid email address")
-    user_id, error = register_user(name, email, password)
+def register(body: RegisterRequest):
+    user_id, error = register_user(body.name, body.email, body.password)
     if error:
         raise HTTPException(status_code=400, detail=error)
     return {
@@ -778,8 +812,8 @@ def register(name: str, email: str, password: str):
     }
 
 @app.post("/auth/login")
-def login(email: str, password: str):
-    result, error = login_user(email, password)
+def login(body: LoginRequest):
+    result, error = login_user(body.email, body.password)
     if error:
         raise HTTPException(status_code=401, detail=error)
     return result
@@ -864,15 +898,15 @@ def delete_home(home_id: int, user: dict = Depends(get_scoped_user)):
     return {"message": "Home deleted"}
 
 @app.put("/auth/profile")
-def update_profile(name: str, user: dict = Depends(get_current_user)):
+def update_profile(body: UpdateProfileRequest, user: dict = Depends(get_current_user)):
     """Update the current user's display name"""
-    update_user_name(user["user_id"], name)
+    update_user_name(user["user_id"], body.name)
     return {"message": "Profile updated", "name": name}
 
 @app.put("/auth/password")
-def update_password(current_password: str, new_password: str, user: dict = Depends(get_current_user)):
+def update_password(body: ChangePasswordRequest, user: dict = Depends(get_current_user)):
     """Change the current user's password"""
-    ok, error = change_password(user["user_id"], current_password, new_password)
+    ok, error = change_password(user["user_id"], body.current_password, body.new_password)
     if not ok:
         raise HTTPException(status_code=400, detail=error)
     return {"message": "Password updated successfully"}
@@ -951,70 +985,12 @@ def ignore_suggestion(suggestion_id: int, user: dict = Depends(get_suggestion_ow
     conn.close()
     return {"message": "Suggestion ignored"}
 @app.post("/suggestions/run")
-def run_advisor_now():
+def run_advisor_now(admin: dict = Depends(get_current_admin)):
+    """Run the advisor across every monitored point. Admin-only: it is
+    platform-wide and each run can spend Claude API credits."""
     from ai_advisor import run_ai_advisor
     run_ai_advisor()
     return {"message": "AI advisor executed"}
-@app.get("/suggestions/debug")
-def debug_suggestions():
-    from ai_advisor import analyze_usage_patterns, PEAK_HOURS
-    conn = get_raw_db()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT HOUR(timestamp) as hour, AVG(watts) as avg_watts, COUNT(*) as count
-        FROM readings
-        WHERE monitored_point_id = 6
-        GROUP BY HOUR(timestamp)
-    """)
-    rows = cursor.fetchall()
-    conn.close()
-
-    return {
-        "peak_hours": PEAK_HOURS,
-        "fridge_hourly_data": [
-            {"hour": row[0], "avg_watts": row[1], "count": row[2]}
-            for row in rows
-        ]
-    }
-@app.get("/suggestions/debug")
-def debug_suggestions():
-    from ai_advisor import analyze_usage_patterns, PEAK_HOURS, calculate_savings
-
-    hourly_profile = analyze_usage_patterns(6)
-    peak_usage = {h: w for h, w in hourly_profile.items() if h in PEAK_HOURS}
-
-    savings = 0
-    if peak_usage:
-        avg_watts = sum(peak_usage.values()) / len(peak_usage)
-        savings = calculate_savings(avg_watts, len(peak_usage), 17)
-
-    return {
-        "hourly_profile": hourly_profile,
-        "peak_usage": peak_usage,
-        "calculated_savings": savings,
-        "peak_hours": PEAK_HOURS
-    }
-@app.get("/suggestions/debug2")
-def debug_suggestions2():
-    from ai_advisor import analyze_usage_patterns, PEAK_HOURS, calculate_savings
-
-    hourly_profile = analyze_usage_patterns(6)
-    peak_usage = {h: w for h, w in hourly_profile.items() if h in PEAK_HOURS}
-
-    savings = 0
-    avg_watts = 0
-    if peak_usage:
-        avg_watts = sum(peak_usage.values()) / len(peak_usage)
-        savings = calculate_savings(avg_watts, len(peak_usage), 17)
-
-    return {
-        "hourly_profile": hourly_profile,
-        "peak_usage": peak_usage,
-        "avg_watts": avg_watts,
-        "calculated_savings": savings,
-        "savings_threshold": 1
-    }
 @app.get("/history/daily")
 def get_daily_history(home_id: int, month: int = None, year: int = None, user: dict = Depends(get_scoped_user)):
     """Returns consumption per day for a given month"""
@@ -1283,25 +1259,19 @@ def admin_list_users(admin: dict = Depends(get_current_admin)):
     return list_all_users()
 
 @app.post("/admin/users")
-def admin_create_user(name: str, email: str, password: str, admin: dict = Depends(get_current_admin)):
+def admin_create_user(body: AdminCreateUserRequest, admin: dict = Depends(get_current_admin)):
     """Create a new (owner-role) account on a user's behalf"""
-    if not EMAIL_REGEX.match(email):
-        raise HTTPException(status_code=400, detail="Enter a valid email address")
-    if len(password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-    user_id, error = register_user(name, email, password, role="owner")
+    user_id, error = register_user(body.name, body.email, body.password, role="owner")
     if error:
         raise HTTPException(status_code=400, detail=error)
-    return {"id": user_id, "name": name, "email": email, "role": "owner"}
+    return {"id": user_id, "name": body.name, "email": body.email, "role": "owner"}
 
 @app.put("/admin/users/{user_id}/reset-password")
-def admin_reset_password(user_id: int, new_password: str, admin: dict = Depends(get_current_admin)):
+def admin_reset_password(user_id: int, body: AdminResetPasswordRequest, admin: dict = Depends(get_current_admin)):
     """Set a new password for a user who lost access to their account —
     unlike the self-service change-password flow, this doesn't require
     knowing the current password."""
-    if len(new_password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-    ok, error = admin_set_password(user_id, new_password)
+    ok, error = admin_set_password(user_id, body.new_password)
     if not ok:
         raise HTTPException(status_code=404, detail=error)
     return {"message": "Password reset successfully"}

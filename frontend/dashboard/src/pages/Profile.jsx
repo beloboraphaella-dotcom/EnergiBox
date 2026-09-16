@@ -80,7 +80,7 @@ export default function Profile({ user, token, onLogout, onUpdateUser }) {
     setProfileSaving(true);
     setProfileMsg("");
     try {
-      await axios.put(`${API}/auth/profile?name=${encodeURIComponent(nameInput)}`, null, {
+      await axios.put(`${API}/auth/profile`, { name: nameInput.trim() }, {
         headers: { Authorization: `Bearer ${token}` },
       });
       onUpdateUser({ name: nameInput });
@@ -102,8 +102,8 @@ export default function Profile({ user, token, onLogout, onUpdateUser }) {
     setPwSaving(true);
     try {
       await axios.put(
-        `${API}/auth/password?current_password=${encodeURIComponent(currentPw)}&new_password=${encodeURIComponent(newPw)}`,
-        null,
+        `${API}/auth/password`,
+        { current_password: currentPw, new_password: newPw },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setPwMsg("success");

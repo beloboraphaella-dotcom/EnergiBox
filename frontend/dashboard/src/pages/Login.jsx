@@ -14,9 +14,10 @@ export default function Login({ onLogin, onGoToSignup }) {
     setLoading(true);
     setError("");
     try {
-      const res = await axios.post(
-        `${API}/auth/login?email=${email}&password=${password}`
-      );
+      const res = await axios.post(`${API}/auth/login`, {
+        email: email.trim(),
+        password,
+      });
       onLogin(res.data.access_token, res.data.user);
     } catch (err) {
       setError("Invalid email or password");

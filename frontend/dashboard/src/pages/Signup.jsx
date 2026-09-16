@@ -34,12 +34,15 @@ export default function Signup({ onSignupSuccess, onBackToLogin }) {
 
     setLoading(true);
     try {
-      await axios.post(
-        `${API}/auth/register?name=${encodeURIComponent(name)}&email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`
-      );
-      const loginRes = await axios.post(
-        `${API}/auth/login?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`
-      );
+      await axios.post(`${API}/auth/register`, {
+        name: name.trim(),
+        email: email.trim(),
+        password,
+      });
+      const loginRes = await axios.post(`${API}/auth/login`, {
+        email: email.trim(),
+        password,
+      });
       onSignupSuccess(loginRes.data.access_token, loginRes.data.user);
     } catch (err) {
       setError(err.response?.data?.detail || "Could not create account");
