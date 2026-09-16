@@ -129,5 +129,94 @@ with patch.object(scheduler, "refresh_baselines", side_effect=RuntimeError("boom
     scheduler._run_job("refresh_baselines", scheduler.refresh_baselines)
     check("un job qui plante n'interrompt pas le scheduler", boom.called)
 
+# ── A rate limit shared between workers ─────────────────────────────────
+print("\n== budget d'authentification partage ==")
+import rate_limit
+
+class CounterDB:
+    """One auth_attempts row, maintained the way MySQL would."""
+    def __init__(self, fail=False):
+        self.rows, self.calls, self.fail, self._next = {}, [], fail, None
+        self.seconds_left = 240
+    def cursor(self): return self
+    def execute(self, sql, params=()):
+        if self.fail:
+            raise RuntimeError("table is gone")
+        flat = " ".join(sql.split())
+        self.calls.append((flat, params))
+        if flat.startswith("INSERT INTO auth_attempts"):
+            key = params[0]
+            self.rows[key] = self.rows.get(key, 0) + 1
+        elif flat.startswith("SELECT attempts"):
+            self._next = (self.rows.get(params[1], 0), self.seconds_left)
+        elif flat.startswith("DELETE FROM auth_attempts"):
+            if "LIKE" in flat and "window_start" not in flat:
+                prefix = params[0].rstrip("%")
+                for k in [k for k in self.rows if k.startswith(prefix)]:
+                    del self.rows[k]
+            elif "bucket_key = " in flat:
+                self.rows.pop(params[0], None)
+            else:
+                self.rows.clear()
+    def fetchone(self): return self._next
+    def commit(self): pass
+    def close(self): pass
+
+limiter = rate_limit.SharedRateLimiter(max_attempts=3, window_seconds=300,
+                                       name="test")
+
+rate_limit._table_present = False
+for _ in range(3):
+    limiter.check("ip:1.2.3.4")
+check("sans la table, le compteur reste en memoire",
+      limiter.check("ip:1.2.3.4") > 0 and limiter.local._hits, len(limiter.local._hits))
+limiter.local.reset()
+
+rate_limit._table_present = True
+db = CounterDB()
+with patch.object(rate_limit, "get_db", return_value=db):
+    verdicts = [limiter.check("ip:1.2.3.4") for _ in range(4)]
+check("les trois premieres tentatives passent", verdicts[:3] == [0, 0, 0], verdicts)
+check("la quatrieme est refusee", verdicts[3] > 0, verdicts)
+check("le delai d'attente vient de la fenetre en base", verdicts[3] == 240, verdicts[3])
+check("le compteur est partage, pas en memoire", not limiter.local._hits)
+check("la cle porte le nom du limiteur",
+      all(p[0].startswith("test:") for sql, p in db.calls if p and "INSERT" in sql),
+      [p for sql, p in db.calls if "INSERT" in sql][:1])
+upsert = next(sql for sql, _ in db.calls if sql.startswith("INSERT INTO auth_attempts"))
+check("une fenetre expiree repart de un, dans la meme requete",
+      "ON DUPLICATE KEY UPDATE" in upsert and "attempts = IF(" in upsert, upsert[:80])
+
+# A second worker shares the count: same table, same budget.
+with patch.object(rate_limit, "get_db", return_value=db):
+    other_worker = rate_limit.SharedRateLimiter(3, 300, "test")
+    check("un autre worker herite du compteur deja consomme",
+          other_worker.check("ip:1.2.3.4") > 0)
+
+with patch.object(rate_limit, "get_db", return_value=db):
+    limiter.reset("ip:1.2.3.4")
+    check("une connexion reussie efface le compteur",
+          limiter.check("ip:1.2.3.4") == 0, db.rows)
+
+db.rows["test:ip:9.9.9.9"] = 99
+with patch.object(rate_limit, "get_db", return_value=db):
+    limiter.purge_expired()
+check("le balayage supprime les fenetres expirees",
+      any(sql.startswith("DELETE FROM auth_attempts") and "window_start" in sql
+          for sql, _ in db.calls))
+check("le scheduler appelle bien ce balayage", hasattr(scheduler, "purge_rate_limits"))
+
+# The database failing must not hand out free attempts.
+broken = CounterDB(fail=True)
+limiter.local.reset()
+with patch.object(rate_limit, "get_db", return_value=broken):
+    verdicts = [limiter.check("ip:5.5.5.5") for _ in range(4)]
+check("une base en panne ne leve pas", True)
+check("elle retombe sur le budget local, sans ouvrir les vannes",
+      verdicts[:3] == [0, 0, 0] and verdicts[3] > 0, verdicts)
+
+rate_limit._table_present = False
+check("l'etat est expose", rate_limit.is_shared() is False)
+
 print("\n" + ("TOUS LES TESTS PASSENT" if not fails else f"{len(fails)} ECHEC(S): {fails}"))
 sys.exit(1 if fails else 0)

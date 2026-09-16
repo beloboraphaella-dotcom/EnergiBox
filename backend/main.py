@@ -3,6 +3,7 @@ from auth import (
     list_all_users, set_user_suspended, delete_user, admin_set_password,
     get_account_status
 )
+import rate_limit
 from rate_limit import login_limiter, register_limiter
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Depends, Query, Request
@@ -42,6 +43,19 @@ def normalize_mac(raw: str):
 Base.metadata.create_all(bind=engine)
 
 
+def _probe_rate_limit_schema():
+    """Decide once whether the auth budget is shared between workers."""
+    try:
+        conn = get_raw_db()
+        try:
+            rate_limit.probe(conn)
+        finally:
+            conn.close()
+    except Exception as exc:
+        print(f"rate_limit: database unreachable at startup ({exc!r}) — "
+              f"limiting per process")
+
+
 def _probe_energy_schema():
     """Decide once, at startup, how energy is computed.
 
@@ -63,6 +77,7 @@ def _probe_energy_schema():
 
 
 _probe_energy_schema()
+_probe_rate_limit_schema()
 mqtt_client = start_mqtt()
 scheduler_thread = start_scheduler()
 
@@ -319,6 +334,9 @@ def health():
             # so it should not take reading the source to find out.
             "energy": "measured" if energy.uses_intervals() else "assumed_cadence",
             "db_pool": "enabled" if pooling_enabled() else "disabled",
+            # Per process means N workers give N times the allowance, so
+            # which one is running is worth stating.
+            "auth_rate_limit": "shared" if rate_limit.is_shared() else "per_process",
             "status": "healthy" if healthy else "degraded",
         },
     )

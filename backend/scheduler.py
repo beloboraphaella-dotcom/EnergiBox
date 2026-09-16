@@ -77,6 +77,11 @@ def _run_job(name, func):
         return None
 
 
+def purge_rate_limits():
+    from rate_limit import purge_all_expired
+    purge_all_expired()
+
+
 def close_stale_sessions():
     import runtime
     closed = runtime.close_stale()
@@ -117,6 +122,9 @@ def start_scheduler():
             # network would otherwise hold a session open forever and
             # never contribute to its own runtime baseline.
             _run_job("close_stale_sessions", close_stale_sessions)
+            # Nothing called this before, so expired auth counters were
+            # only ever dropped by a restart.
+            _run_job("purge_rate_limits", purge_rate_limits)
 
             if now - last_baseline >= BASELINE_INTERVAL_SECONDS:
                 _run_job("refresh_baselines", refresh_baselines)
