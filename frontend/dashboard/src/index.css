@@ -1,142 +1,109 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-  /* EnergiBox app theme fallback (light) — overridden by [data-theme] below
-     once ThemeProvider sets the attribute on <html>. */
-  --app-page-bg: #f8fafc;
-  --app-surface-bg: #ffffff;
-  --app-border: #f1f5f9;
-  --app-border-strong: #e2e8f0;
-  --app-text-primary: #0f172a;
-  --app-text-secondary: #64748b;
-  --app-text-muted: #94a3b8;
+/* Custom CSS from the mockups' inline <style> blocks, consolidated here.
+   Each rule below appears verbatim in at least one mockup; where two
+   mockups defined the same class with different values, both variants are
+   kept under distinct names rather than silently picking a winner. */
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
+@layer base {
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+@layer components {
+  /* Dashboard / My Devices / Device detail */
+  .glass-card {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(198, 198, 205, 0.3);
   }
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+  /* "My Devices" uses a stronger blur and a solid border */
+  .glass-card-strong {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid theme("colors.outline-variant");
+  }
+
+  /* Settings */
+  .glass-panel {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(198, 198, 205, 0.3);
+  }
+
+  /* Remote control */
+  .glass-panel-light {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+  }
+
+  /* Small toggle used on device cards and the detail header */
+  .toggle-checkbox:checked {
+    right: 0;
+    border-color: theme("colors.secondary");
+  }
+  .toggle-checkbox:checked + .toggle-label {
+    background-color: theme("colors.secondary");
+  }
+
+  /* Large power toggle on the remote-control screen */
+  .toggle-knob {
+    transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .toggle-bg {
+    transition: background-color 0.4s ease;
+  }
+  .glow-active {
+    box-shadow: 0 0 30px rgba(0, 106, 97, 0.4);
+  }
+
+  .chart-bar {
+    transition: height 0.5s ease-out;
   }
 }
 
-:root[data-theme="light"] {
-  --app-page-bg: #f8fafc;
-  --app-surface-bg: #ffffff;
-  --app-border: #f1f5f9;
-  --app-border-strong: #e2e8f0;
-  --app-text-primary: #0f172a;
-  --app-text-secondary: #64748b;
-  --app-text-muted: #94a3b8;
-}
-
-:root[data-theme="dark"] {
-  --app-page-bg: #0b1220;
-  --app-surface-bg: #161f32;
-  --app-border: #263042;
-  --app-border-strong: #2f3b52;
-  --app-text-primary: #e8ecf5;
-  --app-text-secondary: #a6b0c3;
-  --app-text-muted: #7c879c;
-}
-
-body {
-  margin: 0;
-  background: var(--app-page-bg);
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+@layer utilities {
+  /* `pb-safe` and `no-scrollbar` are used by the mockups but are not
+     Tailwind utilities — the CDN silently ignored them. Defining them here
+     is what actually makes the bottom nav clear an iPhone home indicator
+     and the room filter row scroll without a visible bar. */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 }
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
+
+/* The live "Live"/status dot, from the dashboard mockup */
+.pulse-dot {
+  animation: pulse-dot 2s infinite;
+}
+@keyframes pulse-dot {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(0, 106, 97, 0.7);
   }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(0, 106, 97, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(0, 106, 97, 0);
+  }
 }

@@ -1,0 +1,103 @@
+/** EnergiBox design system.
+ *
+ * Extracted verbatim from the `tailwind.config` block the mockups inline
+ * next to the Tailwind CDN script. All five mockups carried byte-identical
+ * copies of these 47 colour tokens, so this file is the single source.
+ *
+ * Tailwind is pinned to v3 because that is what cdn.tailwindcss.com serves
+ * and what this config format targets — v4 replaces it with a CSS-first
+ * `@theme` block and would change the output.
+ */
+export default {
+  darkMode: "class",
+  content: ["./index.html", "./src/**/*.{js,jsx}"],
+  theme: {
+    extend: {
+      colors: {
+        "on-primary-fixed": "#131b2e",
+        "primary-fixed-dim": "#bec6e0",
+        "background": "#f8f9ff",
+        "on-secondary-fixed": "#00201d",
+        "inverse-surface": "#213145",
+        "secondary": "#006a61",
+        "inverse-on-surface": "#eaf1ff",
+        "tertiary-fixed": "#ffddb8",
+        "on-primary-fixed-variant": "#3f465c",
+        "surface-container-lowest": "#ffffff",
+        "tertiary-container": "#2a1700",
+        "outline-variant": "#c6c6cd",
+        "outline": "#76777d",
+        "surface-tint": "#565e74",
+        "surface-container-low": "#eff4ff",
+        "tertiary-fixed-dim": "#ffb95f",
+        "on-surface": "#0b1c30",
+        "on-error": "#ffffff",
+        "surface-container-high": "#dce9ff",
+        "on-tertiary": "#ffffff",
+        "on-secondary-container": "#006f66",
+        "on-tertiary-fixed": "#2a1700",
+        "surface-container-highest": "#d3e4fe",
+        "error": "#ba1a1a",
+        "secondary-container": "#86f2e4",
+        "on-primary-container": "#7c839b",
+        "primary": "#000000",
+        "surface-bright": "#f8f9ff",
+        "inverse-primary": "#bec6e0",
+        "secondary-fixed": "#89f5e7",
+        "primary-container": "#131b2e",
+        "secondary-fixed-dim": "#6bd8cb",
+        "surface-variant": "#d3e4fe",
+        "on-surface-variant": "#45464d",
+        "surface": "#f8f9ff",
+        "on-background": "#0b1c30",
+        "error-container": "#ffdad6",
+        "on-error-container": "#93000a",
+        "tertiary": "#000000",
+        "on-secondary-fixed-variant": "#005049",
+        "surface-container": "#e5eeff",
+        "surface-dim": "#cbdbf5",
+        "primary-fixed": "#dae2fd",
+        "on-secondary": "#ffffff",
+        "on-tertiary-fixed-variant": "#653e00",
+        "on-tertiary-container": "#b87500",
+        "on-primary": "#ffffff",
+      },
+      borderRadius: {
+        DEFAULT: "0.25rem",
+        lg: "0.5rem",
+        xl: "0.75rem",
+        full: "9999px",
+      },
+      spacing: {
+        "margin-desktop": "40px",
+        md: "24px",
+        sm: "16px",
+        "margin-mobile": "16px",
+        gutter: "16px",
+        base: "4px",
+        xl: "48px",
+        xs: "8px",
+        lg: "32px",
+      },
+      fontFamily: {
+        "headline-lg": ["Hanken Grotesk"],
+        "data-label": ["JetBrains Mono"],
+        "display-metrics": ["Hanken Grotesk"],
+        "label-sm": ["Inter"],
+        "headline-md": ["Hanken Grotesk"],
+        "body-lg": ["Inter"],
+        "body-md": ["Inter"],
+      },
+      fontSize: {
+        "headline-lg": ["32px", { lineHeight: "40px", fontWeight: "600" }],
+        "data-label": ["14px", { lineHeight: "20px", letterSpacing: "0.05em", fontWeight: "500" }],
+        "display-metrics": ["48px", { lineHeight: "56px", letterSpacing: "-0.02em", fontWeight: "700" }],
+        "label-sm": ["12px", { lineHeight: "16px", fontWeight: "600" }],
+        "headline-md": ["24px", { lineHeight: "32px", fontWeight: "600" }],
+        "body-lg": ["18px", { lineHeight: "28px", fontWeight: "400" }],
+        "body-md": ["16px", { lineHeight: "24px", fontWeight: "400" }],
+      },
+    },
+  },
+  plugins: [require("@tailwindcss/forms")],
+};
