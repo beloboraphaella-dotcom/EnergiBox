@@ -40,6 +40,10 @@ def normalize_mac(raw: str):
     hex_only = hex_only.upper()
     return ":".join(hex_only[i:i + 2] for i in range(0, 12, 2))
 
+# No SQLAlchemy model is declared anywhere, so this creates nothing — but
+# it does open a connection, which makes MySQL being reachable a condition
+# for the process to start at all. Schema changes live in
+# backend/schema.sql and backend/migrations/.
 Base.metadata.create_all(bind=engine)
 
 
@@ -62,8 +66,10 @@ def _probe_energy_schema():
     With migration 002 applied, every kWh is integrated over the interval
     each reading actually stands for; without it, the old fixed-cadence
     assumption is used unchanged. Probing here rather than per request
-    keeps the decision stable for the life of the process — and a database
-    that is down at boot only costs accuracy, not startup.
+    keeps the decision stable for the life of the process. The failure is
+    swallowed so a database hiccup costs accuracy rather than startup,
+    though create_all above will already have refused to start without a
+    reachable server.
     """
     try:
         conn = get_raw_db()

@@ -115,9 +115,10 @@ _pool_lock = threading.Lock()
 def _get_pool():
     """Build the pool on first use, never at import.
 
-    Building it lazily means a database that is down at startup costs a
-    failed request, not a process that refuses to boot — the behaviour
-    /health already reports on.
+    Building it lazily keeps an unreachable server out of this module's
+    import, so the failure surfaces where it can be reported rather than
+    as an import error. (main.py's create_all does connect at startup, so
+    the process still needs MySQL up to boot today.)
     """
     global _pool
     if _pool is not None or PooledDB is None or POOL_SIZE <= 0:
