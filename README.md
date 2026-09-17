@@ -104,9 +104,7 @@ Pair the MACs it prints via the dashboard's device screen.
 ## Tests
 
 ```bash
-python backend/tests/test_api.py
-python backend/tests/test_auth.py
-python backend/tests/test_hardening.py
+for t in backend/tests/test_*.py; do python "$t" || break; done
 ```
 
 Plain scripts, no pytest. MySQL and MQTT are stubbed, so they run anywhere

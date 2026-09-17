@@ -172,6 +172,18 @@ def _handle_message(msg):
 _mqtt_client = None
 
 def start_mqtt():
+    """Start the broker connection without making it a startup condition.
+
+    `connect()` raises when nothing is listening, and this runs at import,
+    so a broker that is down — or simply slower to come up than the API —
+    used to stop the backend from starting at all. Yet everything here is
+    already built to survive a missing broker: /health reports the state,
+    send_command refuses politely, and paho reconnects on its own.
+
+    connect_async hands the connection attempt to the network thread, so
+    the API serves requests while the broker is unreachable and picks it
+    up whenever it appears.
+    """
     global _mqtt_client
     client = mqtt.Client()
     client.on_connect = on_connect
@@ -181,7 +193,10 @@ def start_mqtt():
     # an anonymous Mosquitto rejects a connection that sends a username.
     if MQTT_USERNAME:
         client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD or None)
-    client.connect(MQTT_BROKER, MQTT_PORT, 60)
+    # Back off up to a minute between attempts rather than hammering a
+    # broker that is down.
+    client.reconnect_delay_set(min_delay=1, max_delay=60)
+    client.connect_async(MQTT_BROKER, MQTT_PORT, 60)
     client.loop_start()
     _mqtt_client = client
     return client
@@ -193,7 +208,14 @@ def send_command(mac, command):
         return False
 
     topic = f"energibox/{mac}/control"
-    _mqtt_client.publish(topic, command)
+    info = _mqtt_client.publish(topic, command)
+    if info.rc != mqtt.MQTT_ERR_SUCCESS:
+        # Nothing left the process — the broker is not connected. Saying
+        # so is what stops record_command_sent from remembering a state
+        # the device was never told about.
+        print(f"WARNING: could not publish '{command}' to {topic} "
+              f"(rc={info.rc}) — broker not connected")
+        return False
     print(f"Published '{command}' to {topic}")
     return True
 

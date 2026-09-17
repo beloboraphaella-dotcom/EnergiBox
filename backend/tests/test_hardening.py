@@ -129,6 +129,33 @@ with patch.object(scheduler, "refresh_baselines", side_effect=RuntimeError("boom
     scheduler._run_job("refresh_baselines", scheduler.refresh_baselines)
     check("un job qui plante n'interrompt pas le scheduler", boom.called)
 
+# ── A broker that is down must not stop the backend ─────────────────────
+print("\n== demarrage sans broker ==")
+import importlib
+import mqtt_client as mc
+
+# start_mqtt is stubbed at the top of this file so importing main does not
+# reach for a broker. Reload restores the real one — the stub has already
+# done its job by now.
+real_start_mqtt = importlib.reload(mc).start_mqtt
+
+fake = MagicMock()
+with patch.object(mc.mqtt, "Client", return_value=fake):
+    real_start_mqtt()
+check("la connexion au broker ne bloque pas le demarrage",
+      fake.connect_async.called and not fake.connect.called,
+      f"connect_async={fake.connect_async.called} connect={fake.connect.called}")
+check("paho reessaie avec un delai croissant", fake.reconnect_delay_set.called)
+check("la boucle reseau tourne quand meme", fake.loop_start.called)
+
+# A command that never left must not be recorded as sent.
+fake.publish.return_value = MagicMock(rc=4)  # MQTT_ERR_NO_CONN
+with patch.object(mc, "_mqtt_client", fake):
+    check("une commande non publiee renvoie faux", mc.send_command("AA:BB", "ON") is False)
+fake.publish.return_value = MagicMock(rc=mc.mqtt.MQTT_ERR_SUCCESS)
+with patch.object(mc, "_mqtt_client", fake):
+    check("une commande publiee renvoie vrai", mc.send_command("AA:BB", "ON") is True)
+
 # ── A rate limit shared between workers ─────────────────────────────────
 print("\n== budget d'authentification partage ==")
 import rate_limit
