@@ -50,10 +50,17 @@ in order.
 ### 2. Backend
 
 ```bash
-pip install -r backend/requirements.txt
+python -m pip install -r backend/requirements.txt
 cp backend/.env.example backend/.env    # then fill it in
-cd backend && uvicorn main:app --reload --host 0.0.0.0 --port 8000
+cd backend && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+`python -m uvicorn` rather than `uvicorn`: the bare command needs Python's
+`Scripts`/`bin` directory on the PATH, which it often is not on Windows —
+the symptom is `'uvicorn' n'est pas reconnu` / `'uvicorn' is not
+recognized`. Going through `python -m` uses the interpreter you just
+installed into, whatever the PATH says. Same for pip. If `python` itself
+is not found on Windows, use the launcher: `py -m …`.
 
 `backend/.env` is required — there are no hardcoded fallbacks, so a missing
 setting stops the process at startup with a message naming the variable.
