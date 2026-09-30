@@ -6,7 +6,7 @@ import {
 import Svg, { Circle, Path, Defs, LinearGradient, Stop } from "react-native-svg";
 import { api } from "../api";
 import Icon from "../components/Icon";
-import { colors, spacing, radius, type, glassCard, surfaceCard } from "../theme";
+import { colors, spacing, radius, type, glassCard, surfaceCard, glass } from "../theme";
 import { useLanguage } from "../context/LanguageContext";
 
 // This card used to read "18:00 - 21:00 / High tariff period", mirroring
@@ -141,7 +141,7 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
           <Svg width={GAUGE_SIZE} height={GAUGE_SIZE} viewBox="0 0 100 100">
             <Circle
               cx="50" cy="50" r={GAUGE_RADIUS} fill="none"
-              stroke={colors.surfaceContainerLow} strokeWidth="8"
+              stroke="rgba(255, 255, 255, 0.8)" strokeWidth="8"
             />
             <Circle
               cx="50" cy="50" r={GAUGE_RADIUS} fill="none"
@@ -206,7 +206,7 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
       <View style={[surfaceCard, styles.statCard]}>
         <View style={styles.statTop}>
           <Text style={styles.statLabel}>{t("overview.peakTime").toUpperCase()}</Text>
-          <Icon name="schedule" size={24} color={colors.tertiaryContainer} />
+          <Icon name="schedule" size={24} color={colors.onTertiaryContainer} />
         </View>
         <View>
           <Text style={styles.peakValue}>
@@ -215,7 +215,7 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
               : `${String(peakHour).padStart(2, "0")}:00`}
           </Text>
           <View style={styles.statFootRow}>
-            <Icon name="bolt" size={16} color={colors.tertiaryContainer} />
+            <Icon name="bolt" size={16} color={colors.onTertiaryContainer} />
             <Text style={styles.statFoot}>
               {peakHour === null
                 ? t("overview.peakNoneHint")
@@ -260,7 +260,13 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
                 ]}
               >
                 <View style={styles.deviceTop}>
-                  <Icon name={deviceIcon(device.name)} size={24} color={colors.onSurfaceVariant} />
+                  <View style={[glass.orb, styles.deviceOrb]}>
+                    <Icon
+                      name={deviceIcon(device.name)}
+                      size={20}
+                      color={device.is_on ? colors.secondary : colors.outline}
+                    />
+                  </View>
                   <View
                     style={[
                       styles.toggle,
@@ -369,7 +375,8 @@ function PowerChart({ hourly, width }) {
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.background },
+  // Transparent: the ambient backdrop behind AppShell shows through.
+  page: { flex: 1, backgroundColor: "transparent" },
   pageContent: { padding: spacing.marginMobile, paddingBottom: spacing.xl, gap: spacing.sm },
 
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" },
@@ -403,8 +410,7 @@ const styles = StyleSheet.create({
   peakValue: { ...type.headlineMd, color: colors.onBackground },
 
   costCard: {
-    backgroundColor: colors.primaryContainer,
-    borderRadius: radius.xl,
+    ...glass.dark,
     padding: spacing.md,
     gap: spacing.md,
     overflow: "hidden",
@@ -429,7 +435,8 @@ const styles = StyleSheet.create({
 
   deviceGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   deviceCard: { height: 128, padding: spacing.sm, justifyContent: "space-between" },
-  deviceCardOff: { opacity: 0.6 },
+  deviceCardOff: { opacity: 0.7 },
+  deviceOrb: { width: 36, height: 36, borderRadius: 18 },
   deviceTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
   toggle: { width: 32, height: 16, borderRadius: radius.full, justifyContent: "center" },
   toggleKnob: {

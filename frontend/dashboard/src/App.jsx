@@ -5,6 +5,7 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Onboarding from "./pages/Onboarding";
 import { LanguageProvider } from "./context/LanguageContext";
+import Icon from "./components/Icon";
 
 const API = "http://localhost:8000";
 
@@ -126,8 +127,11 @@ function AppInner() {
 
   if (homes === null) {
     return (
-      <div style={styles.loading}>
-        <span style={styles.loadingLogo}>⚡</span>
+      <div className="min-h-screen flex items-center justify-center" role="status" aria-label="Loading">
+        <div className="app-backdrop" aria-hidden="true" />
+        <span className="icon-orb w-16 h-16 bg-gradient-to-br from-secondary-fixed to-secondary-fixed-dim text-on-secondary-fixed animate-pulse">
+          <Icon name="bolt" fill style={{ fontSize: "32px" }} />
+        </span>
       </div>
     );
   }
@@ -149,13 +153,5 @@ function AppInner() {
     />
   );
 }
-
-const styles = {
-  loading: {
-    minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
-    background: "#f8fafc",
-  },
-  loadingLogo: { fontSize: "40px" },
-};
 
 export default App;

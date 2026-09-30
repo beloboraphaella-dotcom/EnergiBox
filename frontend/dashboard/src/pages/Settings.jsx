@@ -31,11 +31,11 @@ function Panel({ icon, title, children, wide }) {
   return (
     <section
       className={
-        "glass-panel rounded-xl p-md bg-surface-container-lowest border border-outline-variant/30 " +
+        "glass rounded-2xl p-md " +
         (wide ? "md:col-span-2" : "")
       }
     >
-      <div className="flex items-center space-x-sm mb-6 border-b border-outline-variant/20 pb-4">
+      <div className="flex items-center space-x-sm mb-6 border-b border-white/70 pb-4">
         <Icon name={icon} className="text-secondary text-2xl" />
         <h2 className="font-headline-md text-[20px] leading-[28px] font-semibold text-on-surface">
           {title}
@@ -50,7 +50,7 @@ function Panel({ icon, title, children, wide }) {
  * reason is on screen rather than only in this file. */
 function NotCollected({ children }) {
   return (
-    <div className="flex items-start gap-3 bg-surface-container-low rounded-lg p-3 border border-outline-variant/20">
+    <div className="flex items-start gap-3 glass-subtle rounded-xl p-3">
       <Icon name="info" className="text-on-surface-variant shrink-0" style={{ fontSize: "20px" }} />
       <p className="font-label-sm text-label-sm text-on-surface-variant leading-relaxed">
         {children}
@@ -123,7 +123,7 @@ export default function Settings({ token, user, homeId, onLogout, onUpdateUser }
   };
 
   const inputClass =
-    "w-full px-4 py-3 bg-surface-container-low border border-outline-variant/50 rounded-lg font-body-md text-body-md text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors";
+    "glass-input font-body-md text-body-md";
   const labelClass = "font-label-sm text-label-sm text-on-surface-variant block mb-2";
 
   const bands = tariffs?.bands?.residential ?? [];
@@ -157,7 +157,7 @@ export default function Settings({ token, user, homeId, onLogout, onUpdateUser }
               devices.map((d) => (
                 <div
                   key={d.id}
-                  className="bg-surface-container-low p-3 rounded-lg border border-outline-variant/20"
+                  className="glass-subtle p-3 rounded-xl"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <Icon
@@ -206,7 +206,7 @@ export default function Settings({ token, user, homeId, onLogout, onUpdateUser }
               {t("settings.billingIntro")}
             </p>
 
-            <div className="rounded-lg border border-outline-variant/30 overflow-hidden">
+            <div className="rounded-xl glass-subtle overflow-hidden">
               {bands.map((b, i) => {
                 const isVerified = verified && b.from_kwh <= verified.up_to_kwh;
                 return (
@@ -214,8 +214,8 @@ export default function Settings({ token, user, homeId, onLogout, onUpdateUser }
                     key={i}
                     className={
                       "flex items-center justify-between px-3 py-2.5 font-body-md text-body-md " +
-                      (i > 0 ? "border-t border-outline-variant/20 " : "") +
-                      (isVerified ? "bg-secondary-container/40" : "bg-surface-container-low")
+                      (i > 0 ? "border-t border-white/70 " : "") +
+                      (isVerified ? "bg-secondary-container/35" : "bg-white/35")
                     }
                   >
                     <span className="text-on-surface-variant">
@@ -285,7 +285,7 @@ export default function Settings({ token, user, homeId, onLogout, onUpdateUser }
               { icon: "energy_savings_leaf", key: "idle" },
             ].map((rule) => (
               <div key={rule.key} className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-full bg-surface-container-low flex items-center justify-center text-secondary shrink-0">
+                <div className="icon-orb w-10 h-10">
                   <Icon name={rule.icon} style={{ fontSize: "20px" }} />
                 </div>
                 <div>
@@ -343,7 +343,7 @@ export default function Settings({ token, user, homeId, onLogout, onUpdateUser }
                 type="button"
                 onClick={saveProfile}
                 disabled={profileSaving}
-                className="w-full bg-secondary text-on-secondary font-label-sm text-label-sm py-3 rounded-lg hover:bg-on-secondary-container transition-colors shadow-sm disabled:opacity-60"
+                className="btn-primary w-full py-3 disabled:opacity-60"
               >
                 {profileSaving ? t("settings.saving") : t("settings.saveProfile")}
               </button>
@@ -393,7 +393,7 @@ export default function Settings({ token, user, homeId, onLogout, onUpdateUser }
                 type="button"
                 onClick={savePassword}
                 disabled={pwSaving}
-                className="mt-2 text-secondary font-label-sm text-label-sm border border-secondary px-4 py-2 rounded-lg hover:bg-secondary/10 transition-colors disabled:opacity-60"
+                className="btn-glass mt-2 text-secondary disabled:opacity-60"
               >
                 {pwSaving ? t("settings.saving") : t("settings.updatePassword")}
               </button>
@@ -411,7 +411,7 @@ export default function Settings({ token, user, homeId, onLogout, onUpdateUser }
           </div>
 
           {/* Preferences the app really does own */}
-          <div className="mt-8 pt-6 border-t border-outline-variant/20 grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="mt-8 pt-6 border-t border-white/70 grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <span className={labelClass}>{t("settings.language")}</span>
               <div className="flex gap-2">
@@ -426,8 +426,8 @@ export default function Settings({ token, user, homeId, onLogout, onUpdateUser }
                     className={
                       "px-4 py-1.5 rounded-full font-label-sm text-label-sm transition-colors " +
                       (language === opt.id
-                        ? "bg-secondary-container text-on-secondary-container border border-transparent"
-                        : "bg-surface text-on-surface border border-outline-variant hover:bg-surface-container-low")
+                        ? "bg-white/85 text-secondary border border-white shadow-[0_4px_12px_-6px_rgba(0,106,97,0.45)]"
+                        : "glass-subtle text-on-surface-variant hover:bg-white/70")
                     }
                   >
                     {opt.label}
@@ -437,11 +437,11 @@ export default function Settings({ token, user, homeId, onLogout, onUpdateUser }
             </div>
           </div>
 
-          <div className="mt-8 pt-6 border-t border-outline-variant/20 flex justify-end">
+          <div className="mt-8 pt-6 border-t border-white/70 flex justify-end">
             <button
               type="button"
               onClick={onLogout}
-              className="flex items-center gap-2 text-error font-label-sm text-label-sm px-4 py-2 rounded-lg hover:bg-error-container transition-colors"
+              className="btn-danger"
             >
               <Icon name="logout" style={{ fontSize: "18px" }} />
               {t("shell.logout")}

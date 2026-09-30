@@ -1,41 +1,11 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { useLanguage } from "../context/LanguageContext";
+import Icon from "../components/Icon";
+import Modal from "../components/GlassModal";
+import { deviceIcon } from "../utils/deviceIcon";
 
 const API = "http://localhost:8000";
-const COLORS = ["#6366f1", "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
-
-function getIcon(name = "", type = "appliance") {
-  if (type === "socket") return "🔌";
-  const n = name.toLowerCase();
-  if (n.includes("ac") || n.includes("air")) return "❄️";
-  if (n.includes("fridge") || n.includes("refrigerator")) return "🧊";
-  if (n.includes("wash")) return "🧺";
-  if (n.includes("light") || n.includes("lamp") || n.includes("bulb")) return "💡";
-  if (n.includes("tv") || n.includes("television")) return "📺";
-  if (n.includes("charger") || n.includes("ev")) return "🔌";
-  if (n.includes("battery")) return "🔋";
-  if (n.includes("water") || n.includes("heater")) return "🚿";
-  if (n.includes("microwave") || n.includes("oven")) return "🍽️";
-  if (n.includes("coffee")) return "☕";
-  if (n.includes("fan")) return "🌀";
-  return "📦";
-}
-
-function Modal({ title, onClose, children }) {
-  return (
-    <div style={s.overlay} onClick={onClose}>
-      <div style={s.modal} onClick={(e) => e.stopPropagation()}>
-        <div style={s.modalHeader}>
-          <h3 style={s.modalTitle}>{title}</h3>
-          <button style={s.modalClose} onClick={onClose}>✕</button>
-        </div>
-        <div style={s.modalBody}>{children}</div>
-      </div>
-    </div>
-  );
-}
-
 export default function Rooms({ token, homeId, onBack }) {
   const { t } = useLanguage();
   const [rooms, setRooms] = useState([]);
@@ -150,102 +120,149 @@ export default function Rooms({ token, homeId, onBack }) {
   if (selectedRoomId) {
     const room = rooms.find((r) => r.id === selectedRoomId);
     const roomDevices = devices.filter((d) => d.room_id === selectedRoomId);
+    const roomKw = (room?.watts ?? roomDevices.reduce((sum, d) => sum + (d.watts || 0), 0)) / 1000;
     return (
-      <div>
-        <button style={s.backBtn} onClick={() => setSelectedRoomId(null)}>{t("rooms.backToRooms")}</button>
+      <div className="max-w-5xl mx-auto py-lg space-y-md">
+        <button type="button" onClick={() => setSelectedRoomId(null)} className="btn-glass px-4 py-2">
+          <Icon name="arrow_back" style={{ fontSize: "18px" }} />
+          {t("rooms.backToRooms").replace(/^‹\s*/, "")}
+        </button>
 
-        <div style={s.detailHeader}>
-          <span style={s.detailIcon}>🏠</span>
+        <div className="flex items-center gap-4">
+          <span className="icon-orb w-14 h-14">
+            <Icon name="meeting_room" style={{ fontSize: "28px" }} />
+          </span>
           <div>
-            <h1 style={s.detailName}>{room?.name || "Room"}</h1>
-            <p style={s.detailSub}>{roomDevices.length} device{roomDevices.length !== 1 ? "s" : ""}</p>
-          </div>
-        </div>
-
-        <div style={s.powerCard}>
-          <div>
-            <p style={s.powerLabel}>{t("rooms.roomConsumption")}</p>
-            <p style={s.powerWatts}>
-              {((room?.watts ?? roomDevices.reduce((sum, d) => sum + (d.watts || 0), 0)) / 1000).toFixed(2)}{" "}
-              <span style={{ fontSize: "16px", fontWeight: 400 }}>kW</span>
+            <h1 className="font-headline-lg text-headline-lg text-on-surface">{room?.name || "Room"}</h1>
+            <p className="text-on-surface-variant">
+              {roomDevices.length} device{roomDevices.length !== 1 ? "s" : ""}
             </p>
           </div>
         </div>
 
-        <p style={s.sectionLabel}>{t("rooms.devicesInRoom")}</p>
+        <div className="glass-dark rounded-2xl p-md relative overflow-hidden">
+          <div className="absolute -right-8 -top-8 w-32 h-32 bg-secondary-fixed/25 rounded-full blur-2xl" />
+          <p className="font-data-label text-data-label uppercase text-primary-fixed-dim relative">
+            {t("rooms.roomConsumption")}
+          </p>
+          <p className="font-display-metrics text-display-metrics mt-2 relative">
+            {roomKw.toFixed(2)}{" "}
+            <span className="font-body-lg text-body-lg text-primary-fixed-dim">kW</span>
+          </p>
+        </div>
+
+        <h2 className="font-label-sm text-label-sm uppercase tracking-wider text-outline pt-2">
+          {t("rooms.devicesInRoom")}
+        </h2>
         {roomDevices.length === 0 ? (
-          <div style={s.emptyCard}><p style={{ color: "var(--app-text-muted)" }}>{t("rooms.noDevicesInRoom")}</p></div>
+          <div className="glass rounded-2xl p-lg text-center text-on-surface-variant">
+            {t("rooms.noDevicesInRoom")}
+          </div>
         ) : (
-          roomDevices.map((d) => (
-            <div key={d.mac} style={s.deviceRow}>
-              <span style={s.deviceIconBox}>{getIcon(d.name, d.type)}</span>
-              <div style={s.deviceInfo}>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <p style={s.deviceName}>{d.name}</p>
-                  <span style={s.typeTag}>{d.type === "socket" ? "Socket" : "Appliance"}</span>
+          <div className="space-y-sm">
+            {roomDevices.map((d) => (
+              <div key={d.mac} className="glass rounded-2xl p-4 flex items-center gap-4">
+                <span className={"icon-orb " + (d.is_on ? "" : "text-outline shadow-none")}>
+                  <Icon name={deviceIcon(d.name, d.type)} />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-body-md text-body-md font-semibold text-on-surface truncate">{d.name}</p>
+                    <span className="chip chip-indigo">{d.type === "socket" ? "Socket" : "Appliance"}</span>
+                  </div>
+                  <p className={"flex items-center gap-1.5 text-[13px] mt-0.5 " + (d.status === "online" ? "text-secondary" : "text-outline")}>
+                    <span className={"w-1.5 h-1.5 rounded-full " + (d.status === "online" ? "bg-secondary" : "bg-outline-variant")} />
+                    {d.status === "online" ? t("devices.online") : t("devices.offline")}
+                  </p>
                 </div>
-                <p style={{ ...s.deviceStatus, color: d.status === "online" ? "#16a34a" : "#ef4444" }}>
-                  {d.status === "online" ? t("devices.online") : t("devices.offline")}
+                <p className="font-data-label text-data-label text-on-surface whitespace-nowrap">
+                  {(d.watts / 1000).toFixed(2)} kW
                 </p>
-              </div>
-              <div style={s.deviceRight}>
-                <p style={s.deviceKw}>{(d.watts / 1000).toFixed(2)} kW</p>
                 <button
-                  style={{
-                    ...s.statePill,
-                    border: "none", cursor: "pointer",
-                    background: d.is_on ? "#dcfce7" : "#fee2e2",
-                    color: d.is_on ? "#16a34a" : "#ef4444",
-                  }}
+                  type="button"
                   onClick={(e) => toggleDevice(e, d)}
                   title={d.is_on ? "Turn off" : "Turn on"}
+                  aria-pressed={d.is_on}
+                  className={"chip cursor-pointer " + (d.is_on ? "chip-teal" : "chip-red")}
                 >
+                  <Icon name="power_settings_new" style={{ fontSize: "14px" }} />
                   {d.is_on ? "On" : "Off"}
                 </button>
               </div>
-            </div>
-          ))
+            ))}
+          </div>
         )}
       </div>
     );
   }
 
   return (
-    <div>
-      <div style={s.pageHeader}>
+    <div className="max-w-7xl mx-auto py-lg space-y-md">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <button style={s.backBtn} onClick={onBack}>{t("rooms.backToHome")}</button>
-          <h1 style={s.pageTitle}>{t("rooms.title")}</h1>
-          <p style={s.pageSub}>{t("rooms.subtitle")}</p>
+          <button type="button" onClick={onBack} className="btn-glass px-4 py-2 mb-4">
+            <Icon name="arrow_back" style={{ fontSize: "18px" }} />
+            {t("rooms.backToHome").replace(/^‹\s*/, "")}
+          </button>
+          <h1 className="font-headline-lg text-headline-lg text-on-surface">{t("rooms.title")}</h1>
+          <p className="text-on-surface-variant mt-1">{t("rooms.subtitle")}</p>
         </div>
-        <button style={s.addBtn} onClick={openAdd}>{t("rooms.addRoom")}</button>
+        <button type="button" onClick={openAdd} className="btn-primary px-6 py-3 self-start sm:self-auto">
+          <Icon name="add" style={{ fontSize: "20px" }} />
+          {t("rooms.addRoom").replace(/^\+\s*/, "")}
+        </button>
       </div>
 
       {loading ? (
-        <div style={s.emptyCard}><p style={{ color: "var(--app-text-muted)" }}>{t("rooms.loading")}</p></div>
+        <div className="glass rounded-2xl p-lg text-center text-on-surface-variant">{t("rooms.loading")}</div>
       ) : rooms.length === 0 ? (
-        <div style={s.emptyCard}>
-          <p style={{ color: "var(--app-text-muted)", marginBottom: "12px" }}>{t("rooms.noRooms")}</p>
-          <button style={s.addBtnSmall} onClick={openAdd}>{t("rooms.addFirst")}</button>
+        <div className="glass rounded-2xl p-lg text-center">
+          <p className="text-on-surface-variant mb-4">{t("rooms.noRooms")}</p>
+          <button type="button" onClick={openAdd} className="btn-primary">{t("rooms.addFirst")}</button>
         </div>
       ) : (
-        <div style={s.roomsGrid}>
-          {rooms.map((room, i) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-sm">
+          {rooms.map((room) => (
             <div
               key={room.id}
-              style={{ ...s.roomCard, borderTop: `3px solid ${COLORS[i % COLORS.length]}` }}
+              role="button"
+              tabIndex={0}
               onClick={() => setSelectedRoomId(room.id)}
+              onKeyDown={(e) => e.key === "Enter" && setSelectedRoomId(room.id)}
+              className="glass glass-hover rounded-2xl p-5 cursor-pointer group"
             >
-              <div style={s.roomTop}>
-                <span style={s.roomIcon}>🏠</span>
-                <div style={s.roomActions}>
-                  <button style={s.roomActionBtn} onClick={(e) => { e.stopPropagation(); openEdit(room); }} title="Rename room">✎</button>
-                  <button style={s.roomActionBtn} onClick={(e) => { e.stopPropagation(); deleteRoom(room); }} title="Delete room">🗑</button>
+              <div className="flex justify-between items-start mb-4">
+                <span className="icon-orb">
+                  <Icon name="meeting_room" />
+                </span>
+                <div className="flex gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
+                  <button
+                    type="button"
+                    className="btn-icon w-8 h-8"
+                    onClick={(e) => { e.stopPropagation(); openEdit(room); }}
+                    title="Rename room"
+                    aria-label="Rename room"
+                  >
+                    <Icon name="edit" style={{ fontSize: "18px" }} />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-icon w-8 h-8 hover:text-error"
+                    onClick={(e) => { e.stopPropagation(); deleteRoom(room); }}
+                    title="Delete room"
+                    aria-label="Delete room"
+                  >
+                    <Icon name="delete" style={{ fontSize: "18px" }} />
+                  </button>
                 </div>
               </div>
-              <p style={{ ...s.roomName, color: COLORS[i % COLORS.length] }}>{room.name}</p>
-              <p style={s.roomKw}>{room.kw} kW</p>
-              <p style={s.roomDevices}>{room.device_count} Device{room.device_count !== 1 ? "s" : ""}</p>
+              <p className="font-body-lg text-body-lg font-semibold text-on-surface">{room.name}</p>
+              <p className="font-headline-md text-headline-md text-secondary mt-1">
+                {room.kw} <span className="font-body-md text-body-md text-outline">kW</span>
+              </p>
+              <p className="font-label-sm text-label-sm text-on-surface-variant mt-3 pt-3 border-t border-white/70">
+                {room.device_count} Device{room.device_count !== 1 ? "s" : ""}
+              </p>
             </div>
           ))}
         </div>
@@ -253,15 +270,19 @@ export default function Rooms({ token, homeId, onBack }) {
 
       {(modal === "add" || modal?.edit) && (
         <Modal title={modal === "add" ? "Add Room" : "Rename Room"} onClose={closeModal}>
-          <label style={s.label}>Room Name</label>
-          <input
-            style={s.input}
-            placeholder="e.g. Living Room"
-            value={roomName}
-            onChange={(e) => setRoomName(e.target.value)}
-          />
-          {roomError && <p style={s.errorText}>{roomError}</p>}
-          <button style={s.saveBtn} onClick={submitRoom} disabled={saving}>
+          <label className="block">
+            <span className="block mb-1.5 font-label-sm text-label-sm text-on-surface-variant">Room Name</span>
+            <input
+              className="glass-input font-body-md text-body-md"
+              placeholder="e.g. Living Room"
+              value={roomName}
+              onChange={(e) => setRoomName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submitRoom()}
+              autoFocus
+            />
+          </label>
+          {roomError && <p className="text-error text-[14px] mt-2">{roomError}</p>}
+          <button type="button" className="btn-primary w-full py-3 mt-md" onClick={submitRoom} disabled={saving}>
             {saving ? "Saving..." : modal === "add" ? "Create Room" : "Save Changes"}
           </button>
         </Modal>
@@ -269,68 +290,3 @@ export default function Rooms({ token, homeId, onBack }) {
     </div>
   );
 }
-
-const s = {
-  pageHeader: { marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" },
-  pageTitle: { fontSize: "26px", fontWeight: "700", color: "var(--app-text-primary)", margin: "0 0 4px" },
-  pageSub: { fontSize: "14px", color: "var(--app-text-muted)", margin: 0 },
-  backBtn: { border: "none", background: "none", color: "#3b82f6", fontSize: "14px", fontWeight: "600", cursor: "pointer", padding: 0, marginBottom: "10px", display: "block" },
-
-  addBtn: { padding: "10px 20px", background: "#3b82f6", color: "#fff", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: "600", fontSize: "14px", height: "fit-content" },
-  addBtnSmall: { padding: "10px 18px", borderRadius: "10px", background: "#3b82f6", color: "#fff", border: "none", cursor: "pointer", fontWeight: "600", fontSize: "13px" },
-
-  emptyCard: { background: "var(--app-surface-bg)", borderRadius: "16px", padding: "48px 24px", textAlign: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.06)", border: "1px solid var(--app-border)" },
-
-  roomsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "16px" },
-  roomCard: { background: "var(--app-surface-bg)", borderRadius: "14px", padding: "16px", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", border: "1px solid var(--app-border)", cursor: "pointer" },
-  roomTop: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" },
-  roomIcon: { fontSize: "22px" },
-  roomActions: { display: "flex", gap: "6px" },
-  roomActionBtn: { border: "none", background: "var(--app-border)", borderRadius: "8px", width: "26px", height: "26px", cursor: "pointer", fontSize: "12px", color: "var(--app-text-secondary)" },
-  roomName: { fontSize: "14px", fontWeight: "700", margin: "0 0 4px" },
-  roomKw: { fontSize: "18px", fontWeight: "700", color: "var(--app-text-primary)", margin: "0 0 2px" },
-  roomDevices: { fontSize: "11px", color: "var(--app-text-muted)", margin: 0 },
-
-  detailHeader: { display: "flex", alignItems: "center", gap: "14px", marginBottom: "20px" },
-  detailIcon: { fontSize: "36px" },
-  detailName: { fontSize: "22px", fontWeight: "700", color: "var(--app-text-primary)", margin: "0 0 2px" },
-  detailSub: { fontSize: "13px", color: "var(--app-text-muted)", margin: 0 },
-
-  powerCard: {
-    background: "linear-gradient(135deg, #1d4ed8, #3b82f6)", borderRadius: "18px", padding: "22px 24px",
-    display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", color: "#fff",
-    boxShadow: "0 8px 32px rgba(59,130,246,0.3)",
-  },
-  powerLabel: { fontSize: "12px", color: "rgba(255,255,255,0.75)", margin: "0 0 4px" },
-  powerWatts: { fontSize: "30px", fontWeight: "700", margin: 0 },
-
-  sectionLabel: { fontSize: "12px", fontWeight: "600", color: "var(--app-text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 10px" },
-
-  deviceRow: {
-    width: "100%", display: "flex", alignItems: "center", gap: "14px",
-    background: "var(--app-surface-bg)", borderRadius: "14px", padding: "14px 16px", marginBottom: "10px",
-    border: "1px solid var(--app-border)", boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-  },
-  deviceIconBox: {
-    width: "44px", height: "44px", borderRadius: "12px", background: "#eff6ff",
-    display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", flexShrink: 0,
-  },
-  deviceInfo: { flex: 1, minWidth: 0 },
-  deviceName: { fontSize: "14px", fontWeight: "700", color: "var(--app-text-primary)", margin: "0 0 2px" },
-  deviceStatus: { fontSize: "11px", fontWeight: "600", margin: 0 },
-  deviceRight: { textAlign: "right", flexShrink: 0 },
-  deviceKw: { fontSize: "14px", fontWeight: "700", color: "var(--app-text-primary)", margin: "0 0 6px" },
-  statePill: { padding: "4px 12px", borderRadius: "20px", fontSize: "11px", fontWeight: "700" },
-  typeTag: { fontSize: "10px", fontWeight: "700", padding: "2px 8px", borderRadius: "10px", background: "#eff6ff", color: "#3b82f6", textTransform: "uppercase", letterSpacing: "0.3px" },
-
-  overlay: { position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px" },
-  modal: { background: "var(--app-surface-bg)", borderRadius: "18px", width: "380px", maxWidth: "100%", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.25)" },
-  modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 20px", borderBottom: "1px solid var(--app-border)" },
-  modalTitle: { fontSize: "16px", fontWeight: "700", color: "var(--app-text-primary)", margin: 0 },
-  modalClose: { border: "none", background: "var(--app-border)", borderRadius: "8px", width: "28px", height: "28px", cursor: "pointer", color: "var(--app-text-secondary)" },
-  modalBody: { padding: "20px" },
-  label: { display: "block", fontSize: "12px", fontWeight: "600", color: "var(--app-text-secondary)", margin: "0 0 6px" },
-  input: { width: "100%", boxSizing: "border-box", padding: "10px 14px", borderRadius: "10px", border: "1px solid var(--app-border-strong)", fontSize: "14px", marginBottom: "16px", outline: "none", background: "var(--app-surface-bg)", color: "var(--app-text-primary)" },
-  errorText: { color: "#ef4444", fontSize: "12px", margin: "-8px 0 12px" },
-  saveBtn: { width: "100%", padding: "12px", borderRadius: "10px", background: "#3b82f6", color: "#fff", border: "none", cursor: "pointer", fontWeight: "700", fontSize: "14px" },
-};

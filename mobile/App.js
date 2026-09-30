@@ -16,6 +16,7 @@ import { colors } from "./src/theme";
 import { LanguageProvider, useLanguage } from "./src/context/LanguageContext";
 import AppShell from "./src/components/AppShell";
 import Icon from "./src/components/Icon";
+import GlassBackdrop from "./src/components/GlassBackdrop";
 import LoginScreen from "./src/screens/LoginScreen";
 import SignupScreen from "./src/screens/SignupScreen";
 import OnboardingScreen from "./src/screens/OnboardingScreen";
@@ -144,6 +145,7 @@ function AppInner() {
 
   const spinner = (
     <View style={styles.loading}>
+      <GlassBackdrop />
       <ActivityIndicator size="large" color={colors.secondary} />
     </View>
   );

@@ -6,7 +6,7 @@ import {
 } from "react-native";
 import { api } from "../api";
 import Icon from "../components/Icon";
-import { colors, spacing, radius, type, glassCard, surfaceCard } from "../theme";
+import { colors, spacing, radius, type, glassCard, surfaceCard, glass } from "../theme";
 import { useLanguage } from "../context/LanguageContext";
 
 // The "My Devices" mockup uses this teal for the primary action and the
@@ -645,7 +645,7 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
       {/* This device's alerts */}
       {alerts.length === 0 ? (
         <View style={[glassCard, styles.insightCard]}>
-          <View style={[styles.insightIcon, { backgroundColor: colors.surfaceContainerLow }]}>
+          <View style={[glass.orb, styles.insightIcon]}>
             <Icon name="check_circle" size={22} color={colors.secondary} />
           </View>
           <View style={styles.insightBody}>
@@ -658,11 +658,9 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
           <View key={i} style={[glassCard, styles.insightCard]}>
             <View
               style={[
+                glass.orb,
                 styles.insightIcon,
-                {
-                  backgroundColor:
-                    a.type === "spike" ? "rgba(255, 218, 214, 0.35)" : colors.surfaceContainerLow,
-                },
+                a.type === "spike" && { backgroundColor: "rgba(255, 218, 214, 0.75)" },
               ]}
             >
               <Icon
@@ -968,7 +966,7 @@ const styles = StyleSheet.create({
   metricUnitPlain: { ...type.bodyMd, color: colors.onSurfaceVariant, marginBottom: 6 },
   drawTrack: {
     height: 6, borderRadius: radius.full,
-    backgroundColor: colors.surfaceVariant, overflow: "hidden", marginTop: spacing.xs,
+    backgroundColor: "rgba(255, 255, 255, 0.7)", overflow: "hidden", marginTop: spacing.xs,
   },
   drawFill: { height: "100%", borderRadius: radius.full },
 
@@ -1010,8 +1008,7 @@ const styles = StyleSheet.create({
   statusText: { ...type.labelSm, color: colors.onSurfaceVariant },
 
   costCardDetail: {
-    backgroundColor: colors.primaryContainer,
-    borderRadius: radius.xl,
+    ...glass.dark,
     padding: spacing.md, gap: spacing.sm, minHeight: 160,
   },
   costLabel: { ...type.bodyLg, color: colors.primaryFixedDim },
@@ -1026,12 +1023,15 @@ const styles = StyleSheet.create({
   historyHeader: { gap: spacing.sm },
   sectionTitle: { ...type.headlineMd, color: colors.onSurface },
   rangeTabs: {
+    ...glass.subtle,
     flexDirection: "row", alignSelf: "flex-start",
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: radius.lg, padding: 4,
+    borderRadius: radius.full, padding: 4,
   },
-  rangeTab: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.DEFAULT },
-  rangeTabActive: { backgroundColor: colors.secondaryContainer },
+  rangeTab: {
+    paddingHorizontal: spacing.sm, paddingVertical: 5, borderRadius: radius.full,
+    borderWidth: 1, borderColor: "transparent",
+  },
+  rangeTabActive: glass.pillActive,
   rangeTabLabel: { ...type.labelSm },
 
   chartRow: { flexDirection: "row", alignItems: "flex-end", marginTop: spacing.sm },
@@ -1050,17 +1050,20 @@ const styles = StyleSheet.create({
   insightTitle: { ...type.bodyMd, color: colors.onSurface },
   insightText: { ...type.labelSm, color: colors.onSurfaceVariant, marginTop: 4 },
 
-  modalScrim: { flex: 1, backgroundColor: "rgba(11, 28, 48, 0.4)", justifyContent: "flex-end" },
+  modalScrim: { flex: 1, backgroundColor: glass.scrim, justifyContent: "flex-end" },
+  // A form sheet sits on a scrim, not on the backdrop, so it is kept near
+  // opaque: there is nothing behind it worth seeing through.
   modalSheet: {
-    backgroundColor: colors.surfaceContainerLowest,
-    borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl,
-    borderWidth: 1, borderColor: "rgba(198, 198, 205, 0.3)",
+    ...glass.strong,
+    backgroundColor: "rgba(248, 250, 255, 0.95)",
+    borderBottomLeftRadius: 0, borderBottomRightRadius: 0,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
     maxHeight: "88%",
   },
   modalHeader: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: "rgba(198, 198, 205, 0.2)",
+    borderBottomWidth: 1, borderBottomColor: glass.divider,
   },
   modalTitle: { ...type.headlineMd, fontSize: 20, lineHeight: 28, color: colors.onSurface },
   modalClose: { padding: 8, borderRadius: radius.full },
@@ -1068,23 +1071,19 @@ const styles = StyleSheet.create({
   fieldLabel: { ...type.labelSm, color: colors.onSurfaceVariant, marginTop: spacing.xs },
   input: {
     ...type.bodyMd,
-    color: colors.onSurface,
-    backgroundColor: colors.surfaceContainerLow,
-    borderWidth: 1, borderColor: "rgba(198, 198, 205, 0.5)",
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.sm, paddingVertical: 12,
+    ...glass.input,
+    borderColor: "rgba(198, 198, 205, 0.6)",
   },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
   fieldError: { ...type.labelSm, color: colors.error, marginTop: spacing.xs },
   submitButton: {
-    backgroundColor: colors.secondary,
-    borderRadius: radius.lg,
-    paddingVertical: 14, alignItems: "center",
+    ...glass.primaryButton,
     marginTop: spacing.sm,
   },
-  submitLabel: { ...type.labelSm, color: colors.onSecondary },
+  submitLabel: glass.primaryButtonText,
 
-  page: { flex: 1, backgroundColor: colors.background },
+  // Transparent: the ambient backdrop behind AppShell shows through.
+  page: { flex: 1, backgroundColor: "transparent" },
   pageContent: { padding: spacing.marginMobile, paddingBottom: spacing.xl, gap: spacing.sm },
 
   header: { marginBottom: spacing.xs },
@@ -1092,12 +1091,11 @@ const styles = StyleSheet.create({
   subtitle: { ...type.bodyMd, color: colors.onSurfaceVariant },
 
   addButton: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.xs,
-    backgroundColor: ACCENT,
-    paddingHorizontal: spacing.md, paddingVertical: 14,
-    borderRadius: radius.full, alignSelf: "flex-start",
+    ...glass.primaryButton,
+    paddingHorizontal: spacing.md,
+    alignSelf: "flex-start",
   },
-  addButtonLabel: { ...type.labelSm, color: "#ffffff" },
+  addButtonLabel: glass.primaryButtonText,
 
   statsRow: { flexDirection: "row", gap: spacing.sm },
   statCard: {
@@ -1107,8 +1105,8 @@ const styles = StyleSheet.create({
   statValue: { ...type.headlineMd, color: colors.onBackground },
 
   drawCard: {
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: radius.xl,
+    ...glass.subtle,
+    borderRadius: 16,
     padding: spacing.sm,
   },
   drawRow: { flexDirection: "row", alignItems: "baseline", gap: spacing.xs },
@@ -1120,22 +1118,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm, paddingVertical: 6,
     borderRadius: radius.full, borderWidth: 1,
   },
-  filterPillActive: { backgroundColor: colors.secondaryContainer, borderColor: "transparent" },
-  filterPillIdle: { backgroundColor: colors.surface, borderColor: colors.outlineVariant },
+  filterPillActive: glass.pillActive,
+  filterPillIdle: glass.pillIdle,
   filterLabel: { ...type.labelSm },
 
   deviceCard: { padding: 20, gap: spacing.sm },
   deviceCardOff: { opacity: 0.8 },
   deviceTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  iconCircle: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: colors.surfaceContainerLow,
-    borderWidth: 1, borderColor: "rgba(198, 198, 205, 0.5)",
-    alignItems: "center", justifyContent: "center",
-  },
+  iconCircle: { ...glass.orb, width: 40, height: 40, borderRadius: 20 },
   iconCircleOff: {
-    backgroundColor: colors.surfaceContainerLowest,
-    borderColor: "rgba(198, 198, 205, 0.3)",
+    backgroundColor: "rgba(255, 255, 255, 0.4)",
+    borderColor: "rgba(255, 255, 255, 0.7)",
+    boxShadow: "none",
   },
   toggle: { width: 40, height: 20, borderRadius: radius.full, justifyContent: "center" },
   toggleKnob: {
@@ -1153,7 +1147,7 @@ const styles = StyleSheet.create({
 
   deviceBottom: {
     paddingTop: spacing.sm,
-    borderTopWidth: 1, borderTopColor: "rgba(198, 198, 205, 0.3)",
+    borderTopWidth: 1, borderTopColor: glass.divider,
   },
   drawCaption: { ...type.labelSm },
   deviceDraw: { ...type.dataLabel, marginTop: 2 },
@@ -1161,52 +1155,4 @@ const styles = StyleSheet.create({
   emptyCard: { padding: spacing.md, alignItems: "center" },
   emptyText: { ...type.bodyMd, color: colors.onSurfaceVariant, textAlign: "center" },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-
-  pageHeader: { padding: 16, paddingBottom: 8 },
-  pageTitle: { fontSize: 24, fontWeight: "700", color: "#0f172a", marginBottom: 4 },
-  pageSub: { fontSize: 13, color: "#64748b" },
-  pageSubBold: { fontWeight: "700", color: "#3b82f6" },
-  filterBtn: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, backgroundColor: "#f1f5f9" },
-  filterBtnActive: { backgroundColor: "#3b82f6" },
-  filterBtnText: { fontSize: 13, fontWeight: "600", color: "#64748b" },
-  filterBtnTextActive: { color: "#fff" },
-
-  deviceRow: {
-    flexDirection: "row", alignItems: "center", gap: 14,
-    backgroundColor: "#fff", borderRadius: 14, padding: 14, marginBottom: 10,
-  },
-  deviceIconBox: { width: 44, height: 44, borderRadius: 12, backgroundColor: "#eff6ff", justifyContent: "center", alignItems: "center" },
-  deviceIcon: { fontSize: 20 },
-  deviceInfo: { flex: 1 },
-  deviceNameRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  deviceRoom: { fontSize: 12, color: "#94a3b8", marginTop: 2 },
-  deviceStatus: { fontSize: 11, fontWeight: "600", marginTop: 2 },
-  deviceRight: { alignItems: "flex-end", gap: 6 },
-  deviceKw: { fontSize: 14, fontWeight: "700", color: "#0f172a" },
-  typeTag: { backgroundColor: "#eff6ff", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
-  typeTagText: { fontSize: 9, fontWeight: "700", color: "#3b82f6", textTransform: "uppercase" },
-
-  backBtn: { color: "#3b82f6", fontSize: 14, fontWeight: "600", marginBottom: 16 },
-  detailIcon: { fontSize: 36 },
-  detailName: { fontSize: 20, fontWeight: "700", color: "#0f172a" },
-  detailRoom: { fontSize: 13, color: "#94a3b8", marginTop: 2 },
-
-  powerCard: {
-    backgroundColor: "#3b82f6", borderRadius: 18, padding: 20,
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20,
-  },
-  powerLabel: { fontSize: 12, color: "rgba(255,255,255,0.75)", marginBottom: 4 },
-  powerWatts: { fontSize: 28, fontWeight: "700", color: "#fff" },
-  powerUnit: { fontSize: 14, fontWeight: "400" },
-
-  sectionLabel: { fontSize: 11, fontWeight: "700", color: "#94a3b8", letterSpacing: 0.5, marginBottom: 10 },
-  runtimeRow: { flexDirection: "row", gap: 10, marginBottom: 20 },
-  runtimeCard: { flex: 1, backgroundColor: "#fff", borderRadius: 14, padding: 14, alignItems: "center" },
-  runtimeLabel: { fontSize: 11, color: "#94a3b8", marginBottom: 4 },
-  runtimeValue: { fontSize: 16, fontWeight: "700", color: "#0f172a" },
-
-  card: { backgroundColor: "#fff", borderRadius: 14, paddingHorizontal: 16 },
-  infoRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
-  infoLabel: { fontSize: 13, color: "#94a3b8" },
-  infoValue: { fontSize: 13, fontWeight: "600", color: "#0f172a" },
 });

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import Icon from "../components/Icon";
+import { deviceIcon } from "../utils/deviceIcon";
 import { useLanguage } from "../context/LanguageContext";
 
 const API = "http://localhost:8000";
@@ -13,20 +14,6 @@ const API = "http://localhost:8000";
 
 const GAUGE_RADIUS = 45;
 const GAUGE_CIRCUMFERENCE = 2 * Math.PI * GAUGE_RADIUS; // 282.7, as in the mockup
-
-/** Icon for a device, picked from its name. The backend only stores
- * "appliance" or "socket", so there is nothing better to key off yet. */
-function deviceIcon(name = "") {
-  const n = name.toLowerCase();
-  if (/frig|fridge|réfrig|refrig|freezer|congel/.test(n)) return "kitchen";
-  if (/clim|ac\b|air|cond/.test(n)) return "ac_unit";
-  if (/heater|chauffe|boiler|ballon/.test(n)) return "water_heater";
-  if (/light|lamp|lumi|ampoule/.test(n)) return "lightbulb";
-  if (/tv|télé|tele|screen/.test(n)) return "tv";
-  if (/fan|ventil/.test(n)) return "mode_fan";
-  if (/pump|pompe/.test(n)) return "water_pump";
-  return "power";
-}
 
 function formatWatts(watts) {
   if (watts >= 1000) return { value: (watts / 1000).toFixed(1), unit: "kW" };
@@ -103,7 +90,7 @@ export default function Overview({ token, homeId, onOpenDevices }) {
           </h2>
           <p className="text-on-surface-variant mt-1">{t("overview.subtitle")}</p>
         </div>
-        <div className="hidden md:flex items-center space-x-2 bg-surface-container px-3 py-1.5 rounded-full border border-outline-variant/50">
+        <div className="hidden md:flex items-center space-x-2 glass-subtle px-3 py-1.5 rounded-full">
           <div
             className={`w-2 h-2 rounded-full ${onlineCount > 0 ? "bg-secondary pulse-dot" : "bg-outline"}`}
           />
@@ -121,7 +108,7 @@ export default function Overview({ token, homeId, onOpenDevices }) {
       {/* Hero: bento grid */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-sm">
         {/* Real-time consumption gauge */}
-        <div className="md:col-span-4 bg-surface rounded-xl border border-outline-variant/30 p-md flex flex-col items-center justify-center relative glass-card shadow-sm">
+        <div className="md:col-span-4 glass rounded-2xl p-md flex flex-col items-center justify-center relative">
           <div className="absolute top-4 left-4 flex items-center space-x-1">
             <div className="w-2 h-2 rounded-full bg-error pulse-dot" />
             <span className="font-label-sm text-label-sm text-outline uppercase tracking-wider">
@@ -130,14 +117,20 @@ export default function Overview({ token, homeId, onOpenDevices }) {
           </div>
           <div className="relative w-48 h-48 mt-4">
             <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" fill="none" r={GAUGE_RADIUS} stroke="#eff4ff" strokeWidth="8" />
+              <circle cx="50" cy="50" fill="none" r={GAUGE_RADIUS} stroke="rgba(255,255,255,0.75)" strokeWidth="8" />
+              <defs>
+                <linearGradient id="gaugeGradient" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stopColor="#6bd8cb" />
+                  <stop offset="100%" stopColor="#006a61" />
+                </linearGradient>
+              </defs>
               <circle
                 className="transition-all duration-1000 ease-out"
                 cx="50"
                 cy="50"
                 fill="none"
                 r={GAUGE_RADIUS}
-                stroke="#006a61"
+                stroke="url(#gaugeGradient)"
                 strokeDasharray={GAUGE_CIRCUMFERENCE.toFixed(1)}
                 strokeDashoffset={dashOffset.toFixed(1)}
                 strokeLinecap="round"
@@ -158,7 +151,7 @@ export default function Overview({ token, homeId, onOpenDevices }) {
         {/* Summary cards */}
         <div className="md:col-span-8 grid grid-cols-1 sm:grid-cols-3 gap-sm">
           {/* Today's usage */}
-          <div className="bg-surface rounded-xl border border-outline-variant/30 p-md flex flex-col justify-between">
+          <div className="glass rounded-2xl p-md flex flex-col justify-between">
             <div className="flex justify-between items-start mb-4">
               <span className="font-data-label text-data-label text-outline uppercase">
                 {t("overview.todayUsage")}
@@ -184,8 +177,8 @@ export default function Overview({ token, homeId, onOpenDevices }) {
           </div>
 
           {/* Estimated cost */}
-          <div className="bg-primary-container text-on-primary-container rounded-xl p-md flex flex-col justify-between relative overflow-hidden">
-            <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/5 rounded-full blur-xl" />
+          <div className="glass-dark rounded-2xl p-md flex flex-col justify-between relative overflow-hidden">
+            <div className="absolute -right-6 -top-6 w-28 h-28 bg-secondary-fixed/25 rounded-full blur-2xl" />
             <div className="flex justify-between items-start mb-4 relative z-10">
               <span className="font-data-label text-data-label text-primary-fixed-dim uppercase">
                 {t("overview.estCost")}
@@ -205,12 +198,12 @@ export default function Overview({ token, homeId, onOpenDevices }) {
           </div>
 
           {/* Peak window */}
-          <div className="bg-surface rounded-xl border border-outline-variant/30 p-md flex flex-col justify-between">
+          <div className="glass rounded-2xl p-md flex flex-col justify-between">
             <div className="flex justify-between items-start mb-4">
               <span className="font-data-label text-data-label text-outline uppercase">
                 {t("overview.peakTime")}
               </span>
-              <Icon name="schedule" className="text-tertiary-container" />
+              <Icon name="schedule" className="text-on-tertiary-container" />
             </div>
             <div>
               <div className="font-headline-md text-headline-md text-on-background">
@@ -219,7 +212,7 @@ export default function Overview({ token, homeId, onOpenDevices }) {
                   : `${String(peakHour).padStart(2, "0")}:00`}
               </div>
               <div className="mt-2 text-sm text-outline flex items-center">
-                <Icon name="bolt" className="text-tertiary-container text-sm mr-1" />
+                <Icon name="bolt" className="text-on-tertiary-container text-sm mr-1" />
                 <span>
                   {peakHour === null
                     ? t("overview.peakNoneHint")
@@ -253,7 +246,7 @@ export default function Overview({ token, homeId, onOpenDevices }) {
         </div>
 
         {activeDevices.length === 0 ? (
-          <div className="bg-surface rounded-xl border border-outline-variant/30 p-md text-center text-on-surface-variant">
+          <div className="glass rounded-2xl p-md text-center text-on-surface-variant">
             {t("overview.noDevices")}
           </div>
         ) : (
@@ -266,20 +259,14 @@ export default function Overview({ token, homeId, onOpenDevices }) {
                   type="button"
                   onClick={onOpenDevices}
                   className={
-                    "bg-surface rounded-xl border border-outline-variant/30 p-4 flex flex-col justify-between h-32 text-left " +
-                    "hover:border-secondary/50 transition-colors cursor-pointer group " +
-                    (device.is_on ? "" : "opacity-60")
+                    "glass glass-hover rounded-2xl p-4 flex flex-col justify-between h-32 text-left cursor-pointer group " +
+                    (device.is_on ? "" : "opacity-70")
                   }
                 >
                   <div className="flex justify-between items-start w-full">
-                    <Icon
-                      name={deviceIcon(device.name)}
-                      weight={200}
-                      className={
-                        "text-on-surface-variant transition-colors " +
-                        (device.is_on ? "group-hover:text-secondary" : "")
-                      }
-                    />
+                    <span className={"icon-orb w-9 h-9 " + (device.is_on ? "" : "text-outline shadow-none")}>
+                      <Icon name={deviceIcon(device.name, device.type)} style={{ fontSize: "20px" }} />
+                    </span>
                     <div
                       className={
                         "w-8 h-4 rounded-full relative " +
@@ -350,7 +337,7 @@ function PowerChart({ hourly, range, onRangeChange }) {
       : null;
 
   return (
-    <div className="bg-surface rounded-xl border border-outline-variant/30 p-md shadow-sm">
+    <div className="glass rounded-2xl p-md">
       <div className="flex justify-between items-center mb-6">
         <h3 className="font-headline-md text-headline-md text-on-surface">
           {t("overview.powerUsage")}
@@ -358,7 +345,7 @@ function PowerChart({ hourly, range, onRangeChange }) {
         <select
           value={range}
           onChange={(e) => onRangeChange(e.target.value)}
-          className="bg-surface-container-lowest border border-outline-variant rounded font-label-sm text-label-sm text-on-surface py-1 px-2 focus:ring-secondary focus:border-secondary"
+          className="glass-subtle rounded-full font-label-sm text-label-sm text-on-surface py-1 pl-3 pr-8 focus:ring-secondary focus:border-secondary"
         >
           <option value="today">{t("overview.today")}</option>
           <option value="week">{t("overview.thisWeek")}</option>

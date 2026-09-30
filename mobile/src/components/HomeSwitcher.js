@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { api } from "../api";
 import Icon from "./Icon";
-import { colors, radius, type } from "../theme";
+import { colors, radius, type, glass } from "../theme";
 import { useLanguage } from "../context/LanguageContext";
 
 export default function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHomesChanged }) {
@@ -64,7 +64,9 @@ export default function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHome
                   style={styles.row}
                   onPress={() => { onSwitchHome(h.id); close(); }}
                 >
-                  <Text style={styles.rowIcon}>🏠</Text>
+                  <View style={styles.rowOrb}>
+                    <Icon name="home" size={18} color={colors.secondary} />
+                  </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.rowName}>{h.name}</Text>
                     <Text style={styles.rowSub}>
@@ -74,15 +76,15 @@ export default function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHome
                       {h.device_count === 1 ? t("shell.device") : t("shell.devicesLower")}
                     </Text>
                   </View>
-                  {h.id === activeHomeId && <Text style={styles.rowCheck}>✓</Text>}
+                  {h.id === activeHomeId && <Icon name="check" size={20} color={colors.secondary} />}
                 </TouchableOpacity>
               )}
             />
 
             {adding ? (
               <View style={styles.addForm}>
-                <TextInput style={styles.input} placeholder={t("shell.homeName")} placeholderTextColor="#94a3b8" value={newName} onChangeText={setNewName} />
-                <TextInput style={styles.input} placeholder={t("shell.homeAddress")} placeholderTextColor="#94a3b8" value={newAddress} onChangeText={setNewAddress} />
+                <TextInput style={styles.input} placeholder={t("shell.homeName")} placeholderTextColor={colors.outline} value={newName} onChangeText={setNewName} />
+                <TextInput style={styles.input} placeholder={t("shell.homeAddress")} placeholderTextColor={colors.outline} value={newAddress} onChangeText={setNewAddress} />
                 {!!error && <Text style={styles.errorText}>{error}</Text>}
                 <TouchableOpacity style={styles.createBtn} onPress={createHome}>
                   <Text style={styles.createBtnText}>{t("shell.createHome")}</Text>
@@ -90,7 +92,8 @@ export default function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHome
               </View>
             ) : (
               <TouchableOpacity style={styles.addBtn} onPress={() => setAdding(true)}>
-                <Text style={styles.addBtnText}>+ {t("shell.addHome")}</Text>
+                <Icon name="add" size={18} color={colors.secondary} />
+                <Text style={styles.addBtnText}>{t("shell.addHome")}</Text>
               </TouchableOpacity>
             )}
           </TouchableOpacity>
@@ -105,27 +108,34 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 170,
     paddingHorizontal: 12, paddingVertical: 6,
     borderRadius: radius.full,
-    backgroundColor: colors.surfaceContainer,
-    borderWidth: 1, borderColor: "rgba(198, 198, 205, 0.5)",
+    ...glass.pillIdle,
+    backgroundColor: "rgba(255, 255, 255, 0.6)",
+    borderWidth: 1,
   },
   triggerName: { ...type.labelSm, color: colors.onSurface, flexShrink: 1 },
-  // Drawn as a real shape (not a "▾" glyph) so it renders identically on
-  // every device/font instead of risking a missing-glyph box on some phones.
 
-  overlay: { flex: 1, backgroundColor: "rgba(15,23,42,0.4)", justifyContent: "flex-start" },
-  sheet: { backgroundColor: "#fff", borderRadius: 16, margin: 14, marginTop: 60, padding: 14 },
-  sheetTitle: { fontSize: 11, fontWeight: "700", color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 },
-  row: { flexDirection: "row", alignItems: "center", gap: 10, padding: 10, borderRadius: 10, marginBottom: 2 },
-  rowIcon: { fontSize: 18 },
-  rowName: { fontSize: 13, fontWeight: "700", color: "#0f172a" },
-  rowSub: { fontSize: 11, color: "#94a3b8" },
-  rowCheck: { color: "#3b82f6", fontWeight: "700" },
+  overlay: { flex: 1, backgroundColor: glass.scrim, justifyContent: "flex-start" },
+  // The menu opens on a scrim, not on the backdrop, so it stays near opaque.
+  sheet: {
+    ...glass.strong,
+    backgroundColor: "rgba(248, 250, 255, 0.95)",
+    borderRadius: 20, margin: 14, marginTop: 72, padding: 14,
+  },
+  sheetTitle: { ...type.labelSm, color: colors.outline, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 },
+  row: { flexDirection: "row", alignItems: "center", gap: 12, padding: 10, borderRadius: 14, marginBottom: 2 },
+  rowOrb: { ...glass.orb, width: 36, height: 36, borderRadius: 18 },
+  rowName: { ...type.bodyMd, fontFamily: type.labelSm.fontFamily, fontSize: 14, color: colors.onSurface },
+  rowSub: { ...type.labelSm, fontFamily: type.bodyMd.fontFamily, color: colors.outline },
 
-  addBtn: { padding: 10, borderRadius: 10, borderWidth: 1, borderColor: "#cbd5e1", borderStyle: "dashed", marginTop: 6, alignItems: "center" },
-  addBtnText: { color: "#3b82f6", fontWeight: "600", fontSize: 13 },
-  addForm: { marginTop: 8, padding: 10, backgroundColor: "#f8fafc", borderRadius: 10 },
-  input: { padding: 9, borderRadius: 8, borderWidth: 1, borderColor: "#e2e8f0", fontSize: 13, marginBottom: 8, color: "#0f172a" },
-  errorText: { color: "#ef4444", fontSize: 12, marginBottom: 8 },
-  createBtn: { padding: 9, borderRadius: 8, backgroundColor: "#3b82f6", alignItems: "center" },
-  createBtnText: { color: "#fff", fontWeight: "600", fontSize: 13 },
+  addBtn: {
+    ...glass.ghostButton,
+    borderStyle: "dashed", borderColor: "rgba(0, 106, 97, 0.35)",
+    marginTop: 8, paddingVertical: 10,
+  },
+  addBtnText: { ...glass.ghostButtonText, fontSize: 14, color: colors.secondary },
+  addForm: { ...glass.subtle, marginTop: 8, padding: 10, gap: 8 },
+  input: { ...type.bodyMd, fontSize: 14, ...glass.input, paddingVertical: 10 },
+  errorText: { ...type.labelSm, color: colors.error },
+  createBtn: { ...glass.primaryButton, paddingVertical: 11 },
+  createBtnText: glass.primaryButtonText,
 });

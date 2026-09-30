@@ -32,10 +32,10 @@ export default function AppShell({
         className={
           "w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ease-in-out font-label-sm text-label-sm text-left " +
           (isActive
-            ? "bg-secondary-container text-on-secondary-container"
+            ? "bg-white/80 text-secondary shadow-[0_6px_16px_-8px_rgba(0,106,97,0.45)] ring-1 ring-white"
             : item.danger
-              ? "text-error hover:bg-error-container"
-              : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high")
+              ? "text-error hover:bg-error-container/60"
+              : "text-on-surface-variant hover:text-on-surface hover:bg-white/50")
         }
       >
         <Icon name={item.icon} fill={isActive} />
@@ -45,14 +45,22 @@ export default function AppShell({
   };
 
   return (
-    <div className="bg-background text-on-background min-h-screen antialiased font-body-md text-body-md">
-      {/* SideNavBar — desktop only */}
-      <aside className="hidden md:flex flex-col h-screen w-64 fixed left-0 top-0 bg-surface border-r border-outline-variant/30 p-sm space-y-base z-40">
-        <div className="mb-lg px-2 pt-2">
-          <h1 className="font-headline-md text-headline-md font-bold text-on-surface">
-            EnergiBox
-          </h1>
-          <p className="font-label-sm text-label-sm text-outline">{t("shell.tagline")}</p>
+    <div className="text-on-background min-h-screen antialiased font-body-md text-body-md">
+      <div className="app-backdrop" aria-hidden="true" />
+
+      {/* SideNavBar — desktop only. Floats as a glass panel with a margin
+          all round, so the backdrop shows on every side of it. */}
+      <aside className="hidden md:flex flex-col w-60 fixed left-3 top-3 bottom-3 glass-strong rounded-2xl p-sm space-y-base z-40">
+        <div className="mb-lg px-2 pt-2 flex items-center gap-3">
+          <span className="icon-orb w-10 h-10 bg-gradient-to-br from-secondary-fixed to-secondary-fixed-dim text-on-secondary-fixed">
+            <Icon name="bolt" fill />
+          </span>
+          <div>
+            <h1 className="font-headline-md text-[22px] leading-7 font-bold text-on-surface">
+              EnergiBox
+            </h1>
+            <p className="font-label-sm text-label-sm text-outline">{t("shell.tagline")}</p>
+          </div>
         </div>
 
         <nav className="flex-1 space-y-xs overflow-y-auto no-scrollbar">
@@ -60,16 +68,18 @@ export default function AppShell({
         </nav>
 
         {footerItems.length > 0 && (
-          <div className="mt-auto space-y-xs pt-4 border-t border-outline-variant/30">
+          <div className="mt-auto space-y-xs pt-4 border-t border-white/70">
             {footerItems.map(sideLink)}
           </div>
         )}
       </aside>
 
       {/* TopAppBar */}
-      <header className="fixed top-0 w-full z-30 md:pl-64 bg-surface/80 backdrop-blur-md border-b border-outline-variant/30 flex justify-between items-center px-margin-mobile md:px-margin-desktop py-4">
+      <header className="fixed top-0 left-0 right-0 z-30 md:left-[16.5rem] md:right-3 md:top-3 glass-strong md:rounded-2xl rounded-b-2xl flex justify-between items-center px-margin-mobile md:px-6 py-3">
         <div className="md:hidden flex items-center gap-2">
-          <Icon name="electric_meter" className="text-secondary text-2xl" />
+          <span className="icon-orb w-8 h-8 bg-gradient-to-br from-secondary-fixed to-secondary-fixed-dim text-on-secondary-fixed">
+            <Icon name="bolt" fill style={{ fontSize: "18px" }} />
+          </span>
           <span className="font-headline-md text-headline-md font-bold text-on-surface">
             EnergiBox
           </span>
@@ -86,8 +96,8 @@ export default function AppShell({
           padding clears the mobile tab bar. */}
       <main
         className={
-          "md:pl-64 pt-[80px] pb-[88px] md:pb-margin-desktop min-h-screen " +
-          "px-margin-mobile md:px-margin-desktop " +
+          "md:pl-[16.5rem] pt-[84px] md:pt-[96px] pb-[104px] md:pb-margin-desktop min-h-screen " +
+          "px-margin-mobile md:pr-margin-desktop " +
           mainClassName
         }
       >
@@ -106,18 +116,18 @@ export default function AppShell({
         const tabClass = (isActive) =>
           "flex flex-col items-center justify-center active:scale-90 transition-transform font-label-sm text-label-sm " +
           (isActive
-            ? "bg-secondary-container text-on-secondary-container rounded-full px-4 py-1"
-            : "text-on-surface-variant active:bg-surface-container-high rounded-lg px-2 py-1");
+            ? "bg-white/85 text-secondary rounded-full px-4 py-1 shadow-[0_4px_12px_-6px_rgba(0,106,97,0.45)]"
+            : "text-on-surface-variant active:bg-white/60 rounded-lg px-2 py-1");
 
         return (
           <>
             {moreOpen && (
               <>
                 <div
-                  className="md:hidden fixed inset-0 z-40 bg-on-surface/30"
+                  className="md:hidden fixed inset-0 z-40 glass-scrim"
                   onClick={() => setMoreOpen(false)}
                 />
-                <div className="md:hidden fixed bottom-16 left-0 right-0 z-50 mx-margin-mobile mb-2 rounded-xl bg-surface-container-lowest border border-outline-variant/30 shadow-lg overflow-hidden">
+                <div className="md:hidden fixed bottom-[5.5rem] left-0 right-0 z-50 mx-margin-mobile rounded-2xl glass-strong overflow-hidden">
                   {overflow.map((item) => (
                     <button
                       key={item.key}
@@ -129,10 +139,10 @@ export default function AppShell({
                       className={
                         "w-full flex items-center gap-3 px-4 py-3 font-label-sm text-label-sm text-left transition-colors " +
                         (item.key === active
-                          ? "bg-secondary-container text-on-secondary-container"
+                          ? "bg-white/80 text-secondary"
                           : item.danger
-                            ? "text-error active:bg-error-container"
-                            : "text-on-surface-variant active:bg-surface-container-high")
+                            ? "text-error active:bg-error-container/60"
+                            : "text-on-surface-variant active:bg-white/60")
                       }
                     >
                       <Icon name={item.icon} fill={item.key === active} />
@@ -143,7 +153,12 @@ export default function AppShell({
               </>
             )}
 
-            <nav className="md:hidden fixed bottom-0 w-full z-50 rounded-t-xl bg-surface/90 backdrop-blur-lg border-t border-outline-variant/30 shadow-lg flex justify-around items-center h-16 px-2 pb-safe">
+            {/* Floating glass tab bar; the safe-area inset lifts it clear of
+                an iPhone home indicator. */}
+            <nav
+              className="md:hidden fixed left-3 right-3 z-50 rounded-2xl glass-strong flex justify-around items-center h-16 px-2"
+              style={{ bottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px))" }}
+            >
               {primary.map((item) => (
                 <button
                   key={item.key}

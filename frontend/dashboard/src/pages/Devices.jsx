@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import { useLanguage } from "../context/LanguageContext";
 import Icon from "../components/Icon";
+import Modal from "../components/GlassModal";
+import { deviceIcon } from "../utils/deviceIcon";
 
 const API = "http://localhost:8000";
 
@@ -18,50 +20,6 @@ function normalizeMac(input) {
 /** Material Symbols glyph for a device, from its name. The backend only
  * stores "appliance" or "socket", so the name is the only signal. Kept in
  * step with the same helper on the dashboard and in the mobile app. */
-function getIcon(name = "", type = "appliance") {
-  const n = name.toLowerCase();
-  if (/frig|fridge|réfrig|refrig|freezer|congel/.test(n)) return "kitchen";
-  if (/clim|\bac\b|air|cond/.test(n)) return "ac_unit";
-  if (/heater|chauffe|boiler|ballon/.test(n)) return "water_heater";
-  if (/light|lamp|lumi|ampoule|bulb/.test(n)) return "lightbulb";
-  if (/tv|télé|tele|screen|television/.test(n)) return "tv";
-  if (/fan|ventil/.test(n)) return "mode_fan";
-  if (/pump|pompe/.test(n)) return "water_pump";
-  if (/wash|lave|linge/.test(n)) return "local_laundry_service";
-  if (/micro|oven|four/.test(n)) return "microwave";
-  if (/coffee|café|cafe/.test(n)) return "coffee_maker";
-  if (/charger|\bev\b|battery|batterie/.test(n)) return "battery_charging_full";
-  return type === "socket" ? "power" : "devices_other";
-}
-
-function Modal({ title, onClose, children }) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-on-surface/40 p-0 sm:p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full sm:max-w-md bg-surface-container-lowest rounded-t-xl sm:rounded-xl border border-outline-variant/30 shadow-lg max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-md py-4 border-b border-outline-variant/20">
-          <h3 className="font-headline-md text-[20px] leading-[28px] font-semibold text-on-surface">
-            {title}
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="p-2 rounded-full text-on-surface-variant hover:bg-surface-container-low transition-colors active:scale-95 duration-150"
-          >
-            <Icon name="close" style={{ fontSize: "20px" }} />
-          </button>
-        </div>
-        <div className="p-md">{children}</div>
-      </div>
-    </div>
-  );
-}
 
 export default function Devices({ token, homeId }) {
   const { t, language } = useLanguage();
@@ -200,7 +158,7 @@ export default function Devices({ token, homeId }) {
         <button
           type="button"
           onClick={() => setActiveModal("device")}
-          className="flex items-center gap-2 bg-[#0D9488] hover:bg-[#0f766e] text-white px-6 py-3 rounded-full font-label-sm text-label-sm transition-all shadow-sm hover:shadow-md active:scale-95"
+          className="btn-primary px-6 py-3"
         >
           <Icon name="add" style={{ fontSize: "20px" }} />
           {t("devices.addBox")}
@@ -209,7 +167,7 @@ export default function Devices({ token, homeId }) {
 
       {/* Summary stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-sm mb-lg">
-        <div className="glass-card-strong rounded-xl p-4 flex flex-col">
+        <div className="glass rounded-2xl p-4 flex flex-col">
           <span className="font-label-sm text-label-sm text-on-surface-variant mb-1">
             {t("devices.total")}
           </span>
@@ -217,13 +175,13 @@ export default function Devices({ token, homeId }) {
             {devices.length}
           </span>
         </div>
-        <div className="glass-card-strong rounded-xl p-4 flex flex-col">
+        <div className="glass rounded-2xl p-4 flex flex-col">
           <span className="font-label-sm text-label-sm text-on-surface-variant mb-1">
             {t("devices.activeNow")}
           </span>
           <span className="font-headline-md text-headline-md text-[#0D9488]">{activeCount}</span>
         </div>
-        <div className="glass-card-strong rounded-xl p-4 flex flex-col col-span-2 bg-[#eff4ff] border-none shadow-[inset_0_2px_12px_rgba(0,0,0,0.02)]">
+        <div className="glass-subtle rounded-2xl p-4 flex flex-col col-span-2">
           <span className="font-label-sm text-label-sm text-on-surface-variant mb-1">
             {t("devices.totalDraw")}
           </span>
@@ -247,8 +205,8 @@ export default function Devices({ token, homeId }) {
               className={
                 "px-4 py-1.5 rounded-full font-label-sm text-label-sm whitespace-nowrap transition-colors " +
                 (filter === room.id
-                  ? "bg-secondary-container text-on-secondary-container border border-transparent"
-                  : "bg-surface text-on-surface border border-outline-variant hover:bg-surface-container-low")
+                  ? "bg-white/85 text-secondary border border-white shadow-[0_4px_12px_-6px_rgba(0,106,97,0.45)]"
+                  : "glass-subtle text-on-surface-variant hover:bg-white/70")
               }
             >
               {room.name}
@@ -259,7 +217,7 @@ export default function Devices({ token, homeId }) {
 
       {/* Device grid */}
       {filtered.length === 0 ? (
-        <div className="glass-card-strong rounded-xl p-md text-center text-on-surface-variant">
+        <div className="glass rounded-2xl p-md text-center text-on-surface-variant">
           {devices.length === 0 ? t("devices.empty") : t("devices.emptyRoom")}
         </div>
       ) : (
@@ -271,8 +229,8 @@ export default function Devices({ token, homeId }) {
                 key={d.id}
                 onClick={() => setSelectedMac(d.mac)}
                 className={
-                  "glass-card-strong rounded-xl p-5 hover:shadow-[0_4px_12px_rgba(0,106,97,0.05)] transition-shadow group relative cursor-pointer " +
-                  (isOn ? "" : "bg-surface/40 opacity-80")
+                  "glass rounded-2xl p-5 hover:shadow-[0_4px_12px_rgba(0,106,97,0.05)] transition-shadow group relative cursor-pointer " +
+                  (isOn ? "" : "opacity-75")
                 }
               >
                 <div className="flex justify-between items-start mb-4">
@@ -280,11 +238,11 @@ export default function Devices({ token, homeId }) {
                     className={
                       "w-10 h-10 rounded-full flex items-center justify-center " +
                       (isOn
-                        ? "bg-surface-container-low text-on-surface border border-outline-variant/50"
-                        : "bg-surface-container-lowest text-outline border border-outline-variant/30")
+                        ? "bg-white/75 text-secondary border border-white shadow-[0_4px_12px_-6px_rgba(0,106,97,0.35)]"
+                        : "bg-white/40 text-outline border border-white/70")
                     }
                   >
-                    <Icon name={getIcon(d.name, d.type)} />
+                    <Icon name={deviceIcon(d.name, d.type)} />
                   </div>
 
                   {/* Toggle */}
@@ -336,7 +294,7 @@ export default function Devices({ token, homeId }) {
                   </p>
                 </div>
 
-                <div className="flex justify-between items-end mt-auto pt-4 border-t border-outline-variant/30">
+                <div className="flex justify-between items-end mt-auto pt-4 border-t border-white/70">
                   <div>
                     <p
                       className={
@@ -359,7 +317,7 @@ export default function Devices({ token, homeId }) {
                     type="button"
                     onClick={(e) => { e.stopPropagation(); setSelectedMac(d.mac); }}
                     aria-label={t("devices.edit")}
-                    className="p-1.5 rounded text-outline hover:text-on-surface hover:bg-surface-container transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                    className="p-1.5 rounded text-outline hover:text-on-surface hover:bg-white/60 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
                   >
                     <Icon name="edit" style={{ fontSize: "18px" }} />
                   </button>
@@ -381,7 +339,7 @@ export default function Devices({ token, homeId }) {
               <select
                 value={newDevice.room_id}
                 onChange={(e) => setNewDevice({ ...newDevice, room_id: e.target.value })}
-                className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/50 rounded-lg font-body-md text-body-md text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors"
+                className="glass-input font-body-md text-body-md"
               >
                 <option value="">{t("devices.selectRoom")}</option>
                 {rooms.map((r) => (
@@ -398,7 +356,7 @@ export default function Devices({ token, homeId }) {
                 value={newDevice.name}
                 onChange={(e) => setNewDevice({ ...newDevice, name: e.target.value })}
                 placeholder={t("devices.namePlaceholder")}
-                className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/50 rounded-lg font-body-md text-body-md text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors"
+                className="glass-input font-body-md text-body-md"
               />
             </div>
 
@@ -409,7 +367,7 @@ export default function Devices({ token, homeId }) {
               <select
                 value={newDevice.type}
                 onChange={(e) => setNewDevice({ ...newDevice, type: e.target.value })}
-                className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/50 rounded-lg font-body-md text-body-md text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors"
+                className="glass-input font-body-md text-body-md"
               >
                 <option value="appliance">{t("devices.appliance")}</option>
                 <option value="socket">{t("devices.socket")}</option>
@@ -424,7 +382,7 @@ export default function Devices({ token, homeId }) {
                 value={newDevice.mac}
                 onChange={(e) => setNewDevice({ ...newDevice, mac: e.target.value })}
                 placeholder="AA:BB:CC:DD:EE:FF"
-                className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/50 rounded-lg font-data-label text-data-label text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors"
+                className="glass-input font-data-label text-data-label"
               />
             </div>
 
@@ -436,7 +394,7 @@ export default function Devices({ token, homeId }) {
               type="button"
               onClick={submitNewDevice}
               disabled={saving}
-              className="w-full bg-secondary text-on-secondary font-label-sm text-label-sm py-3 rounded-lg hover:bg-on-secondary-container transition-colors shadow-sm disabled:opacity-60"
+              className="btn-primary w-full py-3 disabled:opacity-60"
             >
               {saving ? t("devices.adding") : t("devices.addBox")}
             </button>
@@ -574,12 +532,12 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
             type="button"
             onClick={onBack}
             aria-label={t("detail.back")}
-            className="p-2 rounded-full hover:bg-surface-container-low transition-colors text-on-surface-variant"
+            className="p-2 rounded-full hover:bg-white/60 transition-colors text-on-surface-variant"
           >
             <Icon name="arrow_back" />
           </button>
           <div className="flex items-center gap-2 min-w-0">
-            <Icon name={getIcon(device.name, device.type)} className="text-secondary" />
+            <Icon name={deviceIcon(device.name, device.type)} className="text-secondary" />
             <h1 className="font-headline-md text-headline-md font-bold text-on-surface truncate">
               {device.name}
             </h1>
@@ -617,7 +575,7 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
             onClick={() => onOpenControl?.()}
             aria-label={t("control.open")}
             title={t("control.open")}
-            className="p-2 rounded-full text-on-surface-variant hover:bg-surface-container-low transition-colors"
+            className="p-2 rounded-full text-on-surface-variant hover:bg-white/60 transition-colors"
           >
             <Icon name="power_settings_new" />
           </button>
@@ -625,7 +583,7 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
             type="button"
             onClick={() => setEditing(true)}
             aria-label={t("devices.edit")}
-            className="p-2 rounded-full text-on-surface-variant hover:bg-surface-container-low transition-colors"
+            className="p-2 rounded-full text-on-surface-variant hover:bg-white/60 transition-colors"
           >
             <Icon name="edit" />
           </button>
@@ -641,7 +599,7 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
 
       {/* Bento: current draw + cost */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-md">
-        <div className="col-span-1 md:col-span-5 glass-card rounded-xl p-md flex flex-col justify-between min-h-[200px]">
+        <div className="col-span-1 md:col-span-5 glass rounded-2xl p-md flex flex-col justify-between min-h-[200px]">
           <div className="flex justify-between items-start">
             <h2 className="font-body-lg text-body-lg text-on-surface-variant">
               {t("detail.currentDraw")}
@@ -670,8 +628,8 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
           </div>
         </div>
 
-        <div className="col-span-1 md:col-span-7 bg-primary-container rounded-xl p-md flex flex-col justify-between min-h-[200px] text-on-primary-container shadow-lg relative overflow-hidden">
-          <div className="absolute -right-10 -top-10 w-40 h-40 bg-secondary/10 rounded-full blur-2xl" />
+        <div className="col-span-1 md:col-span-7 glass-dark rounded-2xl p-md flex flex-col justify-between min-h-[200px] relative overflow-hidden">
+          <div className="absolute -right-10 -top-10 w-40 h-40 bg-secondary-fixed/20 rounded-full blur-2xl" />
           <div className="relative z-10">
             <h2 className="font-body-lg text-body-lg text-primary-fixed-dim">
               {t("detail.monthlyCost")}
@@ -705,12 +663,12 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
       </div>
 
       {/* History */}
-      <div className="glass-card rounded-xl p-md">
+      <div className="glass rounded-2xl p-md">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-lg gap-sm">
           <h2 className="font-headline-md text-headline-md font-bold text-on-surface">
             {t("detail.history")}
           </h2>
-          <div className="flex bg-surface-container-low rounded-lg p-1">
+          <div className="segmented">
             {["24h", "7d", "30d"].map((r) => (
               <button
                 key={r}
@@ -735,8 +693,8 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
       {/* This device's alerts */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-md">
         {alerts.length === 0 ? (
-          <div className="glass-card rounded-xl p-md flex items-center gap-md md:col-span-2">
-            <div className="w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center text-secondary shrink-0">
+          <div className="glass rounded-2xl p-md flex items-center gap-md md:col-span-2">
+            <div className="icon-orb w-12 h-12">
               <Icon name="check_circle" />
             </div>
             <div>
@@ -750,13 +708,13 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
           </div>
         ) : (
           alerts.map((a, i) => (
-            <div key={i} className="glass-card rounded-xl p-md flex items-center gap-md">
+            <div key={i} className="glass rounded-2xl p-md flex items-center gap-md">
               <div
                 className={
                   "w-12 h-12 rounded-full flex items-center justify-center shrink-0 " +
                   (a.type === "spike"
-                    ? "bg-error-container/20 text-error"
-                    : "bg-surface-container-low text-secondary")
+                    ? "bg-error-container/70 text-error border border-white/70"
+                    : "bg-white/65 text-secondary border border-white/80")
                 }
               >
                 <Icon name={ALERT_ICONS[a.type] || "notifications"} />
@@ -779,7 +737,7 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
         <button
           type="button"
           onClick={() => setConfirmDelete(true)}
-          className="flex items-center gap-2 text-error font-label-sm text-label-sm px-4 py-2 rounded-lg hover:bg-error-container transition-colors"
+          className="btn-danger"
         >
           <Icon name="delete" style={{ fontSize: "18px" }} />
           {t("detail.delete")}
@@ -796,7 +754,7 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
               <input
                 value={edit.name}
                 onChange={(e) => setEdit({ ...edit, name: e.target.value })}
-                className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/50 rounded-lg font-body-md text-body-md text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors"
+                className="glass-input font-body-md text-body-md"
               />
             </div>
             <div>
@@ -806,7 +764,7 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
               <select
                 value={edit.room_id}
                 onChange={(e) => setEdit({ ...edit, room_id: Number(e.target.value) })}
-                className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/50 rounded-lg font-body-md text-body-md text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors"
+                className="glass-input font-body-md text-body-md"
               >
                 {rooms.map((r) => (
                   <option key={r.id} value={r.id}>{r.name}</option>
@@ -820,7 +778,7 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
               <select
                 value={edit.type}
                 onChange={(e) => setEdit({ ...edit, type: e.target.value })}
-                className="w-full px-4 py-3 bg-surface-container-low border border-outline-variant/50 rounded-lg font-body-md text-body-md text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors"
+                className="glass-input font-body-md text-body-md"
               >
                 <option value="appliance">{t("devices.appliance")}</option>
                 <option value="socket">{t("devices.socket")}</option>
@@ -829,7 +787,7 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
             <button
               type="button"
               onClick={saveEdit}
-              className="w-full bg-secondary text-on-secondary font-label-sm text-label-sm py-3 rounded-lg hover:bg-on-secondary-container transition-colors"
+              className="btn-primary w-full py-3"
             >
               {t("detail.save")}
             </button>
@@ -846,14 +804,14 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
             <button
               type="button"
               onClick={() => setConfirmDelete(false)}
-              className="flex-1 border border-outline-variant text-on-surface font-label-sm text-label-sm py-3 rounded-lg hover:bg-surface-container-low transition-colors"
+              className="btn-glass flex-1 py-3"
             >
               {t("detail.cancel")}
             </button>
             <button
               type="button"
               onClick={deleteDevice}
-              className="flex-1 bg-error text-on-error font-label-sm text-label-sm py-3 rounded-lg hover:opacity-90 transition-opacity"
+              className="btn-primary btn-danger-solid flex-1 py-3"
             >
               {t("detail.delete")}
             </button>
@@ -892,16 +850,16 @@ function HistoryBars({ history }) {
 
   return (
     <>
-      <div className="relative h-64 w-full flex items-end justify-between gap-1 pt-8 pb-6 border-b border-outline-variant/20">
+      <div className="relative h-64 w-full flex items-end justify-between gap-1 pt-8 pb-6 border-b border-white/70">
         <div className="absolute left-0 top-0 h-full flex flex-col justify-between font-data-label text-data-label text-on-surface-variant opacity-60 pb-6 pointer-events-none">
           <span>{Math.round(max)}W</span>
           <span>{Math.round(max / 2)}W</span>
           <span>0W</span>
         </div>
 
-        <div className="absolute inset-0 flex flex-col justify-between pb-6 z-0 pointer-events-none border-t border-outline-variant/10">
-          <div className="w-full border-b border-outline-variant/10 flex-1" />
-          <div className="w-full border-b border-outline-variant/10 flex-1" />
+        <div className="absolute inset-0 flex flex-col justify-between pb-6 z-0 pointer-events-none border-t border-white/70">
+          <div className="w-full border-b border-white/70 flex-1" />
+          <div className="w-full border-b border-white/70 flex-1" />
         </div>
 
         <div className="w-full flex justify-between items-end h-full z-10 pl-12 pr-2 gap-[2px]">
@@ -1043,7 +1001,7 @@ function DeviceControl({ mac, token, onBack }) {
       </button>
 
       {/* Main control card */}
-      <section className="glass-panel-light rounded-xl p-md md:p-lg flex flex-col items-center justify-center relative overflow-hidden mb-lg shadow-sm border border-outline-variant/30">
+      <section className="glass rounded-3xl p-md md:p-lg flex flex-col items-center justify-center relative overflow-hidden mb-lg">
         <div
           className={
             "absolute w-96 h-96 blur-[100px] rounded-full top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-colors duration-500 z-0 pointer-events-none " +
@@ -1085,7 +1043,7 @@ function DeviceControl({ mac, token, onBack }) {
           >
             <div
               className={
-                "toggle-knob w-20 h-20 bg-surface-container-lowest rounded-full shadow-md flex items-center justify-center transform " +
+                "toggle-knob w-20 h-20 bg-white rounded-full shadow-md flex items-center justify-center transform " +
                 (isOn ? "translate-x-24" : "translate-x-0")
               }
             >
@@ -1110,7 +1068,7 @@ function DeviceControl({ mac, token, onBack }) {
 
       {/* Metrics */}
       <section className="grid grid-cols-1 md:grid-cols-2 gap-sm md:gap-md">
-        <div className="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-md shadow-sm hover:shadow-md transition-shadow duration-200">
+        <div className="glass rounded-2xl p-md">
           <div className="flex items-center gap-2 mb-sm text-on-surface-variant">
             <Icon name="schedule" style={{ fontSize: "16px" }} />
             <h3 className="font-label-sm text-label-sm uppercase tracking-wider">
@@ -1127,7 +1085,7 @@ function DeviceControl({ mac, token, onBack }) {
           </div>
         </div>
 
-        <div className="bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-md shadow-sm hover:shadow-md transition-shadow duration-200 relative overflow-hidden">
+        <div className="glass rounded-2xl p-md relative overflow-hidden">
           <div className="absolute right-0 top-0 opacity-10 translate-x-4 -translate-y-4 pointer-events-none">
             <Icon name="bolt" className="text-9xl" />
           </div>

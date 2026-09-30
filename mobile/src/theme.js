@@ -9,10 +9,9 @@
  * a plain object here. Three things the mockups rely on simply do not
  * exist on this platform and are approximated:
  *
- *   - backdrop-filter: blur(12px). The cards sit on a flat #f8f9ff
- *     background, so blurring it yields that same flat colour. The
- *     translucent fill alone composites to an identical result, which is
- *     why `glassCard` below carries no blur and needs no extra package.
+ *   - backdrop-filter. Only the app's chrome gets a real blur, through
+ *     expo-blur; cards rely on translucency over the ambient backdrop.
+ *     See the `glass` block below for why.
  *   - :hover. Touch has no hover state; the mockups' hover affordances
  *     become pressed states.
  *   - Media queries. Layout responds to useWindowDimensions instead.
@@ -112,18 +111,158 @@ export const type = {
   bodyMd: { fontFamily: fonts.body, fontSize: 16, lineHeight: 24 },
 };
 
-// `glass-card` from the mockups' <style> block. See the note above on why
-// the blur is omitted rather than approximated with a blur view.
-export const glassCard = {
-  backgroundColor: "rgba(255, 255, 255, 0.7)",
-  borderWidth: 1,
-  borderColor: "rgba(198, 198, 205, 0.3)",
-  borderRadius: radius.xl,
+// ── Glass ────────────────────────────────────────────────────────────────
+// The same system as the web's index.css: an ambient backdrop of the
+// brand's teal, indigo and amber (components/GlassBackdrop.js), and
+// translucent panels over it at three levels of opacity.
+//
+// Cards carry no blur view. The backdrop is a smooth gradient fixed
+// behind the scroll view, and blurring a smooth gradient returns the same
+// gradient, so a translucent fill composites to what a blur would show —
+// without a native blur per card, which on Android would cost a frame on
+// every list scroll. Real blur is kept for the surfaces content scrolls
+// *under*: the top bar, the tab bar and the sheets (see AppShell).
+//
+// Shadows use `boxShadow`, which the New Architecture supports on both
+// platforms and which, unlike Android's `elevation`, is not drawn through
+// a translucent fill.
+export const glass = {
+  card: {
+    backgroundColor: "rgba(255, 255, 255, 0.58)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.7)",
+    borderRadius: 16,
+    boxShadow: "0px 10px 30px -12px rgba(19, 27, 46, 0.18)",
+  },
+  strong: {
+    backgroundColor: "rgba(255, 255, 255, 0.74)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.75)",
+    borderRadius: 16,
+    boxShadow: "0px 12px 40px -16px rgba(19, 27, 46, 0.22)",
+  },
+  subtle: {
+    backgroundColor: "rgba(255, 255, 255, 0.42)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.6)",
+    borderRadius: 12,
+  },
+  // The one emphasised figure on a screen.
+  dark: {
+    backgroundColor: "rgba(19, 27, 46, 0.86)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    borderRadius: 16,
+    boxShadow: "0px 18px 40px -16px rgba(19, 27, 46, 0.55)",
+  },
+  // A card on the deep sign-in backdrop.
+  hero: {
+    backgroundColor: "rgba(255, 255, 255, 0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.35)",
+    borderRadius: 24,
+    boxShadow: "0px 24px 60px -20px rgba(0, 0, 0, 0.45)",
+  },
+  input: {
+    backgroundColor: "rgba(255, 255, 255, 0.6)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.8)",
+    borderRadius: 12,
+    // Left/right rather than paddingHorizontal: react-native-web maps the
+    // latter to a logical property that a caller's paddingLeft (room for
+    // a leading icon) cannot override.
+    paddingLeft: 14,
+    paddingRight: 14,
+    paddingVertical: 12,
+    color: colors.onSurface,
+  },
+  heroInput: {
+    backgroundColor: "rgba(255, 255, 255, 0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.35)",
+    borderRadius: 12,
+    paddingLeft: 14,
+    paddingRight: 14,
+    paddingVertical: 12,
+    color: "#ffffff",
+  },
+  heroPlaceholder: "rgba(255, 255, 255, 0.65)",
+  // Buttons. The web's primary is a gradient; a flat mid-teal reads the
+  // same at phone size without pulling in a gradient package.
+  primaryButton: {
+    backgroundColor: "#00796f",
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.25)",
+    paddingVertical: 13,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+    boxShadow: "0px 8px 20px -8px rgba(0, 106, 97, 0.6)",
+  },
+  primaryButtonText: { fontFamily: fonts.label, fontSize: 15, lineHeight: 20, color: "#ffffff" },
+  ghostButton: {
+    backgroundColor: "rgba(255, 255, 255, 0.55)",
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.8)",
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  ghostButtonText: { fontFamily: fonts.label, fontSize: 15, lineHeight: 20, color: colors.onSurface },
+  // A pill that marks the selected option in a row of them.
+  pillActive: {
+    backgroundColor: "rgba(255, 255, 255, 0.88)",
+    borderColor: "#ffffff",
+    boxShadow: "0px 4px 12px -6px rgba(0, 106, 97, 0.45)",
+  },
+  pillIdle: {
+    backgroundColor: "rgba(255, 255, 255, 0.42)",
+    borderColor: "rgba(255, 255, 255, 0.6)",
+  },
+  // Round icon holder.
+  orb: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.65)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.85)",
+    boxShadow: "0px 4px 12px -6px rgba(0, 106, 97, 0.35)",
+  },
+  scrim: "rgba(11, 28, 48, 0.28)",
+  divider: "rgba(255, 255, 255, 0.7)",
 };
 
-export const surfaceCard = {
-  backgroundColor: colors.surface,
-  borderWidth: 1,
-  borderColor: "rgba(198, 198, 205, 0.3)",
-  borderRadius: radius.xl,
+// Status pills, matching the web's .chip-* classes.
+export const chips = {
+  base: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: 9999,
+    paddingHorizontal: 10,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.7)",
+    backgroundColor: "rgba(255, 255, 255, 0.55)",
+  },
+  text: { fontFamily: fonts.label, fontSize: 12, lineHeight: 20, color: colors.onSurfaceVariant },
+  teal: { bg: "rgba(134, 242, 228, 0.45)", fg: "#005049", border: "rgba(0, 106, 97, 0.15)" },
+  red: { bg: "rgba(255, 218, 214, 0.7)", fg: "#93000a", border: "rgba(186, 26, 26, 0.15)" },
+  amber: { bg: "rgba(255, 221, 184, 0.7)", fg: "#653e00", border: "rgba(184, 117, 0, 0.18)" },
+  indigo: { bg: "rgba(218, 226, 253, 0.8)", fg: "#3f465c", border: "rgba(86, 94, 116, 0.15)" },
 };
+
+// The mockups' two card names, now glass. Every screen that already used
+// them picks the new surface up without changing.
+export const glassCard = glass.card;
+export const surfaceCard = glass.card;
