@@ -43,15 +43,25 @@ Rules of thumb:
 
 | Control | Web | Mobile |
 |---|---|---|
-| Primary action | `.btn-primary` | `glass.primaryButton` / `primaryButtonText` |
-| Secondary action | `.btn-glass` | `glass.ghostButton` / `ghostButtonText` |
-| Destructive | `.btn-danger`, `.btn-danger-solid` | — |
-| Icon-only | `.btn-icon` | — |
-| Text field | `.glass-input` (`.glass-input-hero` on the hero) | `glass.input` (`glass.heroInput`) |
-| Segmented control | `.segmented` with `aria-pressed` buttons | `glass.pillActive` / `glass.pillIdle` |
+| Primary action | `.btn-primary` | `<PrimaryButton>` (`glass.primaryButton` + `<GradientFill>`) |
+| Secondary action | `.btn-glass` | `<GhostButton>` (`glass.ghostButton`) |
+| Destructive | `.btn-danger`, `.btn-danger-solid` | `<GhostButton danger>` |
+| Icon-only | `.btn-icon` | `<IconButton>` |
+| Text field | `.glass-input` (`.glass-input-hero` on the hero) | `<Field>` / `glass.input` (`glass.heroInput`) |
+| Segmented control | `.segmented` with `aria-pressed` buttons | `<Segmented>` (`glass.pillActive` / `glass.pillIdle`) |
 | Status pill | `.chip`, `.chip-teal/red/amber/indigo` | `<Chip tone="teal">` (`components/GlassUI.js`) |
 | Round icon | `.icon-orb` | `glass.orb`, `<Orb>` |
-| Modal | `<GlassModal>` (`components/GlassModal.jsx`) | per-screen `Modal` with `glass.scrim` |
+| Modal | `<GlassModal>` (`components/GlassModal.jsx`) | `<GlassSheet>`, a bottom sheet over `glass.scrim` |
+| Stat tile | `.glass` card with `.icon-orb` | `<StatTile>` (`dark` for the key figure) |
+| Confirm / message | `window.confirm` / `window.alert` | `confirm()` / `notify()` (`components/confirm.js`) |
+
+Mobile components live in `mobile/src/components/GlassUI.js` unless noted.
+
+**Gradients on mobile.** react-native-web ignores `experimental_backgroundImage`,
+so primary buttons and dark cards draw theirs with `<GradientFill kind="primary">`
+or `kind="dark"` (`components/GradientFill.js`), an SVG layer placed as the first
+child of a view with `overflow: "hidden"` (already set on `glass.primaryButton`
+and `glass.dark`).
 
 Status colours map to meaning, not to decoration: teal is on / active /
 saved money, red is a spike or a destructive action, amber is a pending or
@@ -80,7 +90,7 @@ extended-runtime state, indigo is informational.
 |---|---|---|
 | App frame | `components/AppShell.jsx` | `components/AppShell.js` |
 | Sign-in / sign-up / onboarding frame | `components/AuthLayout.jsx` | `components/AuthLayout.js` |
-| Device icon by name | `utils/deviceIcon.js` | `DashboardScreen`/`DevicesScreen` helpers |
+| Device icon by name | `utils/deviceIcon.js` | `deviceIcon()` in `utils.js` |
 
 ## Not done yet
 

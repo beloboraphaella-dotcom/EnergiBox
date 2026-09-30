@@ -465,7 +465,7 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
     } catch (err) {
       setError(t("detail.loadError"));
     }
-  }, [mac]);
+  }, [mac, t]);
 
   const fetchHistory = useCallback(async () => {
     try {
@@ -776,7 +776,7 @@ function DeviceControl({ mac, onBack }) {
     } catch (err) {
       setError(t("detail.loadError"));
     }
-  }, [mac]);
+  }, [mac, t]);
 
   useEffect(() => {
     fetchDevice();

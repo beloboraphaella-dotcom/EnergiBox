@@ -38,7 +38,7 @@ export default function AdminScreen({ currentUserId }) {
     if (s.status === "fulfilled") setStats(s.value.data);
   }, [t]);
 
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const onRefresh = async () => {
     setRefreshing(true);
