@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { api } from "../api";
 import Icon from "./Icon";
+import GradientFill from "./GradientFill";
 import { colors, radius, type, glass } from "../theme";
 import { useLanguage } from "../context/LanguageContext";
 
@@ -87,6 +88,7 @@ export default function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHome
                 <TextInput style={styles.input} placeholder={t("shell.homeAddress")} placeholderTextColor={colors.outline} value={newAddress} onChangeText={setNewAddress} />
                 {!!error && <Text style={styles.errorText}>{error}</Text>}
                 <TouchableOpacity style={styles.createBtn} onPress={createHome}>
+                  <GradientFill />
                   <Text style={styles.createBtnText}>{t("shell.createHome")}</Text>
                 </TouchableOpacity>
               </View>

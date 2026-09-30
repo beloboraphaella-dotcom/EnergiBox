@@ -6,6 +6,7 @@ import {
 } from "react-native";
 import { api } from "../api";
 import Icon from "../components/Icon";
+import GradientFill from "../components/GradientFill";
 import { colors, spacing, radius, type, glassCard, surfaceCard, glass } from "../theme";
 import { useLanguage } from "../context/LanguageContext";
 
@@ -44,7 +45,7 @@ function getIcon(name = "", type = "appliance") {
 }
 
 export default function DevicesScreen({ homeId }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const [devices, setDevices] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -169,6 +170,7 @@ export default function DevicesScreen({ homeId }) {
         activeOpacity={0.8}
         onPress={() => setAddOpen(true)}
       >
+        <GradientFill />
         <Icon name="add" size={20} color="#ffffff" />
         <Text style={styles.addButtonLabel}>{t("devices.addBox")}</Text>
       </TouchableOpacity>
@@ -189,7 +191,7 @@ export default function DevicesScreen({ homeId }) {
         <Text style={styles.statLabel}>{t("devices.totalDraw")}</Text>
         <View style={styles.drawRow}>
           <Text style={styles.drawValue}>
-            {totalKw.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+            {totalKw.toLocaleString(locale, { maximumFractionDigits: 1 })}
           </Text>
           <Text style={styles.drawUnit}>kW</Text>
         </View>
@@ -407,6 +409,7 @@ export default function DevicesScreen({ homeId }) {
                 activeOpacity={0.8}
                 style={[styles.submitButton, saving && { opacity: 0.6 }]}
               >
+                <GradientFill />
                 {saving ? (
                   <ActivityIndicator color={colors.onSecondary} />
                 ) : (
@@ -447,7 +450,7 @@ const ALERT_TITLE_KEYS = {
  * and door-open history needs a sensor the hardware lacks. That slot shows
  * this device's real alerts instead. */
 function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const [device, setDevice] = useState(null);
   const [history, setHistory] = useState(null);
   const [range, setRange] = useState("24h");
@@ -590,10 +593,11 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
 
       {/* Monthly cost */}
       <View style={styles.costCardDetail}>
+        <GradientFill kind="dark" />
         <Text style={styles.costLabel}>{t("detail.monthlyCost")}</Text>
         <View style={styles.metricRow}>
           <Text style={[styles.metricValue, { color: colors.inverseOnSurface }]}>
-            {(cost?.estimated_fcfa ?? 0).toLocaleString()}
+            {(cost?.estimated_fcfa ?? 0).toLocaleString(locale)}
           </Text>
           <Text style={[styles.metricUnit, { color: colors.secondaryFixed }]}>FCFA</Text>
         </View>
@@ -601,12 +605,12 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
           <View style={styles.costItem}>
             <Text style={styles.costItemLabel}>{t("detail.dailyAvg")}</Text>
             <Text style={styles.costItemValue}>
-              {(cost?.daily_avg_fcfa ?? 0).toLocaleString()} FCFA
+              {(cost?.daily_avg_fcfa ?? 0).toLocaleString(locale)} FCFA
             </Text>
           </View>
           <View style={styles.costItem}>
             <Text style={styles.costItemLabel}>{t("detail.projectedUsage")}</Text>
-            <Text style={styles.costItemValue}>{(cost?.projected_kwh ?? 0).toLocaleString()} kWh</Text>
+            <Text style={styles.costItemValue}>{(cost?.projected_kwh ?? 0).toLocaleString(locale)} kWh</Text>
           </View>
         </View>
       </View>

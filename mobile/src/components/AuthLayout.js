@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Icon from "./Icon";
+import GradientFill from "./GradientFill";
 import GlassBackdrop from "./GlassBackdrop";
 import { colors, spacing, type, fonts, glass } from "../theme";
 import { useLanguage } from "../context/LanguageContext";
@@ -121,6 +122,7 @@ export function HeroButton({ label, onPress, loading, disabled, icon, variant = 
         style,
       ]}
     >
+      {!ghost && <GradientFill />}
       {loading ? (
         <ActivityIndicator color="#ffffff" />
       ) : (

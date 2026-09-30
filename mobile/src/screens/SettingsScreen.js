@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { api } from "../api";
 import Icon from "../components/Icon";
+import GradientFill from "../components/GradientFill";
 import { colors, spacing, radius, type, glassCard, glass } from "../theme";
 import { useLanguage } from "../context/LanguageContext";
 
@@ -50,7 +51,7 @@ function NotCollected({ children }) {
 }
 
 export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser }) {
-  const { t, language, setLanguage } = useLanguage();
+  const { t, language, setLanguage, locale } = useLanguage();
   const [devices, setDevices] = useState([]);
   const [tariffs, setTariffs] = useState(null);
 
@@ -152,7 +153,7 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
                   <Text style={styles.boxMac}>{d.mac}</Text>
                   {d.last_seen ? (
                     <Text style={styles.boxSeen}>
-                      {new Date(d.last_seen.replace(" ", "T")).toLocaleString()}
+                      {new Date(d.last_seen.replace(" ", "T")).toLocaleString(locale)}
                     </Text>
                   ) : null}
                 </View>
@@ -265,6 +266,7 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
           activeOpacity={0.8}
           style={[styles.primaryButton, profileSaving && { opacity: 0.6 }]}
         >
+          <GradientFill />
           {profileSaving ? (
             <ActivityIndicator color={colors.onSecondary} />
           ) : (

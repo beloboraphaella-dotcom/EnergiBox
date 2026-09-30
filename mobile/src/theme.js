@@ -148,8 +148,10 @@ export const glass = {
     borderRadius: 12,
   },
   // The one emphasised figure on a screen.
+  // Pair with <GradientFill kind="dark"> for the web's navy-to-teal fill.
   dark: {
     backgroundColor: "rgba(19, 27, 46, 0.86)",
+    overflow: "hidden",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.12)",
     borderRadius: 16,
@@ -187,10 +189,12 @@ export const glass = {
     color: "#ffffff",
   },
   heroPlaceholder: "rgba(255, 255, 255, 0.65)",
-  // Buttons. The web's primary is a gradient; a flat mid-teal reads the
-  // same at phone size without pulling in a gradient package.
+  // Buttons. The gradient itself is drawn by <GradientFill kind="primary">
+  // as the button's first child; the flat colour is what shows until it
+  // does, and what a button without the layer falls back to.
   primaryButton: {
     backgroundColor: "#00796f",
+    overflow: "hidden",
     borderRadius: 9999,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.25)",

@@ -354,6 +354,7 @@ export const translations = {
     "sched.offAt": "Turn OFF at",
     "sched.errDevice": "Pick a device.",
     "sched.errSave": "Could not save schedule.",
+    "sched.errTime": "Enter times as HH:MM, e.g. 22:00.",
   },
 
   fr: {
@@ -711,5 +712,6 @@ export const translations = {
     "sched.offAt": "\u00c9teindre \u00e0",
     "sched.errDevice": "Choisissez un appareil.",
     "sched.errSave": "Impossible d'enregistrer la programmation.",
+    "sched.errTime": "Saisissez les heures au format HH:MM, ex. 22:00.",
   },
 };

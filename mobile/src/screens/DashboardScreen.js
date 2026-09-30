@@ -6,6 +6,7 @@ import {
 import Svg, { Circle, Path, Defs, LinearGradient, Stop } from "react-native-svg";
 import { api } from "../api";
 import Icon from "../components/Icon";
+import GradientFill from "../components/GradientFill";
 import { colors, spacing, radius, type, glassCard, surfaceCard, glass } from "../theme";
 import { useLanguage } from "../context/LanguageContext";
 
@@ -57,7 +58,7 @@ function buildSpline(pts) {
 }
 
 export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const [overview, setOverview] = useState(null);
   const [devices, setDevices] = useState([]);
   const [hourly, setHourly] = useState(null);
@@ -143,9 +144,15 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
               cx="50" cy="50" r={GAUGE_RADIUS} fill="none"
               stroke="rgba(255, 255, 255, 0.8)" strokeWidth="8"
             />
+            <Defs>
+              <LinearGradient id="gaugeGradient" x1="0" y1="0" x2="1" y2="1">
+                <Stop offset="0" stopColor={colors.secondaryFixedDim} />
+                <Stop offset="1" stopColor={colors.secondary} />
+              </LinearGradient>
+            </Defs>
             <Circle
               cx="50" cy="50" r={GAUGE_RADIUS} fill="none"
-              stroke={colors.secondary} strokeWidth="8" strokeLinecap="round"
+              stroke="url(#gaugeGradient)" strokeWidth="8" strokeLinecap="round"
               strokeDasharray={`${GAUGE_CIRCUMFERENCE.toFixed(1)}`}
               strokeDashoffset={dashOffset.toFixed(1)}
               transform="rotate(-90 50 50)"
@@ -166,7 +173,7 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
         </View>
         <View>
           <Text style={styles.statValue}>
-            {todayKwh.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+            {todayKwh.toLocaleString(locale, { maximumFractionDigits: 1 })}
             <Text style={styles.statUnit}> kWh</Text>
           </Text>
           <View style={styles.statFootRow}>
@@ -185,6 +192,7 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
 
       {/* Estimated cost */}
       <View style={styles.costCard}>
+        <GradientFill kind="dark" />
         <View style={styles.statTop}>
           <Text style={[styles.statLabel, { color: colors.primaryFixedDim }]}>
             {t("overview.estCost").toUpperCase()}
@@ -193,11 +201,11 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
         </View>
         <View>
           <Text style={[styles.statValue, { color: colors.inverseOnSurface }]}>
-            {estimatedFcfa.toLocaleString()}
+            {estimatedFcfa.toLocaleString(locale)}
             <Text style={[styles.statUnit, { color: colors.primaryFixedDim }]}> FCFA</Text>
           </Text>
           <Text style={[styles.statFoot, { color: colors.primaryFixedDim, marginTop: 8 }]}>
-            {t("overview.projected")}: {projectedFcfa.toLocaleString()} FCFA/{t("overview.perMonth")}
+            {t("overview.projected")}: {projectedFcfa.toLocaleString(locale)} FCFA/{t("overview.perMonth")}
           </Text>
         </View>
       </View>

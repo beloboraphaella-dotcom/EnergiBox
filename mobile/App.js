@@ -23,7 +23,9 @@ import OnboardingScreen from "./src/screens/OnboardingScreen";
 import DashboardScreen from "./src/screens/DashboardScreen";
 import DevicesScreen from "./src/screens/DevicesScreen";
 import AlertsScreen from "./src/screens/AlertsScreen";
-import SuggestionsScreen from "./src/screens/SuggestionsScreen";
+import HistoryScreen from "./src/screens/HistoryScreen";
+import RoomsScreen from "./src/screens/RoomsScreen";
+import AdminScreen from "./src/screens/AdminScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import HomeSwitcher from "./src/components/HomeSwitcher";
 
@@ -93,9 +95,13 @@ function AppInner() {
     }
   };
 
+  const isAdmin = user?.role === "admin";
+
+  // An admin account owns no home: fetching them would find none and send
+  // the admin to onboarding. The web skips it for the same reason.
   useEffect(() => {
-    if (token) fetchHomes();
-  }, [token]);
+    if (token && !isAdmin) fetchHomes();
+  }, [token, isAdmin]);
 
   const handleAuthSuccess = async (newToken, userData) => {
     await AsyncStorage.setItem("token", newToken);
@@ -124,16 +130,21 @@ function AppInner() {
     setActiveHomeId(homeId);
   };
 
-  // Same nav model as the web: the mockups ship four tabs, the app has
-  // more screens, so the first three keep their place and the rest move
-  // behind "More".
-  const navItems = [
-    { key: "dashboard", icon: "dashboard", label: t("shell.dashboard") },
-    { key: "devices", icon: "devices", label: t("shell.devices") },
-    { key: "alerts", icon: "notifications", label: t("shell.alerts") },
-    { key: "suggestions", icon: "lightbulb", label: t("shell.suggestions") },
-    { key: "profile", icon: "settings", label: t("shell.settings") },
-  ];
+  // The web's navigation, item for item (pages/Dashboard.jsx): the first
+  // three keep a tab, the rest move behind "More".
+  const navItems = isAdmin
+    ? [
+        { key: "admin", icon: "admin_panel_settings", label: t("shell.admin") },
+        { key: "profile", icon: "settings", label: t("shell.settings") },
+      ]
+    : [
+        { key: "dashboard", icon: "dashboard", label: t("shell.dashboard") },
+        { key: "devices", icon: "devices", label: t("shell.devices") },
+        { key: "alerts", icon: "notifications", label: t("shell.alerts") },
+        { key: "history", icon: "monitoring", label: t("shell.history") },
+        { key: "rooms", icon: "meeting_room", label: t("shell.rooms") },
+        { key: "profile", icon: "settings", label: t("shell.settings") },
+      ];
   const footerItems = [
     { key: "logout", icon: "logout", label: t("shell.logout"), danger: true },
   ];
@@ -159,6 +170,27 @@ function AppInner() {
       <SignupScreen onSignupSuccess={handleAuthSuccess} onBackToLogin={() => setAuthView("login")} />
     ) : (
       <LoginScreen onLogin={handleAuthSuccess} onGoToSignup={() => setAuthView("signup")} />
+    );
+  } else if (isAdmin) {
+    content = (
+      <AppShell
+        items={navItems}
+        footerItems={footerItems}
+        active={activeTab === "profile" ? "profile" : "admin"}
+        onNavigate={handleNavigate}
+      >
+        <StatusBar style="dark" />
+        {activeTab === "profile" ? (
+          <SettingsScreen
+            user={user}
+            homeId={null}
+            onLogout={handleLogout}
+            onUpdateUser={(updates) => setUser((prev) => ({ ...prev, ...updates }))}
+          />
+        ) : (
+          <AdminScreen currentUserId={user?.id} />
+        )}
+      </AppShell>
     );
   } else if (homes === null) {
     content = spinner;
@@ -199,7 +231,8 @@ function AppInner() {
         )}
         {activeTab === "devices" && <DevicesScreen homeId={activeHomeId} />}
         {activeTab === "alerts" && <AlertsScreen homeId={activeHomeId} />}
-        {activeTab === "suggestions" && <SuggestionsScreen homeId={activeHomeId} />}
+        {activeTab === "history" && <HistoryScreen homeId={activeHomeId} />}
+        {activeTab === "rooms" && <RoomsScreen homeId={activeHomeId} />}
         {activeTab === "profile" && (
           <SettingsScreen
             user={user}
