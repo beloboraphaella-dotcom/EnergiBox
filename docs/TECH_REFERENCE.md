@@ -13,7 +13,7 @@ au 30/09/2026 (installation fraîche depuis les manifestes du dépôt).
 | Validation | Pydantic v2 (cœur Rust `pydantic-core`) | 2.13.5 |
 | Données | MySQL 8 / InnoDB, PyMySQL, DBUtils `PooledDB` | PyMySQL 1.2.3, DBUtils 3.2.0 |
 | Sécurité | bcrypt, JWT HS256 (`python-jose`) | bcrypt 5.0.0, jose 3.5.0 |
-| IA | SDK Anthropic (`claude-haiku-4-5`) | anthropic 1.9.0 |
+| IA | Groq (`openai/gpt-oss-120b`) puis Gemini (`gemini-2.5-flash`), offres gratuites, API compatibles OpenAI en HTTP ; prévision et anomalies en local | aucune dépendance |
 | Web | React 19.2, Vite 8 (Rolldown), Tailwind 3.4, Recharts 3, axios, oxlint, Vitest 5 | |
 | Mobile | Expo SDK 57, React Native 0.86 (New Architecture, Hermes), AsyncStorage | |
 
@@ -263,18 +263,29 @@ ce design suppose **un seul processus** ; voir §3.6.
   bucket*. Deux clés indépendantes (IP et email) contre le *credential
   stuffing* et le *password spraying*.
 
-### 3.8 SDK Anthropic
-- `anthropic.Anthropic()` lit `ANTHROPIC_API_KEY` ; `client.with_options(
-  timeout=6.0, max_retries=1).messages.create(model, max_tokens, system,
-  messages)` ; la réponse est une liste de blocs de contenu (`type == "text"`).
-- Motif robuste utilisé ici : le LLM **ne fait que reformuler** des chiffres
-  calculés de façon déterministe, avec un repli sur un gabarit si l'appel
-  échoue. C'est la bonne répartition : les montants ne sortent jamais du
-  modèle. Le prompt système interdit d'inventer des chiffres et de conseiller
-  un décalage horaire.
-- Coût/latence : un appel par suggestion et par foyer toutes les 6 h ; créer
-  le client une fois au niveau module et paralléliser (ou regrouper) si le
-  nombre de foyers croît.
+### 3.8 Intelligence artificielle (`llm.py`, `insights.py`, `reports.py`)
+- **Fournisseurs gratuits, dans l'ordre** : Groq (`openai/gpt-oss-120b`,
+  ~1 000 requêtes/jour, prompts non utilisés pour l'entraînement), puis
+  Gemini Flash via Google AI Studio (~1 500 requêtes/jour ; sur l'offre
+  gratuite, Google peut utiliser les prompts hors UE/RU), puis tout point
+  d'accès compatible OpenAI (Ollama local, gratuit et privé). Un seul client
+  HTTP (`urllib`) pour les trois, puisque tous exposent
+  `/chat/completions` ; `response_format: json_object`.
+- **Quotas** : un 429 met le fournisseur en pause le temps du `Retry-After`,
+  une clé refusée pendant 1 h, une erreur pendant 30 s ; l'appel suivant
+  passe au fournisseur d'après. Un appel par foyer toutes les 6 h pour les
+  conseils (regroupés), un bilan par mois et par foyer mis en cache
+  (migration 006) — le mois en cours au plus une fois par jour.
+- **Répartition des rôles** : les chiffres sont toujours calculés de façon
+  déterministe ; le modèle ne fait que rédiger, en anglais et en français
+  d'un coup. `numbers_are_grounded` rejette tout texte citant un chiffre
+  absent des faits fournis, et le gabarit prend le relais. Aucune donnée
+  personnelle n'est envoyée (ni nom, ni e-mail, ni adresse).
+- **Local, sans API** (`insights.py`) : prévision de fin de mois par profil
+  hebdomadaire (8 semaines) avec intervalle à 80 % et probabilité de
+  dépasser le budget (loi normale sur les résidus) ; détection d'anomalies
+  journalières par z-score robuste (médiane/MAD, seuil 3,5) avec seuils de
+  matérialité.
 
 ---
 

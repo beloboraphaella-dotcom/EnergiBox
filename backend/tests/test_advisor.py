@@ -81,7 +81,6 @@ def build(kwh_so_far, devices, waste_by_device, day=15):
          patch.object(ai_advisor, "device_month_kwh", return_value=devices), \
          patch.object(ai_advisor, "standby_waste",
                       side_effect=lambda pid: waste_by_device.get(pid, (0.0, []))), \
-         patch.object(ai_advisor, "generate_ai_phrasing", return_value=None), \
          patch.object(ai_advisor, "datetime", FakeDate):
         return ai_advisor.build_suggestions(1)
 
@@ -155,9 +154,16 @@ check("un foyer sans releve ne recoit rien", build(0.0, [], {}) == [])
 
 # ── Offline fallback ────────────────────────────────────────────────────
 print("\n== repli hors ligne ==")
-with patch("anthropic.Anthropic", side_effect=RuntimeError("no network")):
-    check("une panne d'API ne leve pas d'exception",
-          ai_advisor.generate_ai_phrasing("x") is None)
+import llm
+sample = build(175.0, DEVICES, {})
+before = [s["suggestion_text"] for s in sample]
+with patch.object(llm, "enabled", return_value=True), \
+     patch.object(llm, "complete_json", return_value=None):
+    after = ai_advisor.phrase_suggestions(sample)
+check("une panne d'API ne leve pas d'exception et garde le modele",
+      [s["suggestion_text"] for s in after] == before)
+check("chaque conseil a aussi sa version francaise",
+      all(s.get("suggestion_text_fr") for s in after))
 
 print("\n" + ("TOUS LES TESTS PASSENT" if not fails else f"{len(fails)} ECHEC(S): {fails}"))
 sys.exit(1 if fails else 0)

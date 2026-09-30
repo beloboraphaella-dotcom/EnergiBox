@@ -6,15 +6,19 @@ from auth import (
 import rate_limit
 from rate_limit import login_limiter, register_limiter
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, Depends, Query, Request, WebSocket
+from fastapi import FastAPI, HTTPException, Depends, Header, Query, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 import energy
+import bilingual
+import insights
 import leader
 import live
+import llm
 import push
+import reports
 import tariff
 from config import CORS_ORIGINS, get_connection as get_raw_db, pooling_enabled
 from database import engine, Base
@@ -115,6 +119,7 @@ def _probe_home_features():
             cursor.execute("SHOW COLUMNS FROM homes LIKE 'monthly_budget_fcfa'")
             _has_budget_column = cursor.fetchone() is not None
             push.probe(conn)
+            bilingual.probe(conn)
         finally:
             conn.close()
     except Exception as exc:
@@ -412,6 +417,10 @@ def health():
             # Migration 005: monthly budgets and phone notifications.
             "budgets": "enabled" if _has_budget_column else "disabled",
             "push": "enabled" if push.enabled() else "disabled",
+            # Migration 006, and the language model behind the advice and
+            # the monthly report (llm.py): which providers are configured.
+            "bilingual": "enabled" if bilingual.enabled() else "english_only",
+            "llm": llm.status(),
             "status": "healthy" if healthy else "degraded",
         },
     )
@@ -480,12 +489,19 @@ def estimate_bill(home_id: int, user: dict = Depends(get_scoped_user)):
         "tariff_per_kwh": tariff.rate_for_month(kwh)
     }
 
+def _alert_message_sql():
+    """The alert text column(s): French too once migration 006 is in."""
+    return "a.message, a.message_fr" if bilingual.enabled() else "a.message, NULL"
+
+
 @app.get("/alerts")
-def get_alerts(home_id: int, user: dict = Depends(get_scoped_user)):
+def get_alerts(home_id: int, user: dict = Depends(get_scoped_user),
+               accept_language: str = Header(default="")):
+    language = bilingual.language_of(accept_language)
     conn = get_raw_db()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT mp.name, a.type, a.message, a.read_status, a.created_at
+    cursor.execute(f"""
+        SELECT mp.name, a.type, {_alert_message_sql()}, a.read_status, a.created_at
         FROM alerts a
         JOIN monitored_points mp ON a.monitored_point_id = mp.id
         JOIN rooms r ON mp.room_id = r.id
@@ -499,19 +515,21 @@ def get_alerts(home_id: int, user: dict = Depends(get_scoped_user)):
         {
             "appliance": row[0],
             "type": row[1],
-            "message": row[2],
-            "read": bool(row[3]),
-            "created_at": str(row[4])
+            "message": bilingual.pick(language, row[2], row[3]),
+            "read": bool(row[4]),
+            "created_at": str(row[5])
         }
         for row in rows
     ]
 
 @app.get("/alerts/unread")
-def get_unread_alerts(home_id: int, user: dict = Depends(get_scoped_user)):
+def get_unread_alerts(home_id: int, user: dict = Depends(get_scoped_user),
+                      accept_language: str = Header(default="")):
+    language = bilingual.language_of(accept_language)
     conn = get_raw_db()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT mp.name, a.type, a.message, a.created_at
+    cursor.execute(f"""
+        SELECT mp.name, a.type, {_alert_message_sql()}, a.created_at
         FROM alerts a
         JOIN monitored_points mp ON a.monitored_point_id = mp.id
         JOIN rooms r ON mp.room_id = r.id
@@ -526,8 +544,8 @@ def get_unread_alerts(home_id: int, user: dict = Depends(get_scoped_user)):
             {
                 "appliance": row[0],
                 "type": row[1],
-                "message": row[2],
-                "created_at": str(row[3])
+                "message": bilingual.pick(language, row[2], row[3]),
+                "created_at": str(row[4])
             }
             for row in rows
         ]
@@ -927,7 +945,8 @@ def get_devices(home_id: int, user: dict = Depends(get_scoped_user)):
     ]
 
 @app.get("/devices/{mac}")
-def get_device_detail(mac: str, user: dict = Depends(get_mac_owner)):
+def get_device_detail(mac: str, user: dict = Depends(get_mac_owner),
+                      accept_language: str = Header(default="")):
     """Returns full detail + runtime stats for a single device"""
     conn = get_raw_db()
     cursor = conn.cursor()
@@ -982,8 +1001,9 @@ def get_device_detail(mac: str, user: dict = Depends(get_mac_owner)):
     # The detail screen surfaces this device's own alerts. Filtering the
     # home-wide /alerts by appliance name would mis-attribute them as soon
     # as two devices share a name, so they are keyed by id here.
-    cursor.execute("""
-        SELECT type, message, read_status, created_at FROM alerts
+    message_fr = "message_fr" if bilingual.enabled() else "NULL"
+    cursor.execute(f"""
+        SELECT type, message, read_status, created_at, {message_fr} FROM alerts
         WHERE monitored_point_id = %s
         ORDER BY created_at DESC LIMIT 5
     """, (monitored_point_id,))
@@ -1013,7 +1033,7 @@ def get_device_detail(mac: str, user: dict = Depends(get_mac_owner)):
         "recent_alerts": [
             {
                 "type": a[0],
-                "message": a[1],
+                "message": bilingual.pick(bilingual.language_of(accept_language), a[1], a[4]),
                 "read": bool(a[2]),
                 "created_at": str(a[3]),
             }
@@ -1358,6 +1378,28 @@ async def live_updates(websocket: WebSocket):
     changed, so it refetches instead of polling. See live.py."""
     await live.serve(websocket)
 
+@app.get("/reports/monthly")
+def get_monthly_report(home_id: int, year: int, month: int,
+                       user: dict = Depends(get_scoped_user),
+                       accept_language: str = Header(default="")):
+    """The month's figures, a summary and three actions, in the reader's
+    language. Written by the language model when one is configured, from
+    a template otherwise; see reports.py."""
+    now = datetime.now()
+    if not (1 <= month <= 12) or (year, month) > (now.year, now.month) or year < 2000:
+        raise HTTPException(status_code=400, detail="Pick a past or current month")
+    report = reports.monthly_report(home_id, year, month, now)
+    language = bilingual.language_of(accept_language)
+    return {
+        "year": year,
+        "month": month,
+        "facts": report["facts"],
+        "summary": report["content"][language]["summary"],
+        "actions": report["content"][language]["actions"],
+        "source": report["source"],
+        "generated_at": report["generated_at"],
+    }
+
 @app.put("/auth/profile")
 def update_profile(body: UpdateProfileRequest, user: dict = Depends(get_current_user)):
     """Update the current user's display name"""
@@ -1373,13 +1415,16 @@ def update_password(body: ChangePasswordRequest, user: dict = Depends(get_curren
     return {"message": "Password updated successfully"}
 
 @app.get("/suggestions")
-def get_suggestions(home_id: int, user: dict = Depends(get_scoped_user)):
+def get_suggestions(home_id: int, user: dict = Depends(get_scoped_user),
+                    accept_language: str = Header(default="")):
+    language = bilingual.language_of(accept_language)
+    extra = "s.suggestion_text_fr, s.ai_written" if bilingual.enabled() else "NULL, 0"
     conn = get_raw_db()
     cursor = conn.cursor()
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT s.id, mp.name, s.suggestion_text,
                s.estimated_saving_fcfa, s.status, s.created_at,
-               mp.id, e.mac_address
+               mp.id, e.mac_address, {extra}
         FROM ai_suggestions s
         JOIN monitored_points mp ON s.monitored_point_id = mp.id
         JOIN rooms r ON mp.room_id = r.id
@@ -1393,7 +1438,9 @@ def get_suggestions(home_id: int, user: dict = Depends(get_scoped_user)):
         {
             "id": row[0],
             "appliance": row[1],
-            "suggestion": row[2],
+            "suggestion": bilingual.pick(language, row[2], row[8]),
+            # Whether a language model wrote it (llm.py) or the template.
+            "ai_written": bool(row[9]),
             "estimated_saving_fcfa": row[3],
             "status": row[4],
             "created_at": str(row[5]),
@@ -1751,10 +1798,9 @@ def get_overview(home_id: int, user: dict = Depends(get_scoped_user)):
             return 0
         return round((current - previous) / previous * 100, 1)
 
-    # Projected bill (linear projection)
-    day_of_month = datetime.now().day
-    days_in_month = 30
-    projected_kwh = (month_kwh / day_of_month) * days_in_month if day_of_month > 0 else 0
+    # Month-end projection from the household's own weekday profile, with
+    # an 80 % range and the chance of passing the budget (insights.py).
+    forecast = insights.forecast_month(home_id, month_kwh, budget)
 
     return {
         "today": {
@@ -1769,7 +1815,8 @@ def get_overview(home_id: int, user: dict = Depends(get_scoped_user)):
             "kwh": round(month_kwh, 3),
             "change_vs_last_month": pct_change(month_kwh, last_month_kwh),
             "estimated_fcfa": round(tariff.monthly_cost(month_kwh), 0),
-            "projected_fcfa": round(tariff.monthly_cost(projected_kwh), 0),
+            "projected_fcfa": forecast["fcfa"],
+            "forecast": forecast,
             # None when no budget is set, or before migration 005.
             "budget_fcfa": budget,
         },

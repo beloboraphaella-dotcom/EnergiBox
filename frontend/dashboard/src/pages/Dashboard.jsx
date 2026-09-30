@@ -14,6 +14,7 @@ import Icon from "../components/Icon";
 import Modal from "../components/GlassModal";
 import Overview from "./Overview";
 import Skeleton from "../components/Skeleton";
+import ReportCard from "../components/ReportCard";
 import { useLiveRefresh } from "../live/LiveContext";
 import { SCHEDULE_PRESETS } from "../utils/schedulePresets";
 
@@ -26,6 +27,8 @@ const ALERT_TONES = {
   spike: { icon: "warning", orb: "bg-error-container/70 text-error", chip: "chip-red" },
   extended_runtime: { icon: "timer", orb: "bg-tertiary-fixed/70 text-on-tertiary-fixed-variant", chip: "chip-amber" },
   idle_waste: { icon: "nights_stay", orb: "text-on-primary-fixed-variant", chip: "chip-indigo" },
+  anomaly_high: { icon: "query_stats", orb: "bg-tertiary-fixed/70 text-on-tertiary-fixed-variant", chip: "chip-amber" },
+  anomaly_low: { icon: "trending_down", orb: "text-on-primary-fixed-variant", chip: "chip-indigo" },
 };
 
 function SectionTitle({ icon, children }) {
@@ -400,6 +403,10 @@ export default function Dashboard({
               </div>
             )}
 
+            {historyMode === "Month" && (
+              <ReportCard token={token} homeId={activeHomeId} year={historyYear} month={historyMonth} />
+            )}
+
             {historyData && (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-sm">
@@ -527,8 +534,15 @@ export default function Dashboard({
                 <div key={i} className={"glass rounded-2xl p-4 " + (s2.status === "ignored" ? "opacity-70" : "")}>
                   <div className="flex items-center justify-between gap-3">
                     <p className="font-body-md text-body-md font-semibold text-on-surface">{s2.appliance}</p>
-                    <span className={"chip " + (s2.status === "accepted" ? "chip-teal" : s2.status === "ignored" ? "" : "chip-amber")}>
-                      {t(`sugg.status.${s2.status}`)}
+                    <span className="flex items-center gap-2">
+                      {s2.ai_written && (
+                        <span className="chip chip-indigo" title={t("report.byAI")}>
+                          <Icon name="auto_awesome" style={{ fontSize: "14px" }} /> {t("sugg.aiWritten")}
+                        </span>
+                      )}
+                      <span className={"chip " + (s2.status === "accepted" ? "chip-teal" : s2.status === "ignored" ? "" : "chip-amber")}>
+                        {t(`sugg.status.${s2.status}`)}
+                      </span>
                     </span>
                   </div>
                   <p className="text-[14px] leading-6 text-on-surface-variant mt-2">{s2.suggestion}</p>

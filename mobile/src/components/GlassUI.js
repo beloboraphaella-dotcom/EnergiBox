@@ -33,7 +33,7 @@ function capitalize(value) {
   return typeof value === "string" && value ? value[0].toUpperCase() + value.slice(1) : value;
 }
 
-export function Orb({ icon, color = colors.secondary, background, size = 44 }) {
+export function Orb({ icon, color = colors.secondary, background, size = 44, children }) {
   return (
     <View
       style={[
@@ -42,7 +42,7 @@ export function Orb({ icon, color = colors.secondary, background, size = 44 }) {
         background && { backgroundColor: background },
       ]}
     >
-      <Icon name={icon} size={Math.round(size * 0.5)} color={color} />
+      {children ?? <Icon name={icon} size={Math.round(size * 0.5)} color={color} />}
     </View>
   );
 }

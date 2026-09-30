@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import axios from "axios";
 import { translations } from "./translations";
 
 const LanguageContext = createContext(null);
@@ -14,6 +15,8 @@ export function LanguageProvider({ children }) {
   useEffect(() => {
     localStorage.setItem("language", language);
     document.documentElement.setAttribute("lang", language);
+    // The API returns alerts, suggestions and reports in this language.
+    axios.defaults.headers.common["Accept-Language"] = language;
   }, [language]);
 
   // Values are substituted into {placeholders}; callers that pass nothing

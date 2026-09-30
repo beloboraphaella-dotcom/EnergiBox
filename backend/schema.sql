@@ -113,9 +113,11 @@ CREATE TABLE IF NOT EXISTS baselines (
 CREATE TABLE IF NOT EXISTS alerts (
     id                 INT AUTO_INCREMENT PRIMARY KEY,
     monitored_point_id INT         NOT NULL,
-    -- 'spike' | 'extended_runtime' | 'idle_waste'
+    -- 'spike' | 'extended_runtime' | 'idle_waste' | 'anomaly_high' | 'anomaly_low'
     type               VARCHAR(40) NOT NULL,
     message            TEXT        NOT NULL,
+    -- French text; see migrations/006_ai_bilingual_reports.sql.
+    message_fr         TEXT        NULL,
     read_status        TINYINT(1)  NOT NULL DEFAULT 0,
     created_at         DATETIME    NOT NULL,
     KEY idx_alerts_point_created (monitored_point_id, created_at),
@@ -144,9 +146,28 @@ CREATE TABLE IF NOT EXISTS ai_suggestions (
     -- 'standby' | 'dominant' | 'band' | 'band_warning'. One pending
     -- suggestion per device and kind; see migrations/004_suggestion_kind.sql.
     kind                  VARCHAR(20) NULL,
+    -- French text, and whether a language model wrote it; see
+    -- migrations/006_ai_bilingual_reports.sql.
+    suggestion_text_fr    TEXT        NULL,
+    ai_written            TINYINT(1)  NOT NULL DEFAULT 0,
     KEY idx_suggestions_point_status (monitored_point_id, status),
     KEY idx_suggestions_point_kind_status (monitored_point_id, kind, status),
     CONSTRAINT fk_suggestions_point FOREIGN KEY (monitored_point_id) REFERENCES monitored_points (id)
+) ENGINE=InnoDB;
+
+-- Monthly reports written by the language model, one per home and month;
+-- see reports.py and migrations/006_ai_bilingual_reports.sql.
+CREATE TABLE IF NOT EXISTS monthly_reports (
+    id           INT AUTO_INCREMENT PRIMARY KEY,
+    home_id      INT         NOT NULL,
+    year         SMALLINT    NOT NULL,
+    month        TINYINT     NOT NULL,
+    content      TEXT        NOT NULL,
+    source       VARCHAR(20) NOT NULL,
+    generated_at DATETIME    NOT NULL,
+    UNIQUE KEY uq_monthly_reports (home_id, year, month),
+    CONSTRAINT fk_monthly_reports_home FOREIGN KEY (home_id) REFERENCES homes (id)
+        ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- Phones to notify of new alerts (Expo push tokens); see push.py and

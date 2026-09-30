@@ -104,6 +104,15 @@ device, alert or suggestion changed; they fall back to polling when it is
 down. A reverse proxy in front of the API must forward WebSocket upgrades
 on that path.
 
+**Artificial intelligence.** The advisor's tips and the monthly report
+are written by a language model on a free tier — Groq first, Gemini
+when Groq is out of quota, then any OpenAI-compatible endpoint such as a
+local Ollama — configured in `backend/.env` (see `.env.example`). The
+model only phrases figures EnergiBox computed, in English and French,
+and a text quoting any other figure is discarded for the template. With
+no key the app uses its templates and works the same. The month-end
+forecast and the daily anomaly check run locally and need nothing.
+
 **Phone notifications** (new alerts, in the phone's language) go through
 Expo's push service and need three things: migration 005, a development
 or store build of the mobile app — Expo Go no longer receives remote
@@ -153,15 +162,17 @@ These are open, understood, and deliberately not papered over:
   any bill observed — including at 216 kWh, above the 110 kWh exemption
   the regulator documents. That is an observation, not a rule, and a bill
   showing VAT would change it.
-- **Four optional migrations change how much the app knows.** Without
+- **Five optional migrations change how much the app knows.** Without
   `002_reading_interval.sql` energy is computed from an assumed 2-second
   cadence rather than the interval each reading actually stands for;
   without `003_auth_rate_limit.sql` the auth budget is per worker rather
   than shared; without `004_suggestion_kind.sql` a device holds a single
   pending suggestion (the one worth the most) instead of one per kind;
   without `005_budget_and_push.sql` households cannot set a monthly
-  budget and phones are not notified of alerts.
-  All four degrade to the previous behaviour and `GET /health` reports
+  budget and phones are not notified of alerts; without
+  `006_ai_bilingual_reports.sql` suggestions and alerts stay in English
+  and monthly reports use the template only.
+  All five degrade to the previous behaviour and `GET /health` reports
   which mode is running, so none is urgent — but until they are applied,
   a box that drops off the network quietly lowers the bill, and N uvicorn
   workers give N times the login allowance.
@@ -183,14 +194,12 @@ These are open, understood, and deliberately not papered over:
   the sessions in progress; the next complete session resumes the
   learning. Nothing wrong is ever written, but a restart-heavy deployment
   learns more slowly.
-- **Messages written by the backend are English only.** Every screen of
-  both apps is translated, English and French, and the sign-in screens
-  carry their own language switch. But the text of an alert or of an
-  advisor suggestion is composed on the server and stored as it was
-  written, so it shows in English whatever the reader chose — as do the
-  error details the API returns (`"User not found"`, and so on). Fixing
-  that means storing a message key and its parameters instead of a
-  sentence. `backend/tests/test_i18n.py` keeps the two apps' translation
+- **API error details are English only.** Alerts, suggestions and
+  monthly reports are stored in English and French (migration 006) and
+  returned in the app's language (`Accept-Language`); alerts and
+  suggestions written before that migration stay in English. The error
+  details the API returns (`"User not found"`, and so on) are still
+  English. `backend/tests/test_i18n.py` keeps the two apps' translation
   files identical.
 - **There is no dark theme.** The web app used to carry a light/dark
   toggle that set an attribute nothing read — the mockups' dark variant

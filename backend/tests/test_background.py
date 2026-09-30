@@ -253,6 +253,7 @@ db = SuggestionDB(with_kind=True)
 with patch.object(ai_advisor, "get_db", return_value=db), \
      patch.object(ai_advisor, "_has_kind_column", True), \
      patch.object(ai_advisor, "_home_ids", return_value=[1]), \
+     patch("bilingual._has_columns", False), \
      patch.object(ai_advisor, "build_suggestions", return_value=three):
     ai_advisor.run_ai_advisor()
     ai_advisor.run_ai_advisor()
@@ -273,6 +274,7 @@ db = SuggestionDB(with_kind=False)
 with patch.object(ai_advisor, "get_db", return_value=db), \
      patch.object(ai_advisor, "_has_kind_column", False), \
      patch.object(ai_advisor, "_home_ids", return_value=[1]), \
+     patch("bilingual._has_columns", False), \
      patch.object(ai_advisor, "build_suggestions", return_value=three):
     ai_advisor.run_ai_advisor()
 check("sans la migration, la suggestion gardee est celle qui rapporte le plus",

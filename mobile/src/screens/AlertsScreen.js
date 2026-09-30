@@ -22,6 +22,8 @@ const TONES = {
   spike: { icon: "warning", tone: "red", color: colors.error, orb: "rgba(255, 218, 214, 0.75)" },
   extended_runtime: { icon: "timer", tone: "amber", color: colors.onTertiaryFixedVariant, orb: "rgba(255, 221, 184, 0.75)" },
   idle_waste: { icon: "nights_stay", tone: "indigo", color: colors.onPrimaryFixedVariant, orb: null },
+  anomaly_high: { icon: "query_stats", tone: "amber", color: colors.onTertiaryFixedVariant, orb: "rgba(255, 221, 184, 0.75)" },
+  anomaly_low: { icon: "trending_down", tone: "indigo", color: colors.onPrimaryFixedVariant, orb: null },
 };
 
 const STATUS_TONE = { accepted: "teal", ignored: null, pending: "amber" };
@@ -185,6 +187,7 @@ export default function AlertsScreen({ homeId }) {
           <View key={i} style={[glass.card, styles.card, s.status === "ignored" && styles.muted]}>
             <View style={styles.cardTop}>
               <Text style={styles.appliance} numberOfLines={1}>{s.appliance}</Text>
+              {s.ai_written && <Chip tone="indigo" icon="auto_awesome">{t("sugg.aiWritten")}</Chip>}
               <Chip tone={STATUS_TONE[s.status]}>{t(`sugg.status.${s.status}`)}</Chip>
             </View>
             <Text style={styles.message}>{s.suggestion}</Text>

@@ -172,6 +172,7 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOpenDevice, o
       <BudgetCard
         estimated={estimatedFcfa}
         projected={projectedFcfa}
+        forecast={overview?.month?.forecast}
         budget={budgetFcfa}
         onEdit={() => setBudgetOpen(true)}
       />
@@ -374,7 +375,7 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOpenDevice, o
 /** The month in money: spent so far, the projection at the current pace,
  * and — once the household has set one — a bar against their budget.
  * Same card as the web dashboard's. */
-function BudgetCard({ estimated, projected, budget, onEdit }) {
+function BudgetCard({ estimated, projected, forecast, budget, onEdit }) {
   const { t, locale } = useLanguage();
   const money = (v) => Math.round(v).toLocaleString(locale);
   const ratio = budget ? Math.min(estimated / budget, 1) : 0;
@@ -398,6 +399,11 @@ function BudgetCard({ estimated, projected, budget, onEdit }) {
       <Text style={[styles.statFoot, { color: colors.primaryFixedDim }]}>
         {t("budget.projection", { amount: money(projected) })}
       </Text>
+      {forecast?.low_fcfa != null && forecast.high_fcfa > forecast.low_fcfa && (
+        <Text style={[styles.statFoot, styles.dim]}>
+          {t("budget.range", { low: money(forecast.low_fcfa), high: money(forecast.high_fcfa) })}
+        </Text>
+      )}
 
       {budget ? (
         <View style={styles.budgetBlock}>
@@ -422,6 +428,11 @@ function BudgetCard({ estimated, projected, budget, onEdit }) {
               ? t("budget.over", { amount: money(over) })
               : t("budget.left", { amount: money(Math.max(budget - estimated, 0)) })}
           </Text>
+          {forecast?.budget_risk != null && forecast.method !== "linear" && (
+            <Text style={[styles.statFoot, styles.dim]}>
+              {t("budget.risk", { pct: Math.round(forecast.budget_risk * 100) })}
+            </Text>
+          )}
         </View>
       ) : (
         <View style={styles.budgetBlock}>
@@ -623,6 +634,7 @@ const styles = StyleSheet.create({
   track: { height: 12, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.15)", overflow: "hidden" },
   trackFill: { position: "absolute", left: 0, top: 0, bottom: 0, borderRadius: 6 },
   allOff: { alignSelf: "flex-start" },
+  dim: { fontSize: 13, color: colors.primaryFixedDim, opacity: 0.85 },
   sheetText: { ...type.bodyMd, color: colors.onSurfaceVariant },
   sheetHint: { ...type.bodyMd, fontSize: 14, lineHeight: 20, color: colors.outline },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },

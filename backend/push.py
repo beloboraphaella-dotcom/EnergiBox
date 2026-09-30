@@ -33,11 +33,15 @@ TITLES = {
         "spike": "Consumption spike",
         "extended_runtime": "Running for a long time",
         "idle_waste": "Unusual standby draw",
+        "anomaly_high": "Unusual day of consumption",
+        "anomaly_low": "Consumption has dropped",
     },
     "fr": {
         "spike": "Pic de consommation",
         "extended_runtime": "Fonctionne depuis longtemps",
         "idle_waste": "Consommation de veille inhabituelle",
+        "anomaly_high": "Journée de consommation inhabituelle",
+        "anomaly_low": "Consommation en forte baisse",
     },
 }
 BODIES = {

@@ -158,6 +158,7 @@ export default function Overview({ token, homeId, onOpenDevices, onOpenDevice })
       <BudgetCard
         estimated={estimatedFcfa}
         projected={projectedFcfa}
+        forecast={overview?.month?.forecast}
         budget={budgetFcfa}
         onEdit={() => setBudgetOpen(true)}
       />
@@ -386,7 +387,7 @@ export default function Overview({ token, homeId, onOpenDevices, onOpenDevice })
 
 /** The month in money: spent so far, the projection at the current pace,
  * and — once the household has set one — a bar against their budget. */
-function BudgetCard({ estimated, projected, budget, onEdit }) {
+function BudgetCard({ estimated, projected, forecast, budget, onEdit }) {
   const { t, locale } = useLanguage();
   const money = (v) => Math.round(v).toLocaleString(locale);
   const ratio = budget ? Math.min(estimated / budget, 1) : 0;
@@ -411,6 +412,11 @@ function BudgetCard({ estimated, projected, budget, onEdit }) {
           <p className="mt-1 text-[15px] text-primary-fixed-dim">
             {t("budget.projection", { amount: money(projected) })}
           </p>
+          {forecast?.low_fcfa != null && forecast.high_fcfa > forecast.low_fcfa && (
+            <p className="text-[13px] text-primary-fixed-dim/80">
+              {t("budget.range", { low: money(forecast.low_fcfa), high: money(forecast.high_fcfa) })}
+            </p>
+          )}
         </div>
 
         <div>
@@ -446,6 +452,11 @@ function BudgetCard({ estimated, projected, budget, onEdit }) {
                   ? t("budget.over", { amount: money(over) })
                   : t("budget.left", { amount: money(Math.max(budget - estimated, 0)) })}
               </p>
+              {forecast?.budget_risk != null && forecast.method !== "linear" && (
+                <p className="text-[13px] text-primary-fixed-dim/80">
+                  {t("budget.risk", { pct: Math.round(forecast.budget_risk * 100) })}
+                </p>
+              )}
             </>
           ) : (
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">

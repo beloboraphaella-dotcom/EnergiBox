@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import bilingual
 import push
 import runtime
 from config import get_connection as get_db
@@ -81,31 +82,51 @@ def save_baseline(monitored_point_id, avg_watts):
     conn.commit()
     conn.close()
 
-def create_alert(monitored_point_id, alert_type, message):
-    """Save an alert to the database"""
+def _fr(value, digits=1):
+    """A number the way a French reader writes it: 83,1 rather than 83.1."""
+    return f"{value:.{digits}f}".replace(".", ",")
+
+
+def create_alert(monitored_point_id, alert_type, message, message_fr=None, dedupe="5min"):
+    """Save an alert, in English and — with migration 006 — in French.
+
+    `dedupe` is how far back an alert of the same type on the same device
+    suppresses this one: five minutes for alerts raised on live readings,
+    a calendar day for the daily anomaly check. Returns whether it was
+    saved."""
     conn = get_db()
     cursor = conn.cursor()
-    
-    # Avoid duplicate alerts — check if same alert exists in last 5 minutes
-    cursor.execute("""
+
+    window = ("created_at >= CURDATE()" if dedupe == "day"
+              else "created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)")
+    cursor.execute(f"""
         SELECT id FROM alerts
         WHERE monitored_point_id = %s
         AND type = %s
-        AND created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+        AND {window}
     """, (monitored_point_id, alert_type))
-    
+
     existing = cursor.fetchone()
-    
+    saved = False
+
     if not existing:
-        cursor.execute("""
-            INSERT INTO alerts (monitored_point_id, type, message, created_at)
-            VALUES (%s, %s, %s, %s)
-        """, (monitored_point_id, alert_type, message, datetime.now()))
+        if bilingual.enabled():
+            cursor.execute("""
+                INSERT INTO alerts (monitored_point_id, type, message, message_fr, created_at)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (monitored_point_id, alert_type, message, message_fr, datetime.now()))
+        else:
+            cursor.execute("""
+                INSERT INTO alerts (monitored_point_id, type, message, created_at)
+                VALUES (%s, %s, %s, %s)
+            """, (monitored_point_id, alert_type, message, datetime.now()))
         conn.commit()
+        saved = True
         print(f"ALERT GENERATED: {message}")
         push.notify_alert(monitored_point_id, alert_type)
-    
+
     conn.close()
+    return saved
 
 def check_spike(monitored_point_id, current_watts, appliance_name):
     """Check if current consumption is 30% above baseline"""
@@ -140,7 +161,11 @@ def check_spike(monitored_point_id, current_watts, appliance_name):
             f"{appliance_name} is consuming {current_watts:.1f}W — "
             f"{percentage:.0f}% above its normal average of {avg_watts:.1f}W."
         )
-        create_alert(monitored_point_id, "spike", message)
+        message_fr = (
+            f"{appliance_name} consomme {_fr(current_watts)} W, soit "
+            f"{percentage:.0f} % de plus que sa moyenne habituelle de {_fr(avg_watts)} W."
+        )
+        create_alert(monitored_point_id, "spike", message, message_fr)
     else:
         print(f"{appliance_name}: {current_watts:.1f}W — normal "
               f"(baseline: {avg_watts:.1f}W)")
@@ -187,7 +212,12 @@ def check_extended_runtime(monitored_point_id, appliance_name, current_runtime_m
             f"normally runs for {avg_runtime:.0f} minutes. "
             f"Consider checking if it was left on accidentally."
         )
-        create_alert(monitored_point_id, "extended_runtime", message)
+        message_fr = (
+            f"{appliance_name} fonctionne depuis {current_runtime_min:.0f} minutes, "
+            f"alors qu'il tourne d'habitude {avg_runtime:.0f} minutes. "
+            f"Vérifiez qu'il n'a pas été oublié allumé."
+        )
+        create_alert(monitored_point_id, "extended_runtime", message, message_fr)
 def check_idle_waste(monitored_point_id, current_watts, appliance_name):
     """Alert when appliance consumes power during historically idle hours"""
     if current_watts < 10:
@@ -223,4 +253,9 @@ def check_idle_waste(monitored_point_id, current_watts, appliance_name):
             f"at {current_hour}:00 — this is unusual based on its history. "
             f"It may have been left on accidentally."
         )
-        create_alert(monitored_point_id, "idle_waste", message)
+        message_fr = (
+            f"{appliance_name} consomme {_fr(current_watts)} W à {current_hour} h, "
+            f"ce qui est inhabituel d'après son historique. "
+            f"Il a peut-être été oublié allumé."
+        )
+        create_alert(monitored_point_id, "idle_waste", message, message_fr)

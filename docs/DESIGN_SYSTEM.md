@@ -118,6 +118,6 @@ button has an accessible name; modals close on Escape and take focus.
 - **Dark theme.** Still none, as the README says: the design has no dark
   palette. The system is built on CSS variables and tokens, so one would
   slot in as a second backdrop and a second set of fills.
-- **Server-written text.** Every screen is translated, but alert and
-  suggestion messages are composed in English by the backend and shown as
-  stored; see the README's known limitations.
+- **Server-written text.** Alerts, suggestions and reports come in the
+  reader's language since migration 006; API error details are still
+  English only. See the README's known limitations.

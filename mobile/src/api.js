@@ -18,10 +18,12 @@ export function setLogoutHandler(fn) {
 }
 
 api.interceptors.request.use(async (config) => {
-  const token = await AsyncStorage.getItem("token");
+  const [[, token], [, language]] = await AsyncStorage.multiGet(["token", "language"]);
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // The API returns alerts, suggestions and reports in this language.
+  config.headers["Accept-Language"] = language === "fr" ? "fr" : "en";
   return config;
 });
 

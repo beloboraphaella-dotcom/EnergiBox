@@ -7,6 +7,7 @@ import { colors, spacing, type, glass } from "../theme";
 import { IconButton, Segmented, StatTile } from "../components/GlassUI";
 import Icon from "../components/Icon";
 import Skeleton, { SkeletonList } from "../components/Skeleton";
+import ReportCard from "../components/ReportCard";
 
 /** Consumption history, as on the web (Dashboard.jsx, "history" tab): the
  * same modes, the same endpoints, the same figures. */
@@ -131,6 +132,8 @@ export default function HistoryScreen({ homeId }) {
         <Text style={styles.periodLabel}>{periodLabel()}</Text>
         <IconButton icon="chevron_right" onPress={() => navigate(1)} label={t("history.next")} />
       </View>
+
+      {mode === "Month" && <ReportCard homeId={homeId} year={year} month={month} />}
 
       {!data && (
         <SkeletonList label={t("common.loading")}>

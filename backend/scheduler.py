@@ -1,4 +1,4 @@
-from datetime import datetime, time as dtime, timedelta
+from datetime import date, datetime, time as dtime, timedelta
 import threading
 import time
 
@@ -188,6 +188,13 @@ def run_advisor():
     run_ai_advisor()
 
 
+def check_anomalies():
+    """Yesterday's consumption of every device against its last four
+    weeks (insights.py). Once a day: a day has to be complete to judge."""
+    import insights
+    insights.run_anomaly_check()
+
+
 def start_scheduler():
     """Run the scheduler loop in a background thread.
 
@@ -202,6 +209,10 @@ def start_scheduler():
         # time.monotonic() can itself be smaller than an interval on a
         # freshly booted machine, which would silently skip the first run.
         last_baseline = last_advisor = None
+        # The calendar day the anomaly check last ran for. A restart on
+        # the same day runs it again, and create_alert's per-day dedupe
+        # keeps that from raising anything twice.
+        last_anomaly_day = None
 
         while True:
             now = time.monotonic()
@@ -214,6 +225,7 @@ def start_scheduler():
             if not leader.is_leader():
                 reset_schedule_state()
                 last_baseline = last_advisor = None
+                last_anomaly_day = None
                 time.sleep(TICK_SECONDS)
                 continue
 
@@ -234,6 +246,11 @@ def start_scheduler():
             if last_advisor is None or now - last_advisor >= ADVISOR_INTERVAL_SECONDS:
                 _run_job("run_advisor", run_advisor)
                 last_advisor = now
+
+            today = date.today()
+            if last_anomaly_day != today:
+                _run_job("check_anomalies", check_anomalies)
+                last_anomaly_day = today
 
             time.sleep(TICK_SECONDS)
 
