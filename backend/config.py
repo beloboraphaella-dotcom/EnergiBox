@@ -164,6 +164,16 @@ def get_connection():
     return pool.connection()
 
 
+def get_dedicated_connection(**options):
+    """A connection that never comes from, or goes back to, the pool.
+
+    For state that lives exactly as long as one connection — a MySQL
+    named lock, say (see leader.py). A pooled connection would be reset
+    on return and handed to another borrower.
+    """
+    return pymysql.connect(**_CONNECT_KWARGS, **options)
+
+
 # ── Authentication ──────────────────────────────────────────────────────
 SECRET_KEY = _required("ENERGIBOX_SECRET_KEY")
 ALGORITHM = _optional("ENERGIBOX_JWT_ALGORITHM", "HS256")

@@ -139,7 +139,11 @@ CREATE TABLE IF NOT EXISTS ai_suggestions (
     -- 'pending' | 'accepted' | 'ignored'
     status                VARCHAR(20) NOT NULL DEFAULT 'pending',
     created_at            DATETIME    NOT NULL,
+    -- 'standby' | 'dominant' | 'band' | 'band_warning'. One pending
+    -- suggestion per device and kind; see migrations/004_suggestion_kind.sql.
+    kind                  VARCHAR(20) NULL,
     KEY idx_suggestions_point_status (monitored_point_id, status),
+    KEY idx_suggestions_point_kind_status (monitored_point_id, kind, status),
     CONSTRAINT fk_suggestions_point FOREIGN KEY (monitored_point_id) REFERENCES monitored_points (id)
 ) ENGINE=InnoDB;
 

@@ -141,14 +141,29 @@ These are open, understood, and deliberately not papered over:
   any bill observed — including at 216 kWh, above the 110 kWh exemption
   the regulator documents. That is an observation, not a rule, and a bill
   showing VAT would change it.
-- **Two optional migrations change how much the app knows.** Without
+- **Three optional migrations change how much the app knows.** Without
   `002_reading_interval.sql` energy is computed from an assumed 2-second
   cadence rather than the interval each reading actually stands for;
   without `003_auth_rate_limit.sql` the auth budget is per worker rather
-  than shared. Both degrade to the previous behaviour and `GET /health`
-  reports which mode is running, so neither is urgent — but until they are
-  applied, a box that drops off the network quietly lowers the bill, and N
-  uvicorn workers give N times the login allowance.
+  than shared; without `004_suggestion_kind.sql` a device holds a single
+  pending suggestion (the one worth the most) instead of one per kind.
+  All three degrade to the previous behaviour and `GET /health` reports
+  which mode is running, so none is urgent — but until they are applied,
+  a box that drops off the network quietly lowers the bill, and N uvicorn
+  workers give N times the login allowance.
+- **Background work runs in one worker, elected through MySQL.** Every
+  uvicorn worker connects to the broker, but only the one holding the
+  `energibox.background` named lock (`backend/leader.py`) stores readings
+  and runs schedules; `GET /health` says `leader` or `standby`. If that
+  worker dies another takes over within seconds, but readings published
+  during the handover are lost: they are QoS 0 on a non-persistent
+  session, so the broker does not keep them for anyone.
+- **After a restart, schedules win over manual switches.** A boundary
+  that passed while the backend was down cannot be replayed, so the first
+  scheduler tick aligns every scheduled device with where its schedules
+  say it should be now. A device switched by hand inside a window is
+  therefore switched back after a restart; between restarts, a manual
+  switch holds until the next boundary.
 - **The runtime baseline is learned in memory.** `runtime.py` tracks
   appliance sessions from the live stream, so restarting the backend drops
   the sessions in progress; the next complete session resumes the

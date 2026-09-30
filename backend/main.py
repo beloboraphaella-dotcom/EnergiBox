@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 import energy
+import leader
 import tariff
 from config import CORS_ORIGINS, get_connection as get_raw_db, pooling_enabled
 from database import engine, Base
@@ -82,9 +83,29 @@ def _probe_energy_schema():
               f"assuming the fixed cadence")
 
 
+def _probe_advisor_schema():
+    """Decide once whether a device can hold one pending suggestion per
+    kind (migration 004) or a single one."""
+    try:
+        conn = get_raw_db()
+        try:
+            import ai_advisor
+            ai_advisor.probe(conn)
+        finally:
+            conn.close()
+    except Exception as exc:
+        print(f"ai_advisor: database unreachable at startup ({exc!r}) — "
+              f"keeping one suggestion per device")
+
+
 _probe_energy_schema()
 _probe_rate_limit_schema()
+_probe_advisor_schema()
 mqtt_client = start_mqtt()
+# Every worker connects to the broker and runs the scheduler loop, but
+# only the one holding the lock consumes telemetry and acts on schedules:
+# with --workers N, each reading used to be stored N times. See leader.py.
+leader.start()
 scheduler_thread = start_scheduler()
 
 app = FastAPI(title="EnergiBox API", version="1.0")
@@ -310,6 +331,11 @@ def root():
         "status": "online"
     }
 
+def _advisor_uses_kinds():
+    import ai_advisor
+    return ai_advisor.uses_kinds()
+
+
 @app.get("/health")
 def health():
     """Actually probe the dependencies. This used to return hardcoded
@@ -343,6 +369,10 @@ def health():
             # Per process means N workers give N times the allowance, so
             # which one is running is worth stating.
             "auth_rate_limit": "shared" if rate_limit.is_shared() else "per_process",
+            # Whether this worker is the one storing readings and running
+            # schedules. Exactly one should say "leader" at any time.
+            "background": "leader" if leader.is_leader() else "standby",
+            "suggestions": "per_kind" if _advisor_uses_kinds() else "per_device",
             "status": "healthy" if healthy else "degraded",
         },
     )
@@ -1222,7 +1252,7 @@ def delete_home(home_id: int, user: dict = Depends(get_scoped_user)):
 def update_profile(body: UpdateProfileRequest, user: dict = Depends(get_current_user)):
     """Update the current user's display name"""
     update_user_name(user["user_id"], body.name)
-    return {"message": "Profile updated", "name": name}
+    return {"message": "Profile updated", "name": body.name}
 
 @app.put("/auth/password")
 def update_password(body: ChangePasswordRequest, user: dict = Depends(get_current_user)):

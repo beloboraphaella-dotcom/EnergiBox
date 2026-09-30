@@ -15,6 +15,7 @@ python backend/tests/test_energy.py    # kWh from measured intervals, both schem
 python backend/tests/test_pool.py      # connection reuse, and the fallback without it
 python backend/tests/test_runtime.py   # appliance sessions and the runtime alert
 python backend/tests/test_i18n.py      # the two apps' translation files, against each other
+python backend/tests/test_background.py # one worker does background work; schedules fire once; suggestions coexist
 ```
 
 Each exits non-zero on the first failure, so they drop straight into CI.
@@ -64,3 +65,13 @@ It also asserts the removed premise stays removed: no PEAK_RATE,
 OFF_PEAK_RATE or peak-hour constants, and no suggestion telling a
 household to shift usage to cheaper hours, because the published tariff
 has none.
+
+`test_background.py` covers the work that must happen once per
+deployment. It drives `leader.py` against a fake of MySQL's named locks
+(take, keep, lose with the connection, hand over), checks that only the
+leader subscribes and stores telemetry, and runs the scheduler over
+chosen clock ticks: a boundary fires exactly once however many ticks land
+in its minute, a 05:00 schedule fires (TIME comes back as an unpadded
+`timedelta`), a missed boundary is caught up, the first tick aligns
+devices, and a failed publish is retried. It also checks that the
+advisor's three kinds of suggestion no longer replace one another.

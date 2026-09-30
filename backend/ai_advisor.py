@@ -32,8 +32,6 @@ which rate the whole month is billed at.
 
 from datetime import datetime
 
-import anthropic
-
 import energy
 import tariff
 from config import get_connection as get_db
@@ -148,6 +146,11 @@ def generate_ai_phrasing(prompt_body):
     key, no internet, API down — so the caller falls back to the
     rule-based template and the advisor keeps working offline."""
     try:
+        # Imported here, not at the top: the package is optional (see
+        # requirements.txt), and main.py imports this module at startup
+        # to probe the schema. A missing package is one more failure the
+        # template fallback absorbs.
+        import anthropic
         client = anthropic.Anthropic()
         response = client.with_options(timeout=6.0, max_retries=1).messages.create(
             model="claude-haiku-4-5",
@@ -220,6 +223,7 @@ def build_suggestions(home_id):
         ) or fallback
 
         suggestions.append({
+            "kind": "standby",
             "monitored_point_id": device["id"],
             "suggestion_text": text,
             "estimated_saving_fcfa": round(saving),
@@ -248,6 +252,7 @@ def build_suggestions(home_id):
                 ) or fallback
 
                 suggestions.append({
+                    "kind": "dominant",
                     "monitored_point_id": top["id"],
                     "suggestion_text": text,
                     "estimated_saving_fcfa": round(saving),
@@ -279,6 +284,7 @@ def build_suggestions(home_id):
         # Pinned to the biggest consumer: ai_suggestions is keyed by
         # device, and that is where acting on it would start.
         suggestions.append({
+            "kind": "band",
             "monitored_point_id": devices[0]["id"],
             "suggestion_text": text,
             "estimated_saving_fcfa": round(drop["saving_fcfa"]),
@@ -310,6 +316,7 @@ def build_suggestions(home_id):
             ) or fallback
 
             suggestions.append({
+                "kind": "band_warning",
                 "monitored_point_id": devices[0]["id"],
                 "suggestion_text": text,
                 "estimated_saving_fcfa": round(crossing),
@@ -318,42 +325,107 @@ def build_suggestions(home_id):
     return suggestions
 
 
+# Set by probe(). None means "never probed", treated as absent.
+_has_kind_column = None
+
+
+def probe(conn):
+    """Look for `ai_suggestions.kind` (migration 004) once, at startup."""
+    global _has_kind_column
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SHOW COLUMNS FROM ai_suggestions LIKE 'kind'")
+        _has_kind_column = cursor.fetchone() is not None
+    except Exception as exc:
+        print(f"ai_advisor: could not probe ai_suggestions.kind ({exc!r}) — "
+              f"keeping one suggestion per device")
+        _has_kind_column = False
+
+    if not _has_kind_column:
+        print("ai_advisor: ai_suggestions.kind is absent — apply "
+              "backend/migrations/004_suggestion_kind.sql so a device can "
+              "hold more than one pending suggestion")
+    return _has_kind_column
+
+
+def uses_kinds():
+    """Whether suggestions are kept per (device, kind). Reported by /health."""
+    return bool(_has_kind_column)
+
+
 def save_suggestion(suggestion):
-    """Store a suggestion, replacing any pending one for the same device."""
+    """Store a suggestion, replacing the pending one it supersedes.
+
+    With migration 004 that is the pending suggestion of the same kind for
+    the same device, so a device can carry its own standby tip, the
+    dominant-device tip and the band tip at once. An untyped row written
+    before the migration is claimed when no typed one matches, so it is
+    replaced rather than left alongside. Without the migration there is
+    one pending suggestion per device, as before.
+    """
     conn = get_db()
     cursor = conn.cursor()
+    now = datetime.now()
 
-    cursor.execute("""
-        SELECT id FROM ai_suggestions
-        WHERE monitored_point_id = %s AND status = 'pending'
-    """, (suggestion["monitored_point_id"],))
+    if uses_kinds():
+        cursor.execute("""
+            SELECT id FROM ai_suggestions
+            WHERE monitored_point_id = %s AND status = 'pending'
+            AND (kind = %s OR kind IS NULL)
+            ORDER BY kind IS NULL
+            LIMIT 1
+        """, (suggestion["monitored_point_id"], suggestion["kind"]))
+    else:
+        cursor.execute("""
+            SELECT id FROM ai_suggestions
+            WHERE monitored_point_id = %s AND status = 'pending'
+        """, (suggestion["monitored_point_id"],))
     existing = cursor.fetchone()
 
-    if existing:
+    text = suggestion["suggestion_text"]
+    saving = suggestion["estimated_saving_fcfa"]
+    if existing and uses_kinds():
+        cursor.execute("""
+            UPDATE ai_suggestions
+            SET suggestion_text = %s, estimated_saving_fcfa = %s,
+                created_at = %s, kind = %s
+            WHERE id = %s
+        """, (text, saving, now, suggestion["kind"], existing[0]))
+    elif existing:
         cursor.execute("""
             UPDATE ai_suggestions
             SET suggestion_text = %s, estimated_saving_fcfa = %s, created_at = %s
             WHERE id = %s
-        """, (
-            suggestion["suggestion_text"],
-            suggestion["estimated_saving_fcfa"],
-            datetime.now(),
-            existing[0],
-        ))
+        """, (text, saving, now, existing[0]))
+    elif uses_kinds():
+        cursor.execute("""
+            INSERT INTO ai_suggestions
+            (monitored_point_id, suggestion_text, estimated_saving_fcfa, status, created_at, kind)
+            VALUES (%s, %s, %s, 'pending', %s, %s)
+        """, (suggestion["monitored_point_id"], text, saving, now, suggestion["kind"]))
     else:
         cursor.execute("""
             INSERT INTO ai_suggestions
             (monitored_point_id, suggestion_text, estimated_saving_fcfa, status, created_at)
             VALUES (%s, %s, %s, 'pending', %s)
-        """, (
-            suggestion["monitored_point_id"],
-            suggestion["suggestion_text"],
-            suggestion["estimated_saving_fcfa"],
-            datetime.now(),
-        ))
+        """, (suggestion["monitored_point_id"], text, saving, now))
 
     conn.commit()
     conn.close()
+
+
+def one_per_device(suggestions):
+    """Without migration 004 a device holds a single pending suggestion,
+    so saving several would let the last one silently replace the rest.
+    Keep the one worth the most instead — a deliberate choice rather than
+    whichever the code happened to build last."""
+    best = {}
+    for suggestion in suggestions:
+        point = suggestion["monitored_point_id"]
+        if (point not in best or suggestion["estimated_saving_fcfa"]
+                > best[point]["estimated_saving_fcfa"]):
+            best[point] = suggestion
+    return list(best.values())
 
 
 def run_ai_advisor():
@@ -361,7 +433,10 @@ def run_ai_advisor():
     print(f"Running AI advisor at {datetime.now().strftime('%H:%M:%S')}")
     total = 0
     for home_id in _home_ids():
-        for suggestion in build_suggestions(home_id):
+        suggestions = build_suggestions(home_id)
+        if not uses_kinds():
+            suggestions = one_per_device(suggestions)
+        for suggestion in suggestions:
             save_suggestion(suggestion)
             total += 1
     print(f"AI advisor: {total} suggestion(s) saved")
