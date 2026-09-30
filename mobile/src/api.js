@@ -1,6 +1,7 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE } from "./config";
+import { isConnectivityError, reportFailure, reportOk } from "./live/connection";
 
 export const api = axios.create({ baseURL: API_BASE });
 
@@ -25,8 +26,14 @@ api.interceptors.request.use(async (config) => {
 });
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    reportOk();
+    return response;
+  },
   async (error) => {
+    // Feeds the "connection lost" banner; see live/connection.js.
+    if (isConnectivityError(error)) reportFailure();
+    else reportOk();
     if (error.response?.status === 401) {
       await logoutHandler();
     }

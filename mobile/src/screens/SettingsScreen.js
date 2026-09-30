@@ -8,6 +8,9 @@ import Icon from "../components/Icon";
 import GradientFill from "../components/GradientFill";
 import { colors, spacing, radius, type, glassCard, glass } from "../theme";
 import { useLanguage } from "../context/LanguageContext";
+import { usePreferences } from "../context/PreferencesContext";
+import Switch from "../components/Switch";
+import { disablePush, enablePush, pushEnabled, pushSupported } from "../push";
 
 /** Settings, from the "Settings & Configuration" mockup.
  *
@@ -340,6 +343,8 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
                 key={opt.id}
                 onPress={() => setLanguage(opt.id)}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
                 style={[styles.langChip, selected && styles.langChipOn]}
               >
                 <Text style={[styles.langLabel, selected && styles.langLabelOn]}>
@@ -350,7 +355,10 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
           })}
         </View>
 
-        <TouchableOpacity onPress={onLogout} activeOpacity={0.7} style={styles.logoutRow}>
+        {/* Admins own no home, so they get no alerts to be notified of. */}
+        <DisplayPreferences showPush={!!homeId} />
+
+        <TouchableOpacity onPress={onLogout} activeOpacity={0.7} style={styles.logoutRow} accessibilityRole="button">
           <Icon name="logout" size={18} color={colors.error} />
           <Text style={styles.logoutLabel}>{t("shell.logout")}</Text>
         </TouchableOpacity>
@@ -361,7 +369,79 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
   );
 }
 
+/** Alert notifications on this phone, and the opaque display for bright
+ * light. */
+function DisplayPreferences({ showPush }) {
+  const { t, language } = useLanguage();
+  const { reduceTransparency, setReduceTransparency } = usePreferences();
+  const [push, setPush] = useState(false);
+  const [pushNote, setPushNote] = useState(null); // null | "denied" | "unavailable"
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    pushEnabled().then(setPush);
+  }, []);
+
+  const togglePush = async (on) => {
+    setBusy(true);
+    if (on) {
+      const result = await enablePush(language);
+      setPush(result === "granted");
+      setPushNote(result === "granted" ? null : result);
+    } else {
+      await disablePush();
+      setPush(false);
+      setPushNote(null);
+    }
+    setBusy(false);
+  };
+
+  const Row = ({ title, hint, value, onChange, disabled }) => (
+    <View style={styles.prefRow}>
+      <View style={styles.prefText}>
+        <Text style={styles.prefTitle}>{title}</Text>
+        <Text style={styles.prefHint}>{hint}</Text>
+      </View>
+      <Switch value={value} onValueChange={onChange} label={title} disabled={disabled} />
+    </View>
+  );
+
+  return (
+    <View style={styles.prefs}>
+      <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>{t("settings.display").toUpperCase()}</Text>
+      {showPush && (
+        <Row
+          title={t("settings.notify")}
+          hint={
+            !pushSupported()
+              ? t("settings.pushUnavailable")
+              : pushNote === "denied"
+                ? t("settings.pushDenied")
+                : pushNote === "unavailable"
+                  ? t("settings.pushUnavailable")
+                  : t("settings.pushHint")
+          }
+          value={push}
+          onChange={togglePush}
+          disabled={busy || !pushSupported()}
+        />
+      )}
+      <Row
+        title={t("settings.opaque")}
+        hint={t("settings.opaqueHint")}
+        value={reduceTransparency}
+        onChange={setReduceTransparency}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  prefs: { gap: spacing.sm },
+  prefRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  prefText: { flex: 1 },
+  prefTitle: { ...type.bodyMd, color: colors.onSurface },
+  prefHint: { ...type.bodyMd, fontSize: 13, lineHeight: 18, color: colors.onSurfaceVariant },
   // Transparent: the ambient backdrop behind AppShell shows through.
   page: { flex: 1, backgroundColor: "transparent" },
   pageContent: { padding: spacing.marginMobile, paddingBottom: spacing.xl, gap: spacing.md },

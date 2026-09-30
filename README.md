@@ -99,6 +99,18 @@ The web app expects the API on `http://localhost:8000` (hardcoded in each
 page). The mobile app derives the host from the Expo dev server, falling
 back to the IP in `mobile/src/config.js`.
 
+Both apps keep a WebSocket open to `/ws/live` and refetch when it says a
+device, alert or suggestion changed; they fall back to polling when it is
+down. A reverse proxy in front of the API must forward WebSocket upgrades
+on that path.
+
+**Phone notifications** (new alerts, in the phone's language) go through
+Expo's push service and need three things: migration 005, a development
+or store build of the mobile app — Expo Go no longer receives remote
+notifications on Android — and an EAS project id in `mobile/app.json`
+(`npx eas init` writes it). The backend must be able to reach
+`exp.host` over HTTPS. The user turns them on in Settings.
+
 ### 5. No hardware? Use the simulator
 
 ```bash
@@ -141,13 +153,15 @@ These are open, understood, and deliberately not papered over:
   any bill observed — including at 216 kWh, above the 110 kWh exemption
   the regulator documents. That is an observation, not a rule, and a bill
   showing VAT would change it.
-- **Three optional migrations change how much the app knows.** Without
+- **Four optional migrations change how much the app knows.** Without
   `002_reading_interval.sql` energy is computed from an assumed 2-second
   cadence rather than the interval each reading actually stands for;
   without `003_auth_rate_limit.sql` the auth budget is per worker rather
   than shared; without `004_suggestion_kind.sql` a device holds a single
-  pending suggestion (the one worth the most) instead of one per kind.
-  All three degrade to the previous behaviour and `GET /health` reports
+  pending suggestion (the one worth the most) instead of one per kind;
+  without `005_budget_and_push.sql` households cannot set a monthly
+  budget and phones are not notified of alerts.
+  All four degrade to the previous behaviour and `GET /health` reports
   which mode is running, so none is urgent — but until they are applied,
   a box that drops off the network quietly lowers the bill, and N uvicorn
   workers give N times the login allowance.

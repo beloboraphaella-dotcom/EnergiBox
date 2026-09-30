@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, StyleSheet, ActivityIndicator, TouchableOpacity } from "react-native";
+import { View, StyleSheet, ActivityIndicator } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { StatusBar } from "expo-status-bar";
@@ -28,20 +28,30 @@ import RoomsScreen from "./src/screens/RoomsScreen";
 import AdminScreen from "./src/screens/AdminScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import HomeSwitcher from "./src/components/HomeSwitcher";
+import { ToastProvider } from "./src/components/Toast";
+import { PreferencesProvider } from "./src/context/PreferencesContext";
+import { LiveProvider } from "./src/live/LiveContext";
+import { disablePush, refreshPush } from "./src/push";
 
 export default function App() {
   // The language provider wraps everything, so a screen can call t()
   // wherever it is mounted — including the auth screens, which render
   // before there is a session at all.
   return (
-    <LanguageProvider>
-      <AppInner />
-    </LanguageProvider>
+    <SafeAreaProvider>
+      <LanguageProvider>
+        <PreferencesProvider>
+          <ToastProvider>
+            <AppInner />
+          </ToastProvider>
+        </PreferencesProvider>
+      </LanguageProvider>
+    </SafeAreaProvider>
   );
 }
 
 function AppInner() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
 
   // The mockups' typography is Hanken Grotesk / Inter / JetBrains Mono.
   // Nothing renders until they are resolved, otherwise every screen would
@@ -63,6 +73,8 @@ function AppInner() {
   const [activeHomeId, setActiveHomeId] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [devicesOnline, setDevicesOnline] = useState(null);
+  // A device to open on the Devices tab, from a card on the dashboard.
+  const [deviceToOpen, setDeviceToOpen] = useState(null);
 
   // Load any persisted session on first launch.
   useEffect(() => {
@@ -110,7 +122,17 @@ function AppInner() {
     setUser(userData);
   };
 
+  // Keep this phone's notification token on the signed-in account, in the
+  // language the app now shows.
+  useEffect(() => {
+    if (token && !isAdmin) refreshPush(language);
+  }, [token, isAdmin, language]);
+
   const handleLogout = async () => {
+    // Withdraw the phone's notification token while the session still
+    // authorises it, so the next person to sign in here gets no alerts
+    // meant for this account.
+    await disablePush();
     await AsyncStorage.multiRemove(["token", "user", "activeHomeId"]);
     setToken(null);
     setUser(null);
@@ -151,7 +173,13 @@ function AppInner() {
 
   const handleNavigate = (key) => {
     if (key === "logout") return handleLogout();
+    setDeviceToOpen(null);
     setActiveTab(key);
+  };
+
+  const openDevice = (mac) => {
+    setDeviceToOpen(mac);
+    setActiveTab("devices");
   };
 
   const spinner = (
@@ -198,6 +226,7 @@ function AppInner() {
     content = <OnboardingScreen onComplete={fetchHomes} />;
   } else {
     content = (
+      <LiveProvider token={token} homeId={activeHomeId}>
       <AppShell
         items={navItems}
         footerItems={footerItems}
@@ -211,13 +240,19 @@ function AppInner() {
               onSwitchHome={handleSwitchHome}
               onHomesChanged={fetchHomes}
             />
-            <TouchableOpacity activeOpacity={0.7} style={styles.wifiButton}>
+            {/* A status, not a button: it used to look tappable and do
+                nothing. Screen readers read the state. */}
+            <View
+              style={styles.wifiButton}
+              accessible
+              accessibilityLabel={devicesOnline ? t("overview.online") : t("overview.offline")}
+            >
               <Icon
                 name="wifi"
                 size={22}
                 color={devicesOnline ? colors.secondary : colors.outline}
               />
-            </TouchableOpacity>
+            </View>
           </>
         }
       >
@@ -225,11 +260,14 @@ function AppInner() {
         {activeTab === "dashboard" && (
           <DashboardScreen
             homeId={activeHomeId}
-            onOpenDevices={() => setActiveTab("devices")}
+            onOpenDevices={() => handleNavigate("devices")}
+            onOpenDevice={openDevice}
             onOnlineCount={setDevicesOnline}
           />
         )}
-        {activeTab === "devices" && <DevicesScreen homeId={activeHomeId} />}
+        {activeTab === "devices" && (
+          <DevicesScreen homeId={activeHomeId} initialMac={deviceToOpen} key={deviceToOpen || "list"} />
+        )}
         {activeTab === "alerts" && <AlertsScreen homeId={activeHomeId} />}
         {activeTab === "history" && <HistoryScreen homeId={activeHomeId} />}
         {activeTab === "rooms" && <RoomsScreen homeId={activeHomeId} />}
@@ -242,10 +280,11 @@ function AppInner() {
           />
         )}
       </AppShell>
+      </LiveProvider>
     );
   }
 
-  return <SafeAreaProvider>{content}</SafeAreaProvider>;
+  return content;
 }
 
 const styles = StyleSheet.create({

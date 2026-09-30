@@ -5,9 +5,14 @@ import { useLanguage } from "../context/LanguageContext";
 import Icon from "../components/Icon";
 import { colors, spacing, type, glass } from "../theme";
 import {
-  Chip, EmptyCard, ErrorText, Field, GhostButton, GlassSheet, IconButton,
+  Chip, EmptyCard, ErrorText, GhostButton, GlassSheet, IconButton,
   Orb, PrimaryButton, SectionTitle,
 } from "../components/GlassUI";
+import Skeleton, { SkeletonList } from "../components/Skeleton";
+import TimeField from "../components/TimeField";
+import { confirm } from "../components/confirm";
+import { useLiveRefresh } from "../live/LiveContext";
+import { SCHEDULE_PRESETS } from "../schedulePresets";
 
 /** Alerts, advisor suggestions and schedules on one screen, as on the web
  * (frontend/dashboard/src/pages/Dashboard.jsx, "alerts" tab). */
@@ -31,6 +36,7 @@ export default function AlertsScreen({ homeId }) {
   const [alerts, setAlerts] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [schedules, setSchedules] = useState([]);
+  const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const [sheet, setSheet] = useState(null); // null | "create" | { edit: schedule }
@@ -49,9 +55,13 @@ export default function AlertsScreen({ homeId }) {
     if (a.status === "fulfilled") setAlerts(a.value.data);
     if (s.status === "fulfilled") setSuggestions(s.value.data);
     if (sc.status === "fulfilled") setSchedules(sc.value.data);
+    setLoaded(true);
   }, [homeId]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // New alerts and suggestions appear while the screen is open.
+  useLiveRefresh(fetchAll, { topics: ["alerts", "suggestions"], interval: 15000 });
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -69,14 +79,21 @@ export default function AlertsScreen({ homeId }) {
     fetchAll();
   };
 
-  const deleteSchedule = async (id) => {
-    await api.delete(`/schedules/${id}`);
+  const deleteSchedule = async (sc) => {
+    const ok = await confirm(t("sched.confirmDelete", { name: sc.appliance }), {
+      confirmLabel: t("sched.delete"),
+      cancelLabel: t("common.cancel"),
+    });
+    if (!ok) return;
+    await api.delete(`/schedules/${sc.id}`);
     fetchAll();
   };
 
-  const openCreate = async () => {
+  /** `pointId` preselects the device, when the schedule is offered from a
+   * suggestion about it. */
+  const openCreate = async (pointId = "") => {
     setFormError("");
-    setForm(EMPTY_FORM);
+    setForm({ ...EMPTY_FORM, monitored_point_id: pointId });
     try {
       const res = await api.get(`/devices?home_id=${homeId}`);
       setDevices(res.data);
@@ -131,7 +148,12 @@ export default function AlertsScreen({ homeId }) {
 
       {/* ── Alerts ── */}
       <SectionTitle icon="notifications">{t("alerts.active")}</SectionTitle>
-      {alerts.length === 0 ? (
+      {!loaded ? (
+        <SkeletonList label={t("common.loading")}>
+          <Skeleton height={96} />
+          <Skeleton height={96} />
+        </SkeletonList>
+      ) : alerts.length === 0 ? (
         <EmptyCard icon="check_circle">{t("alerts.none")}</EmptyCard>
       ) : (
         alerts.map((a, i) => {
@@ -169,6 +191,14 @@ export default function AlertsScreen({ homeId }) {
             <Chip tone="teal" icon="savings" style={styles.start}>
               {t("sugg.save", { amount: Number(s.estimated_saving_fcfa).toLocaleString(locale) })}
             </Chip>
+            {s.status !== "ignored" && !!s.monitored_point_id && (
+              <GhostButton
+                icon="schedule"
+                label={t("sugg.schedule")}
+                onPress={() => openCreate(s.monitored_point_id)}
+                style={styles.start}
+              />
+            )}
             {s.status === "pending" && (
               <View style={styles.buttons}>
                 <GhostButton label={t("sugg.ignore")} onPress={() => ignore(s.id)} style={styles.flex} />
@@ -182,7 +212,7 @@ export default function AlertsScreen({ homeId }) {
       {/* ── Schedules ── */}
       <View style={styles.sectionHeader}>
         <SectionTitle icon="schedule">{t("sched.title")}</SectionTitle>
-        <PrimaryButton label={t("sched.create")} icon="add" onPress={openCreate} style={styles.smallButton} />
+        <PrimaryButton label={t("sched.create")} icon="add" onPress={() => openCreate()} style={styles.smallButton} />
       </View>
       {schedules.length === 0 ? (
         <EmptyCard icon="schedule">{t("sched.none")}</EmptyCard>
@@ -200,7 +230,7 @@ export default function AlertsScreen({ homeId }) {
               </View>
             </View>
             <IconButton icon="edit" onPress={() => openEdit(sc)} label={t("sched.edit")} />
-            <IconButton icon="delete" onPress={() => deleteSchedule(sc.id)} label={t("sched.delete")} />
+            <IconButton icon="delete" onPress={() => deleteSchedule(sc)} label={t("sched.delete")} />
           </View>
         ))
       )}
@@ -232,29 +262,40 @@ export default function AlertsScreen({ homeId }) {
             </View>
           </View>
         )}
+        <View style={styles.pickerBlock}>
+          <Text style={styles.fieldLabel}>{t("sched.presets")}</Text>
+          <View style={styles.picker}>
+            {SCHEDULE_PRESETS.map((preset) => {
+              const picked = form.on_time === preset.on && form.off_time === preset.off;
+              return (
+                <TouchableOpacity
+                  key={preset.key}
+                  onPress={() => setForm({ ...form, on_time: preset.on, off_time: preset.off })}
+                  style={[styles.pill, picked ? glass.pillActive : glass.pillIdle]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: picked }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.pillText, picked && { color: colors.secondary }]}>
+                    {t(`sched.preset.${preset.key}`)}{"  "}
+                    <Text style={styles.presetTimes}>{preset.on}–{preset.off}</Text>
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
         <View style={styles.timeRow}>
-          <View style={styles.flex}>
-            <Field
-              label={t("sched.onAt")}
-              value={form.on_time}
-              onChangeText={(v) => setForm({ ...form, on_time: v })}
-              placeholder="22:00"
-              keyboardType="numbers-and-punctuation"
-              maxLength={5}
-              style={styles.mono}
-            />
-          </View>
-          <View style={styles.flex}>
-            <Field
-              label={t("sched.offAt")}
-              value={form.off_time}
-              onChangeText={(v) => setForm({ ...form, off_time: v })}
-              placeholder="05:00"
-              keyboardType="numbers-and-punctuation"
-              maxLength={5}
-              style={styles.mono}
-            />
-          </View>
+          <TimeField
+            label={t("sched.onAt")}
+            value={form.on_time}
+            onChange={(v) => setForm({ ...form, on_time: v })}
+          />
+          <TimeField
+            label={t("sched.offAt")}
+            value={form.off_time}
+            onChange={(v) => setForm({ ...form, off_time: v })}
+          />
         </View>
         <ErrorText>{formError}</ErrorText>
         <PrimaryButton
@@ -267,6 +308,7 @@ export default function AlertsScreen({ homeId }) {
 }
 
 const styles = StyleSheet.create({
+  presetTimes: { ...type.dataLabel, fontSize: 12, color: colors.outline },
   page: { flex: 1, backgroundColor: "transparent" },
   pageContent: { padding: spacing.marginMobile, paddingBottom: spacing.xl, gap: spacing.sm },
   title: { ...type.headlineLg, color: colors.onSurface, marginBottom: spacing.xs },
@@ -293,7 +335,7 @@ const styles = StyleSheet.create({
   pickerBlock: { gap: 6 },
   fieldLabel: { ...type.labelSm, color: colors.onSurfaceVariant },
   picker: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  pill: { borderWidth: 1, borderRadius: 9999, paddingHorizontal: 12, paddingVertical: 7 },
+  pill: { borderWidth: 1, borderRadius: 9999, paddingHorizontal: 14, paddingVertical: 11 },
   pillText: { ...type.labelSm, fontSize: 13, color: colors.onSurface },
   timeRow: { flexDirection: "row", gap: spacing.sm },
   mono: { fontFamily: type.dataLabel.fontFamily, letterSpacing: 1 },

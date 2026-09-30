@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, ActivityIndicator, useWindowDimensions,
@@ -9,6 +9,12 @@ import Icon from "../components/Icon";
 import GradientFill from "../components/GradientFill";
 import { colors, spacing, radius, type, glassCard, surfaceCard, glass } from "../theme";
 import { useLanguage } from "../context/LanguageContext";
+import Skeleton, { SkeletonList } from "../components/Skeleton";
+import Switch from "../components/Switch";
+import { useToast } from "../components/Toast";
+import { useLiveRefresh } from "../live/LiveContext";
+import { useDeviceToggle } from "../live/useDeviceToggle";
+import { failure, tap } from "../haptics";
 
 // The "My Devices" mockup uses this teal for the primary action and the
 // live-draw figures rather than the palette's `secondary` (#006a61). It is
@@ -44,20 +50,25 @@ function getIcon(name = "", type = "appliance") {
   return type === "socket" ? "power" : "devices_other";
 }
 
-export default function DevicesScreen({ homeId }) {
+export default function DevicesScreen({ homeId, initialMac = null }) {
   const { t, locale } = useLanguage();
   const [devices, setDevices] = useState([]);
+  const [loaded, setLoaded] = useState(false);
   const [rooms, setRooms] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState("all");
-  const [selectedMac, setSelectedMac] = useState(null);
+  const [selectedMac, setSelectedMac] = useState(initialMac);
   const [controlling, setControlling] = useState(false);
-  const [togglingMacs, setTogglingMacs] = useState({});
   const [addOpen, setAddOpen] = useState(false);
   const [newDevice, setNewDevice] = useState({ room_id: "", name: "", type: "appliance", mac: "" });
   const [deviceError, setDeviceError] = useState("");
   const [saving, setSaving] = useState(false);
   const { width } = useWindowDimensions();
+
+  const setDeviceState = useCallback((mac, isOn) => {
+    setDevices((list) => list.map((d) => (d.mac === mac ? { ...d, is_on: isOn } : d)));
+  }, []);
+  const { toggle, apply, busy } = useDeviceToggle(setDeviceState);
 
   const fetchAll = useCallback(async () => {
     if (!homeId) return;
@@ -65,35 +76,23 @@ export default function DevicesScreen({ homeId }) {
       api.get(`/devices?home_id=${homeId}`),
       api.get(`/rooms?home_id=${homeId}`),
     ]);
-    if (results[0].status === "fulfilled") setDevices(results[0].value.data);
+    if (results[0].status === "fulfilled") {
+      setDevices(apply(results[0].value.data));
+      setLoaded(true);
+    }
     if (results[1].status === "fulfilled") setRooms(results[1].value.data);
-  }, [homeId]);
+  }, [homeId, apply]);
 
   useEffect(() => {
     fetchAll();
-    const interval = setInterval(fetchAll, 3000);
-    return () => clearInterval(interval);
   }, [fetchAll]);
+
+  useLiveRefresh(fetchAll, { topics: ["devices"], interval: 3000, enabled: !selectedMac });
 
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchAll();
     setRefreshing(false);
-  };
-
-  const toggleDevice = async (d) => {
-    if (togglingMacs[d.mac]) return;
-    const nextIsOn = !d.is_on;
-    setTogglingMacs((prev) => ({ ...prev, [d.mac]: true }));
-    try {
-      await api.post(`/control/${d.mac}?command=${nextIsOn ? "ON" : "OFF"}`);
-      setDevices((prev) => prev.map((x) => (x.mac === d.mac ? { ...x, is_on: nextIsOn } : x)));
-      setTimeout(fetchAll, 500);
-    } catch (err) {
-      // The command never reached the relay, so leave the switch alone
-      // rather than showing a state the device never entered.
-    }
-    setTogglingMacs((prev) => ({ ...prev, [d.mac]: false }));
   };
 
   const closeAdd = () => {
@@ -228,7 +227,12 @@ export default function DevicesScreen({ homeId }) {
       </ScrollView>
 
       {/* Device cards */}
-      {filtered.length === 0 ? (
+      {!loaded ? (
+        <SkeletonList label={t("common.loading")}>
+          <Skeleton height={150} />
+          <Skeleton height={150} />
+        </SkeletonList>
+      ) : filtered.length === 0 ? (
         <View style={[surfaceCard, styles.emptyCard]}>
           <Text style={styles.emptyText}>
             {devices.length === 0 ? t("devices.empty") : t("devices.emptyRoom")}
@@ -242,6 +246,8 @@ export default function DevicesScreen({ homeId }) {
               key={d.id}
               onPress={() => setSelectedMac(d.mac)}
               activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={t("overview.openDevice", { name: d.name })}
               style={[glassCard, styles.deviceCard, { width: cardWidth }, !isOn && styles.deviceCardOff]}
             >
               <View style={styles.deviceTop}>
@@ -253,26 +259,14 @@ export default function DevicesScreen({ homeId }) {
                   />
                 </View>
 
-                <TouchableOpacity
-                  onPress={() => toggleDevice(d)}
-                  disabled={togglingMacs[d.mac]}
-                  activeOpacity={0.7}
-                  accessibilityRole="switch"
-                  accessibilityState={{ checked: isOn }}
-                  style={[
-                    styles.toggle,
-                    { backgroundColor: isOn ? colors.secondary : colors.outlineVariant },
-                    togglingMacs[d.mac] && { opacity: 0.5 },
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.toggleKnob,
-                      isOn ? styles.toggleKnobOn : styles.toggleKnobOff,
-                      { borderColor: isOn ? colors.secondary : colors.outlineVariant },
-                    ]}
+                <View style={styles.switchSlot}>
+                  <Switch
+                    value={isOn}
+                    disabled={busy[d.mac]}
+                    onValueChange={() => toggle(d)}
+                    label={t(isOn ? "devices.turnOffNamed" : "devices.turnOnNamed", { name: d.name })}
                   />
-                </TouchableOpacity>
+                </View>
               </View>
 
               <View style={styles.deviceMiddle}>
@@ -308,7 +302,7 @@ export default function DevicesScreen({ homeId }) {
                   {t("devices.currentDraw")}
                 </Text>
                 <Text style={[styles.deviceDraw, { color: isOn ? ACCENT : colors.onSurfaceVariant }]}>
-                  {Math.round(d.watts || 0)} W
+                  {Math.round(d.watts || 0).toLocaleString(locale)} W
                 </Text>
               </View>
             </TouchableOpacity>
@@ -455,17 +449,24 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
   const [history, setHistory] = useState(null);
   const [range, setRange] = useState("24h");
   const [toggling, setToggling] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const pendingOn = useRef(null);
+  const toast = useToast();
   const [error, setError] = useState("");
   const { width } = useWindowDimensions();
 
   const fetchDevice = useCallback(async () => {
     try {
       const res = await api.get(`/devices/${mac}`);
-      setDevice(res.data);
+      // A refresh that lands mid-command must not flick the switch back.
+      setDevice(pendingOn.current === null ? res.data : { ...res.data, is_on: pendingOn.current });
+      setLoadFailed(false);
     } catch (err) {
-      setError(t("detail.loadError"));
+      // Only the first load reports here; a failed refresh keeps the last
+      // figures and the shell's banner says the server is unreachable.
+      setLoadFailed(true);
     }
-  }, [mac, t]);
+  }, [mac]);
 
   const fetchHistory = useCallback(async () => {
     try {
@@ -478,24 +479,32 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
 
   useEffect(() => {
     fetchDevice();
-    const interval = setInterval(fetchDevice, 3000);
-    return () => clearInterval(interval);
   }, [fetchDevice]);
+
+  useLiveRefresh(fetchDevice, { topics: ["devices", "alerts"], interval: 3000 });
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
+  // The new state shows at once, with a tap under the thumb; it goes back
+  // with a message if the command fails. See live/useDeviceToggle.js.
   const togglePower = async () => {
     if (!device || toggling) return;
     const nextIsOn = !device.is_on;
+    pendingOn.current = nextIsOn;
+    tap();
     setToggling(true);
     setError("");
+    setDevice((prev) => ({ ...prev, is_on: nextIsOn }));
     try {
       await api.post(`/control/${mac}?command=${nextIsOn ? "ON" : "OFF"}`);
-      setDevice((prev) => ({ ...prev, is_on: nextIsOn }));
-      setTimeout(fetchDevice, 500);
     } catch (err) {
-      setError(err.response?.data?.detail || t("detail.toggleError"));
+      setDevice((prev) => ({ ...prev, is_on: !nextIsOn }));
+      failure();
+      const message = err.response?.data?.detail || t("detail.toggleError");
+      setError(message);
+      toast.show(message, { tone: "error" });
     }
+    pendingOn.current = null;
     setToggling(false);
   };
 
@@ -506,7 +515,7 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
           <Icon name="arrow_back" size={20} color={colors.onSurfaceVariant} />
           <Text style={styles.backLabel}>{t("detail.back")}</Text>
         </TouchableOpacity>
-        {error ? <Text style={styles.emptyText}>{error}</Text> : <ActivityIndicator color={colors.secondary} />}
+        {loadFailed ? <Text style={styles.emptyText}>{t("detail.loadError")}</Text> : <ActivityIndicator color={colors.secondary} />}
       </View>
     );
   }
@@ -520,7 +529,13 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
     <ScrollView style={styles.page} contentContainerStyle={styles.pageContent}>
       {/* Task header */}
       <View style={styles.detailHeader}>
-        <TouchableOpacity onPress={onBack} activeOpacity={0.7} style={styles.iconButton}>
+        <TouchableOpacity
+          onPress={onBack}
+          activeOpacity={0.7}
+          style={styles.iconButton}
+          accessibilityRole="button"
+          accessibilityLabel={t("detail.back")}
+        >
           <Icon name="arrow_back" size={22} color={colors.onSurfaceVariant} />
         </TouchableOpacity>
         <View style={styles.detailTitleWrap}>
@@ -530,31 +545,19 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
         <TouchableOpacity
           onPress={onOpenControl}
           activeOpacity={0.7}
+          accessibilityRole="button"
           accessibilityLabel={t("control.open")}
           style={styles.iconButton}
         >
           <Icon name="power_settings_new" size={22} color={colors.onSurfaceVariant} />
         </TouchableOpacity>
-        <TouchableOpacity
-          onPress={togglePower}
+        <Switch
+          size="lg"
+          value={isOn}
           disabled={toggling}
-          activeOpacity={0.7}
-          accessibilityRole="switch"
-          accessibilityState={{ checked: isOn }}
-          style={[
-            styles.bigToggle,
-            { backgroundColor: isOn ? colors.secondary : colors.outlineVariant },
-            toggling && { opacity: 0.5 },
-          ]}
-        >
-          <View
-            style={[
-              styles.bigToggleKnob,
-              isOn ? styles.bigToggleKnobOn : styles.bigToggleKnobOff,
-              { borderColor: isOn ? colors.secondary : colors.surfaceTint },
-            ]}
-          />
-        </TouchableOpacity>
+          onValueChange={togglePower}
+          label={t(isOn ? "devices.turnOffNamed" : "devices.turnOnNamed", { name: device.name })}
+        />
       </View>
 
       {error ? (
@@ -763,26 +766,33 @@ function HistoryBars({ history, width, emptyLabel }) {
  * opacity from a temporary Google URL that will stop resolving. Purely
  * ornamental, so it is dropped rather than baked in as a broken link. */
 function DeviceControl({ mac, onBack }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const [device, setDevice] = useState(null);
   const [ceilingWatts, setCeilingWatts] = useState(0);
   const [toggling, setToggling] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const pendingOn = useRef(null);
+  const toast = useToast();
   const [error, setError] = useState("");
 
   const fetchDevice = useCallback(async () => {
     try {
       const res = await api.get(`/devices/${mac}`);
-      setDevice(res.data);
+      // A refresh that lands mid-command must not flick the switch back.
+      setDevice(pendingOn.current === null ? res.data : { ...res.data, is_on: pendingOn.current });
+      setLoadFailed(false);
     } catch (err) {
-      setError(t("detail.loadError"));
+      // Only the first load reports here; a failed refresh keeps the last
+      // figures and the shell's banner says the server is unreachable.
+      setLoadFailed(true);
     }
-  }, [mac, t]);
+  }, [mac]);
 
   useEffect(() => {
     fetchDevice();
-    const interval = setInterval(fetchDevice, 3000);
-    return () => clearInterval(interval);
   }, [fetchDevice]);
+
+  useLiveRefresh(fetchDevice, { topics: ["devices", "alerts"], interval: 3000 });
 
   useEffect(() => {
     // Only feeds the draw bar's ceiling, so once per device is enough.
@@ -791,18 +801,26 @@ function DeviceControl({ mac, onBack }) {
       .catch(() => {});
   }, [mac]);
 
+  // The new state shows at once, with a tap under the thumb; it goes back
+  // with a message if the command fails. See live/useDeviceToggle.js.
   const togglePower = async () => {
     if (!device || toggling) return;
     const nextIsOn = !device.is_on;
+    pendingOn.current = nextIsOn;
+    tap();
     setToggling(true);
     setError("");
+    setDevice((prev) => ({ ...prev, is_on: nextIsOn }));
     try {
       await api.post(`/control/${mac}?command=${nextIsOn ? "ON" : "OFF"}`);
-      setDevice((prev) => ({ ...prev, is_on: nextIsOn }));
-      setTimeout(fetchDevice, 500);
     } catch (err) {
-      setError(err.response?.data?.detail || t("detail.toggleError"));
+      setDevice((prev) => ({ ...prev, is_on: !nextIsOn }));
+      failure();
+      const message = err.response?.data?.detail || t("detail.toggleError");
+      setError(message);
+      toast.show(message, { tone: "error" });
     }
+    pendingOn.current = null;
     setToggling(false);
   };
 
@@ -813,7 +831,7 @@ function DeviceControl({ mac, onBack }) {
           <Icon name="arrow_back" size={20} color={colors.onSurfaceVariant} />
           <Text style={styles.backLabel}>{t("control.back")}</Text>
         </TouchableOpacity>
-        {error ? <Text style={styles.emptyText}>{error}</Text> : <ActivityIndicator color={colors.secondary} />}
+        {loadFailed ? <Text style={styles.emptyText}>{t("detail.loadError")}</Text> : <ActivityIndicator color={colors.secondary} />}
       </View>
     );
   }
@@ -821,8 +839,8 @@ function DeviceControl({ mac, onBack }) {
   const isOn = device.is_on;
   const watts = device.watts || 0;
   const draw = watts >= 1000
-    ? { value: (watts / 1000).toFixed(1), unit: "kW" }
-    : { value: String(Math.round(watts)), unit: "W" };
+    ? { value: (watts / 1000).toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }), unit: "kW" }
+    : { value: Math.round(watts).toLocaleString(locale), unit: "W" };
   const ceiling = Math.max(ceilingWatts, watts, 1);
   const drawPct = Math.min((watts / ceiling) * 100, 100);
 
@@ -939,6 +957,7 @@ function DeviceControl({ mac, onBack }) {
 }
 
 const styles = StyleSheet.create({
+  switchSlot: { marginTop: -8, marginRight: -8 },
   controlCard: { padding: spacing.md, alignItems: "center", gap: spacing.md, marginTop: spacing.xs },
   controlName: { ...type.headlineLg, color: colors.onSurface, textAlign: "center" },
   controlStatusRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },

@@ -30,7 +30,8 @@ export const colors = {
   surfaceContainerLowest: "#ffffff",
   tertiaryContainer: "#2a1700",
   outlineVariant: "#c6c6cd",
-  outline: "#76777d",
+  // Darkened from the mockups' #76777d to pass WCAG AA (4.5:1) on glass.
+  outline: "#626369",
   surfaceTint: "#565e74",
   surfaceContainerLow: "#eff4ff",
   tertiaryFixedDim: "#ffb95f",

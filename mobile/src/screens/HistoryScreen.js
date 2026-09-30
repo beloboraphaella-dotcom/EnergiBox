@@ -6,6 +6,7 @@ import { useLanguage } from "../context/LanguageContext";
 import { colors, spacing, type, glass } from "../theme";
 import { IconButton, Segmented, StatTile } from "../components/GlassUI";
 import Icon from "../components/Icon";
+import Skeleton, { SkeletonList } from "../components/Skeleton";
 
 /** Consumption history, as on the web (Dashboard.jsx, "history" tab): the
  * same modes, the same endpoints, the same figures. */
@@ -131,6 +132,16 @@ export default function HistoryScreen({ homeId }) {
         <IconButton icon="chevron_right" onPress={() => navigate(1)} label={t("history.next")} />
       </View>
 
+      {!data && (
+        <SkeletonList label={t("common.loading")}>
+          <View style={styles.tiles}>
+            <Skeleton height={110} style={styles.flexTile} />
+            <Skeleton height={110} style={styles.flexTile} />
+          </View>
+          <Skeleton height={260} />
+        </SkeletonList>
+      )}
+
       {data && (
         <>
           <View style={styles.tiles}>
@@ -223,6 +234,7 @@ export default function HistoryScreen({ homeId }) {
 }
 
 const styles = StyleSheet.create({
+  flexTile: { flex: 1 },
   page: { flex: 1, backgroundColor: "transparent" },
   pageContent: { padding: spacing.marginMobile, paddingBottom: spacing.xl, gap: spacing.sm },
   title: { ...type.headlineLg, color: colors.onSurface },

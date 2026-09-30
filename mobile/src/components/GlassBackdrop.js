@@ -1,6 +1,7 @@
 import React from "react";
 import { StyleSheet, View } from "react-native";
 import Svg, { Defs, LinearGradient, RadialGradient, Rect, Stop } from "react-native-svg";
+import { usePreferences } from "../context/PreferencesContext";
 
 /** The colour glass needs to be glass: the web's `.app-backdrop` and
  * `.app-backdrop-hero`, drawn once in SVG behind everything else.
@@ -30,6 +31,13 @@ const PALETTES = {
 };
 
 export default function GlassBackdrop({ variant = "light" }) {
+  const { reduceTransparency } = usePreferences();
+  // With reduced transparency the app sits on a plain, pale surface: the
+  // cards are still translucent, but over one flat colour they read as
+  // solid, and text never lies over a coloured orb.
+  if (reduceTransparency && variant === "light") {
+    return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: "#f4f6fb" }]} />;
+  }
   const palette = PALETTES[variant] ?? PALETTES.light;
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>

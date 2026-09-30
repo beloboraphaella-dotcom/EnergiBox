@@ -8,6 +8,8 @@ import Icon from "./Icon";
 import GlassBackdrop from "./GlassBackdrop";
 import { colors, spacing, type, glass } from "../theme";
 import { useLanguage } from "../context/LanguageContext";
+import { usePreferences } from "../context/PreferencesContext";
+import ConnectionBanner from "./ConnectionBanner";
 
 /** The app's chrome, in glass: a floating top bar and a floating tab bar
  * over the ambient backdrop, both genuinely blurred because content
@@ -42,7 +44,10 @@ export default function AppShell({
   children,
 }) {
   const { t } = useLanguage();
+  const { reduceTransparency } = usePreferences();
   const insets = useSafeAreaInsets();
+  // Opaque bars when the user asked for less transparency.
+  const Bar = reduceTransparency ? OpaqueBar : BlurView;
   const blurTarget = useRef(null);
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -61,6 +66,9 @@ export default function AppShell({
       onPress={() => (item ? go(item.key) : setMoreOpen((v) => !v))}
       activeOpacity={0.7}
       style={[styles.tab, isActive && styles.tabActive]}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: isActive, expanded: item ? undefined : moreOpen }}
+      accessibilityLabel={label}
     >
       <Icon name={iconName} size={24} color={isActive ? colors.secondary : colors.onSurfaceVariant} />
       <Text
@@ -80,6 +88,7 @@ export default function AppShell({
           {/* Room for the floating top bar */}
           <View style={{ height: HEADER_HEIGHT + spacing.xs }} />
           <View style={[styles.content, { paddingBottom: TAB_BAR_HEIGHT + TAB_BAR_GAP + insets.bottom }]}>
+            <ConnectionBanner />
             {children}
           </View>
         </SafeAreaView>
@@ -87,7 +96,7 @@ export default function AppShell({
 
       {/* TopAppBar */}
       <View style={[styles.headerWrap, { top: insets.top + spacing.xs }]}>
-        <BlurView {...BLUR} blurTarget={blurTarget} style={styles.header}>
+        <Bar {...BLUR} blurTarget={blurTarget} style={styles.header}>
           <View style={styles.brandRow}>
             <View style={styles.brandOrb}>
               <Icon name="bolt" size={18} color={colors.onSecondaryFixed} />
@@ -95,7 +104,7 @@ export default function AppShell({
             <Text style={styles.brand}>EnergiBox</Text>
           </View>
           <View style={styles.headerRight}>{headerRight}</View>
-        </BlurView>
+        </Bar>
       </View>
 
       {/* "More" sheet */}
@@ -105,7 +114,7 @@ export default function AppShell({
             style={[styles.sheetWrap, { marginBottom: TAB_BAR_HEIGHT + TAB_BAR_GAP * 2 + insets.bottom }]}
             onPress={(e) => e.stopPropagation()}
           >
-            <BlurView {...BLUR} style={styles.sheet}>
+            <Bar {...BLUR} style={styles.sheet}>
               {overflow.map((item) => {
                 const isActive = item.key === active;
                 const tint = isActive ? colors.secondary : item.danger ? colors.error : colors.onSurfaceVariant;
@@ -114,6 +123,8 @@ export default function AppShell({
                     key={item.key}
                     onPress={() => go(item.key)}
                     activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isActive }}
                     style={[styles.sheetRow, isActive && styles.sheetRowActive]}
                   >
                     <Icon name={item.icon} size={24} color={tint} />
@@ -121,14 +132,14 @@ export default function AppShell({
                   </TouchableOpacity>
                 );
               })}
-            </BlurView>
+            </Bar>
           </Pressable>
         </Pressable>
       </Modal>
 
       {/* BottomNavBar */}
       <View style={[styles.tabBarWrap, { bottom: TAB_BAR_GAP + insets.bottom }]}>
-        <BlurView {...BLUR} blurTarget={blurTarget} style={styles.tabBar}>
+        <Bar {...BLUR} blurTarget={blurTarget} style={styles.tabBar}>
           {primary.map((item) => (
             <Tab key={item.key} item={item} isActive={item.key === active} iconName={item.icon} label={item.label} />
           ))}
@@ -140,10 +151,16 @@ export default function AppShell({
               label={overflow.find((i) => i.key === active)?.label ?? t("shell.more")}
             />
           )}
-        </BlurView>
+        </Bar>
       </View>
     </View>
   );
+}
+
+/** Stands in for BlurView when transparency is reduced: same layout, a
+ * solid white fill instead of the blur. */
+function OpaqueBar({ style, children }) {
+  return <View style={[style, { backgroundColor: "#ffffff" }]}>{children}</View>;
 }
 
 const HEADER_HEIGHT = 56;

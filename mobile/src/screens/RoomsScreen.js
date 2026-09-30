@@ -2,14 +2,19 @@ import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, useWindowDimensions } from "react-native";
 import { api } from "../api";
 import { useLanguage } from "../context/LanguageContext";
-import Icon from "../components/Icon";
 import GradientFill from "../components/GradientFill";
 import { colors, spacing, type, glass } from "../theme";
 import {
-  Chip, EmptyCard, ErrorText, Field, GhostButton, GlassSheet, IconButton, Orb, PrimaryButton,
+  EmptyCard, ErrorText, Field, GhostButton, GlassSheet, IconButton, Orb, PrimaryButton,
 } from "../components/GlassUI";
 import { confirm, notify } from "../components/confirm";
 import { deviceIcon } from "../utils";
+import Skeleton, { SkeletonList } from "../components/Skeleton";
+import Switch from "../components/Switch";
+import { useToast } from "../components/Toast";
+import { useLiveRefresh } from "../live/LiveContext";
+import { useDeviceToggle } from "../live/useDeviceToggle";
+import { failure, success } from "../haptics";
 
 /** Rooms, as on the web (pages/Rooms.jsx): a grid of rooms with their live
  * draw, a detail view listing each room's devices, and add / rename /
@@ -27,6 +32,13 @@ export default function RoomsScreen({ homeId }) {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [switchingOff, setSwitchingOff] = useState(false);
+  const toast = useToast();
+
+  const setDeviceState = useCallback((mac, isOn) => {
+    setDevices((list) => list.map((d) => (d.mac === mac ? { ...d, is_on: isOn } : d)));
+  }, []);
+  const { toggle, apply, busy } = useDeviceToggle(setDeviceState);
 
   const fetchAll = useCallback(async () => {
     if (!homeId) return;
@@ -35,15 +47,15 @@ export default function RoomsScreen({ homeId }) {
       api.get(`/devices?home_id=${homeId}`),
     ]);
     if (r.status === "fulfilled") setRooms(r.value.data);
-    if (d.status === "fulfilled") setDevices(d.value.data);
+    if (d.status === "fulfilled") setDevices(apply(d.value.data));
     setLoading(false);
-  }, [homeId]);
+  }, [homeId, apply]);
 
   useEffect(() => {
     fetchAll();
-    const interval = setInterval(fetchAll, 5000);
-    return () => clearInterval(interval);
   }, [fetchAll]);
+
+  useLiveRefresh(fetchAll, { topics: ["devices"], interval: 5000 });
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -53,13 +65,22 @@ export default function RoomsScreen({ homeId }) {
 
   const kw = (watts) => (watts / 1000).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const toggle = async (d) => {
+  /** Leaving a room: everything in it off, in one request. */
+  const switchRoomOff = async (room) => {
+    setSwitchingOff(true);
     try {
-      await api.post(`/control/${d.mac}?command=${d.is_on ? "OFF" : "ON"}`);
-      fetchAll();
+      const res = await api.post(`/homes/${homeId}/all-off?room_id=${room.id}`);
+      const switched = res.data.switched || [];
+      setDevices((list) => list.map((d) => (switched.includes(d.mac) ? { ...d, is_on: false } : d)));
+      success();
+      toast.show(tn("allOff.done", switched.length), { tone: "success" });
+      if (res.data.failed?.length) toast.show(tn("allOff.partial", res.data.failed.length), { tone: "error" });
     } catch (err) {
-      // The relay was not switched; the next refresh shows the truth.
+      failure();
+      toast.show(err.response?.data?.detail || t("allOff.error"), { tone: "error" });
     }
+    setSwitchingOff(false);
+    fetchAll();
   };
 
   const openAdd = () => {
@@ -166,6 +187,16 @@ export default function RoomsScreen({ homeId }) {
           </View>
         </View>
 
+        {room && roomDevices.some((d) => d.is_on) && (
+          <GhostButton
+            icon="power_settings_new"
+            label={switchingOff ? t("allOff.working") : t("allOff.room")}
+            onPress={() => switchRoomOff(room)}
+            disabled={switchingOff}
+            style={styles.start}
+          />
+        )}
+
         <View style={[glass.dark, styles.darkCard]}>
           <GradientFill kind="dark" />
           <Text style={styles.darkLabel}>{t("rooms.roomConsumption").toUpperCase()}</Text>
@@ -191,11 +222,12 @@ export default function RoomsScreen({ homeId }) {
                 </View>
               </View>
               <Text style={styles.kw}>{kw(d.watts || 0)} kW</Text>
-              <TouchableOpacity onPress={() => toggle(d)} accessibilityLabel={d.is_on ? t("devices.turnOff") : t("devices.turnOn")}>
-                <Chip tone={d.is_on ? "teal" : "red"} icon="power_settings_new">
-                  {d.is_on ? t("common.on") : t("common.off")}
-                </Chip>
-              </TouchableOpacity>
+              <Switch
+                value={d.is_on}
+                disabled={busy[d.mac]}
+                onValueChange={() => toggle(d)}
+                label={t(d.is_on ? "devices.turnOffNamed" : "devices.turnOnNamed", { name: d.name })}
+              />
             </View>
           ))
         )}
@@ -223,7 +255,10 @@ export default function RoomsScreen({ homeId }) {
       />
 
       {loading ? (
-        <EmptyCard icon="hourglass_empty">{t("rooms.loading")}</EmptyCard>
+        <SkeletonList label={t("rooms.loading")} style={styles.grid}>
+          <Skeleton height={150} style={{ width: cardWidth }} />
+          <Skeleton height={150} style={{ width: cardWidth }} />
+        </SkeletonList>
       ) : rooms.length === 0 ? (
         <EmptyCard icon="meeting_room">{t("rooms.noRooms")}</EmptyCard>
       ) : (
@@ -233,6 +268,8 @@ export default function RoomsScreen({ homeId }) {
               key={room.id}
               activeOpacity={0.85}
               onPress={() => setSelectedId(room.id)}
+              accessibilityRole="button"
+              accessibilityLabel={`${room.name}, ${kw(room.watts || 0)} kW, ${tn("count.device", room.device_count)}`}
               style={[glass.card, styles.roomCard, { width: cardWidth }]}
             >
               <View style={styles.roomTop}>

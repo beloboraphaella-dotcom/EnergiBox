@@ -48,6 +48,7 @@ Rules of thumb:
 | Destructive | `.btn-danger`, `.btn-danger-solid` | `<GhostButton danger>` |
 | Icon-only | `.btn-icon` | `<IconButton>` |
 | Text field | `.glass-input` (`.glass-input-hero` on the hero) | `<Field>` / `glass.input` (`glass.heroInput`) |
+| On/off switch | `<Switch>` | `<Switch>` |
 | Segmented control | `.segmented` with `aria-pressed` buttons | `<Segmented>` (`glass.pillActive` / `glass.pillIdle`) |
 | Status pill | `.chip`, `.chip-teal/red/amber/indigo` | `<Chip tone="teal">` (`components/GlassUI.js`) |
 | Round icon | `.icon-orb` | `glass.orb`, `<Orb>` |
@@ -66,6 +67,26 @@ and `glass.dark`).
 Status colours map to meaning, not to decoration: teal is on / active /
 saved money, red is a spike or a destructive action, amber is a pending or
 extended-runtime state, indigo is informational.
+
+## Interaction patterns
+
+The same behaviour on both platforms, from the same building blocks:
+
+| Pattern | Web | Mobile |
+|---|---|---|
+| On/off switch — 44 px (web) / 48 dp (mobile) touch area, `role="switch"` with the device's name | `<Switch>` (`components/Switch.jsx`) | `<Switch>` (`components/Switch.js`) |
+| Switch that reacts at once and rolls back with a message on failure | `useDeviceToggle` (`live/useDeviceToggle.js`) | same, plus a light haptic tap |
+| Refresh on change, paused in the background, polling as fallback | `useLiveRefresh` (`live/LiveContext.jsx`) | `useLiveRefresh` (`live/LiveContext.js`) |
+| Loading placeholder in the shape of the content | `<Skeleton>` / `.skeleton` | `<Skeleton>`, `<SkeletonList>` |
+| Server unreachable | `<ConnectionBanner>` in the shell | same |
+| Short message (failure, success, new alert) | `useToast()` | `useToast()` |
+| Time entry | `<input type="time">` + presets | `<TimeField>` steppers + presets |
+| Reduced transparency | `html.reduce-transparency`, set in Settings or by the OS | `PreferencesContext`: flat backdrop, opaque bars |
+
+Rules that follow from them: a card that looks like a device opens that
+device; a control that looks like a switch switches; destructive or
+wide actions (delete, switch everything off) ask first; every icon-only
+button has an accessible name; modals close on Escape and take focus.
 
 ## Blur and performance
 

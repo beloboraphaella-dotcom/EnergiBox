@@ -72,6 +72,9 @@ export function PrimaryButton({ label, icon, onPress, disabled, loading, style }
       onPress={onPress}
       disabled={disabled || loading}
       activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!(disabled || loading), busy: !!loading }}
       style={[glass.primaryButton, (disabled || loading) && styles.disabled, style]}
     >
       <GradientFill />
@@ -88,13 +91,17 @@ export function PrimaryButton({ label, icon, onPress, disabled, loading, style }
 }
 
 /** .btn-glass, and .btn-danger with `danger`. */
-export function GhostButton({ label, icon, onPress, disabled, danger, compact, style }) {
+export function GhostButton({ label, icon, onPress, disabled, danger, compact, style, accessibilityLabel }) {
   const tint = danger ? colors.error : colors.onSurface;
   return (
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.8}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel || label}
+      accessibilityState={{ disabled: !!disabled }}
+      hitSlop={compact ? 8 : undefined}
       style={[
         glass.ghostButton,
         compact && styles.compact,
@@ -112,7 +119,14 @@ export function GhostButton({ label, icon, onPress, disabled, danger, compact, s
 /** Round icon-only button (.btn-icon). */
 export function IconButton({ icon, onPress, color = colors.onSurfaceVariant, label }) {
   return (
-    <TouchableOpacity onPress={onPress} style={styles.iconButton} accessibilityLabel={label} activeOpacity={0.6}>
+    <TouchableOpacity
+      onPress={onPress}
+      style={styles.iconButton}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={6}
+      activeOpacity={0.6}
+    >
       <Icon name={icon} size={20} color={color} />
     </TouchableOpacity>
   );
@@ -129,6 +143,7 @@ export function Segmented({ options, value, onChange, style }) {
             key={opt.value}
             onPress={() => onChange(opt.value)}
             activeOpacity={0.8}
+            accessibilityRole="button"
             accessibilityState={{ selected: picked }}
             style={[styles.segment, picked && glass.pillActive]}
           >
@@ -148,7 +163,12 @@ export function Field({ label, style, ...inputProps }) {
   return (
     <View style={styles.field}>
       {!!label && <Text style={styles.fieldLabel}>{label}</Text>}
-      <TextInput placeholderTextColor={colors.outline} style={[type.bodyMd, glass.input, style]} {...inputProps} />
+      <TextInput
+        placeholderTextColor={colors.outline}
+        accessibilityLabel={label}
+        style={[type.bodyMd, glass.input, style]}
+        {...inputProps}
+      />
     </View>
   );
 }
@@ -161,7 +181,7 @@ export function GlassSheet({ visible, title, onClose, children }) {
       <Pressable style={styles.scrim} onPress={onClose}>
         <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
           <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>{title}</Text>
+            <Text style={styles.sheetTitle} accessibilityRole="header">{title}</Text>
             <IconButton icon="close" onPress={onClose} label={t("common.close")} />
           </View>
           <ScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">

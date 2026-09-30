@@ -169,8 +169,9 @@ export default function Dashboard({
     fetchSuggestions();
   };
 
-  const deleteSchedule = async (id) => {
-    await axios.delete(`${API}/schedules/${id}`, authHeaders);
+  const deleteSchedule = async (sc) => {
+    if (!window.confirm(t("sched.confirmDelete", { name: sc.appliance }))) return;
+    await axios.delete(`${API}/schedules/${sc.id}`, authHeaders);
     fetchSchedules();
   };
 
@@ -585,7 +586,7 @@ export default function Dashboard({
                     <button type="button" className="btn-icon" onClick={() => openEditSchedule(sc)} aria-label={t("sched.edit")} title={t("sched.edit")}>
                       <Icon name="edit" style={{ fontSize: "20px" }} />
                     </button>
-                    <button type="button" className="btn-icon hover:text-error" onClick={() => deleteSchedule(sc.id)} aria-label={t("sched.delete")} title={t("sched.delete")}>
+                    <button type="button" className="btn-icon hover:text-error" onClick={() => deleteSchedule(sc)} aria-label={t("sched.delete")} title={t("sched.delete")}>
                       <Icon name="delete" style={{ fontSize: "20px" }} />
                     </button>
                   </div>
