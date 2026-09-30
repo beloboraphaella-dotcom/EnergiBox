@@ -3,12 +3,14 @@ import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { api } from "../api";
 import Icon from "../components/Icon";
 import AuthLayout, { HeroButton, HeroError, HeroField } from "../components/AuthLayout";
+import { useLanguage } from "../context/LanguageContext";
 import { colors, spacing, type, fonts } from "../theme";
 import { normalizeMac } from "../utils";
 
-const STEPS = ["Home", "Rooms", "Appliances", "Done"];
+const STEPS = ["home", "rooms", "appliances", "done"];
 
 export default function OnboardingScreen({ onComplete }) {
+  const { t, tn } = useLanguage();
   const [step, setStep] = useState(0);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -25,7 +27,7 @@ export default function OnboardingScreen({ onComplete }) {
 
   const createHome = async () => {
     if (!homeName.trim()) {
-      setError("Give your home a name");
+      setError(t("onb.errHomeName"));
       return;
     }
     setSaving(true);
@@ -43,7 +45,7 @@ export default function OnboardingScreen({ onComplete }) {
       }
       setStep(1);
     } catch (err) {
-      setError("Could not create home. Try again.");
+      setError(t("onb.errCreateHome"));
     }
     setSaving(false);
   };
@@ -57,7 +59,7 @@ export default function OnboardingScreen({ onComplete }) {
     const trimmed = newRoomName.trim();
     if (!trimmed) return;
     if (rooms.some((r) => r.name.toLowerCase() === trimmed.toLowerCase())) {
-      setError(`A room named "${trimmed}" already exists in this home.`);
+      setError(t("onb.errRoomExists", { name: trimmed }));
       return;
     }
     setSaving(true);
@@ -67,7 +69,7 @@ export default function OnboardingScreen({ onComplete }) {
       setRooms((r) => [...r, res.data]);
       setNewRoomName("");
     } catch (err) {
-      setError(err.response?.data?.detail || "Could not add room.");
+      setError(err.response?.data?.detail || t("onb.errAddRoom"));
     }
     setSaving(false);
   };
@@ -75,12 +77,12 @@ export default function OnboardingScreen({ onComplete }) {
   const addDevice = async () => {
     const { room_id, name, type, mac } = newDevice;
     if (!room_id || !name.trim() || !mac.trim()) {
-      setError("Room, name and MAC address are required.");
+      setError(t("onb.errDeviceFields"));
       return;
     }
     const normalizedMac = normalizeMac(mac.trim());
     if (!normalizedMac) {
-      setError("Enter a valid MAC address — 12 hex digits, e.g. AA:BB:CC:DD:EE:FF.");
+      setError(t("onb.errMac"));
       return;
     }
     setSaving(true);
@@ -92,12 +94,10 @@ export default function OnboardingScreen({ onComplete }) {
       setDevices((d) => [...d, res.data]);
       setNewDevice({ room_id: "", name: "", type: "appliance", mac: "" });
     } catch (err) {
-      setError(err.response?.data?.detail || "Could not add device. Check the MAC address.");
+      setError(err.response?.data?.detail || t("onb.errAddDevice"));
     }
     setSaving(false);
   };
-
-  const plural = (n, word) => `${n} ${word}${n !== 1 ? "s" : ""}`;
 
   return (
     <AuthLayout>
@@ -115,7 +115,7 @@ export default function OnboardingScreen({ onComplete }) {
                   </Text>
                 )}
               </View>
-              <Text style={[styles.stepLabel, { color: i <= step ? "#ffffff" : "rgba(255,255,255,0.55)" }]}>{label}</Text>
+              <Text style={[styles.stepLabel, { color: i <= step ? "#ffffff" : "rgba(255,255,255,0.55)" }]}>{t(`onb.step.${label}`)}</Text>
             </View>
             {i < STEPS.length - 1 && (
               <View style={[styles.stepLine, { backgroundColor: i < step ? colors.secondaryFixed : "rgba(255,255,255,0.2)" }]} />
@@ -127,18 +127,18 @@ export default function OnboardingScreen({ onComplete }) {
       {/* STEP 0: Home */}
       {step === 0 && (
         <View>
-          <StepTitle title="Set up your home" hint="This is the first thing every EnergiBox account needs — you can add more homes later." />
-          <HeroField label="Home Name" icon="home" placeholder="e.g. My Home" value={homeName} onChangeText={setHomeName} />
-          <HeroField label="Address (optional)" icon="location_on" placeholder="e.g. Yaoundé, Cameroun" value={homeAddress} onChangeText={setHomeAddress} />
+          <StepTitle title={t("onb.home.title")} hint={t("onb.home.hint")} />
+          <HeroField label={t("onb.homeName")} icon="home" placeholder={t("onb.homeNamePh")} value={homeName} onChangeText={setHomeName} />
+          <HeroField label={t("onb.address")} icon="location_on" placeholder={t("onb.addressPh")} value={homeAddress} onChangeText={setHomeAddress} />
           <HeroError>{error}</HeroError>
-          <HeroButton label={saving ? "Creating..." : "Continue"} onPress={createHome} disabled={saving} />
+          <HeroButton label={saving ? t("common.creating") : t("common.continue")} onPress={createHome} disabled={saving} />
         </View>
       )}
 
       {/* STEP 1: Rooms */}
       {step === 1 && (
         <View>
-          <StepTitle title="Add your rooms" hint="Add every room you want to monitor. You need at least one to continue." />
+          <StepTitle title={t("onb.rooms.title")} hint={t("onb.rooms.hint")} />
 
           {rooms.length > 0 && (
             <View style={styles.chipRow}>
@@ -146,9 +146,9 @@ export default function OnboardingScreen({ onComplete }) {
             </View>
           )}
 
-          <HeroField label="Room Name" icon="meeting_room" placeholder="e.g. Living Room" value={newRoomName} onChangeText={setNewRoomName} onSubmitEditing={addRoom} />
+          <HeroField label={t("onb.roomName")} icon="meeting_room" placeholder={t("onb.roomNamePh")} value={newRoomName} onChangeText={setNewRoomName} onSubmitEditing={addRoom} />
           <HeroButton
-            label="Add room"
+            label={t("onb.addRoom")}
             icon="add"
             variant="ghost"
             onPress={addRoom}
@@ -157,9 +157,9 @@ export default function OnboardingScreen({ onComplete }) {
           />
 
           <HeroError>{error}</HeroError>
-          <StepNav onBack={goBack}>
+          <StepNav onBack={goBack} label={t("common.back")}>
             <HeroButton
-              label={`Continue (${plural(rooms.length, "room")})`}
+              label={t("onb.continueRooms", { rooms: tn("count.room", rooms.length) })}
               onPress={() => setStep(2)}
               disabled={rooms.length === 0}
               style={styles.flex}
@@ -171,7 +171,7 @@ export default function OnboardingScreen({ onComplete }) {
       {/* STEP 2: Appliances */}
       {step === 2 && (
         <View>
-          <StepTitle title="Add your appliances & sockets" hint="Pair each EnergiBox by its MAC address. You need at least one device to finish setup." />
+          <StepTitle title={t("onb.devices.title")} hint={t("onb.devices.hint")} />
 
           {devices.length > 0 && (
             <View style={styles.chipRow}>
@@ -181,8 +181,8 @@ export default function OnboardingScreen({ onComplete }) {
             </View>
           )}
 
-          <Text style={styles.label}>Room</Text>
-          <Text style={styles.helperText}>Tap the room this device is in — required before you can confirm it.</Text>
+          <Text style={styles.label}>{t("onb.room")}</Text>
+          <Text style={styles.helperText}>{t("onb.roomHelper")}</Text>
           <View style={styles.pickerRow}>
             {rooms.map((r) => (
               <Choice key={r.id} picked={newDevice.room_id === r.id} onPress={() => setNewDevice({ ...newDevice, room_id: r.id })}>
@@ -191,25 +191,25 @@ export default function OnboardingScreen({ onComplete }) {
             ))}
           </View>
 
-          <HeroField label="Name" icon="label" placeholder="e.g. Fridge" value={newDevice.name} onChangeText={(v) => setNewDevice({ ...newDevice, name: v })} />
+          <HeroField label={t("onb.deviceName")} icon="label" placeholder={t("onb.deviceNamePh")} value={newDevice.name} onChangeText={(v) => setNewDevice({ ...newDevice, name: v })} />
 
-          <Text style={styles.label}>Type</Text>
+          <Text style={styles.label}>{t("onb.type")}</Text>
           <View style={styles.typeRow}>
-            {["appliance", "socket"].map((t) => (
+            {["appliance", "socket"].map((type) => (
               <Choice
-                key={t}
-                icon={t === "socket" ? "power" : "kitchen"}
-                picked={newDevice.type === t}
-                onPress={() => setNewDevice({ ...newDevice, type: t })}
+                key={type}
+                icon={type === "socket" ? "power" : "kitchen"}
+                picked={newDevice.type === type}
+                onPress={() => setNewDevice({ ...newDevice, type })}
                 style={styles.flex}
               >
-                {t === "appliance" ? "Appliance" : "Socket"}
+                {type === "appliance" ? t("devices.appliance") : t("devices.socket")}
               </Choice>
             ))}
           </View>
 
           <HeroField
-            label="EnergiBox MAC Address"
+            label={t("onb.mac")}
             icon="router"
             placeholder="AA:BB:CC:DD:EE:FF"
             value={newDevice.mac}
@@ -219,11 +219,11 @@ export default function OnboardingScreen({ onComplete }) {
           />
 
           <HeroError>{error}</HeroError>
-          <HeroButton label="Pair this device" icon="add_link" variant="ghost" onPress={addDevice} disabled={saving} style={styles.addButton} />
+          <HeroButton label={t("onb.pair")} icon="add_link" variant="ghost" onPress={addDevice} disabled={saving} style={styles.addButton} />
 
-          <StepNav onBack={goBack}>
+          <StepNav onBack={goBack} label={t("common.back")}>
             <HeroButton
-              label={`Finish (${plural(devices.length, "device")})`}
+              label={t("onb.finish", { devices: tn("count.device", devices.length) })}
               onPress={() => setStep(3)}
               disabled={devices.length === 0}
               style={styles.flex}
@@ -240,10 +240,14 @@ export default function OnboardingScreen({ onComplete }) {
           </View>
           <StepTitle
             center
-            title="You're all set!"
-            hint={`${homeName} is ready with ${plural(rooms.length, "room")} and ${plural(devices.length, "device")}.`}
+            title={t("onb.done.title")}
+            hint={t("onb.done.hint", {
+              home: homeName,
+              rooms: tn("count.room", rooms.length),
+              devices: tn("count.device", devices.length),
+            })}
           />
-          <HeroButton label="Go to Dashboard" onPress={onComplete} style={styles.fullWidth} />
+          <HeroButton label={t("onb.goDashboard")} onPress={onComplete} style={styles.fullWidth} />
         </View>
       )}
     </AuthLayout>
@@ -277,10 +281,10 @@ function Choice({ picked, onPress, icon, children, style }) {
   );
 }
 
-function StepNav({ onBack, children }) {
+function StepNav({ onBack, label, children }) {
   return (
     <View style={styles.navRow}>
-      <HeroButton label="Back" icon="arrow_back" variant="ghost" onPress={onBack} />
+      <HeroButton label={label} icon="arrow_back" variant="ghost" onPress={onBack} />
       {children}
     </View>
   );

@@ -20,6 +20,7 @@ export default function AuthLayout({ title, subtitle, footer, children }) {
       <SafeAreaView style={styles.flex} edges={["top", "bottom"]}>
         <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+            <LanguageToggle />
             <View style={styles.brandRow}>
               <View style={styles.brandOrb}>
                 <Icon name="bolt" size={24} color={colors.onSecondaryFixed} />
@@ -44,8 +45,29 @@ export default function AuthLayout({ title, subtitle, footer, children }) {
   );
 }
 
+/** EN / FR. Without it these screens could only ever show the default
+ * language: the setting lives in Settings, behind sign-in. */
+function LanguageToggle() {
+  const { language, setLanguage } = useLanguage();
+  return (
+    <View style={styles.langRow}>
+      {["fr", "en"].map((code) => (
+        <TouchableOpacity
+          key={code}
+          onPress={() => setLanguage(code)}
+          style={[styles.langChip, language === code && styles.langChipOn]}
+          accessibilityState={{ selected: language === code }}
+        >
+          <Text style={[styles.langText, language === code && styles.langTextOn]}>{code.toUpperCase()}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
 /** A labelled field on the hero card. */
 export function HeroField({ label, icon, secure = false, style, ...inputProps }) {
+  const { t } = useLanguage();
   const [hidden, setHidden] = useState(true);
   return (
     <View style={styles.field}>
@@ -66,7 +88,7 @@ export function HeroField({ label, icon, secure = false, style, ...inputProps })
           <TouchableOpacity
             style={styles.eye}
             onPress={() => setHidden((h) => !h)}
-            accessibilityLabel={hidden ? "Show password" : "Hide password"}
+            accessibilityLabel={hidden ? t("common.showPassword") : t("common.hidePassword")}
           >
             <Icon name={hidden ? "visibility" : "visibility_off"} size={20} color="rgba(255, 255, 255, 0.85)" />
           </TouchableOpacity>
@@ -127,6 +149,16 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   scroll: { flexGrow: 1, justifyContent: "center", alignItems: "center", padding: spacing.md },
 
+  langRow: {
+    flexDirection: "row", gap: 4, alignSelf: "flex-end", marginBottom: spacing.md,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderWidth: 1, borderColor: "rgba(255, 255, 255, 0.25)",
+    borderRadius: 9999, padding: 4,
+  },
+  langChip: { borderRadius: 9999, paddingHorizontal: 12, paddingVertical: 4 },
+  langChipOn: { backgroundColor: "rgba(255, 255, 255, 0.9)" },
+  langText: { fontFamily: fonts.label, fontSize: 12, color: "rgba(255, 255, 255, 0.85)" },
+  langTextOn: { color: colors.secondary },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: spacing.md },
   brandOrb: {
     width: 44, height: 44, borderRadius: 22,

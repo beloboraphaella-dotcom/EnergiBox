@@ -2,11 +2,13 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import Icon from "../components/Icon";
 import Modal from "../components/GlassModal";
+import { useLanguage } from "../context/LanguageContext";
 
 const API = "http://localhost:8000";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Admin({ token, currentUserId }) {
+  const { t } = useLanguage();
   const [tab, setTab] = useState("accounts"); // "accounts" | "overview"
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
@@ -27,7 +29,7 @@ export default function Admin({ token, currentUserId }) {
       const res = await axios.get(`${API}/admin/users`, authHeaders);
       setUsers(res.data);
     } catch (err) {
-      setError("Could not load users — admin access required.");
+      setError(t("admin.errLoad"));
     }
   };
 
@@ -49,7 +51,7 @@ export default function Admin({ token, currentUserId }) {
   };
 
   const removeUser = async (u) => {
-    if (!window.confirm(`Permanently delete ${u.name} (${u.email})? This removes their home, rooms and devices.`)) return;
+    if (!window.confirm(t("admin.confirmDelete", { name: u.name, email: u.email }))) return;
     await axios.delete(`${API}/admin/users/${u.id}`, authHeaders);
     fetchUsers();
     fetchStats();
@@ -79,15 +81,15 @@ export default function Admin({ token, currentUserId }) {
   const submitCreate = async () => {
     const { name, email, password } = newAccount;
     if (!name.trim() || !email.trim() || !password) {
-      setFormError("Name, email and password are all required.");
+      setFormError(t("admin.errRequired"));
       return;
     }
     if (!EMAIL_REGEX.test(email.trim())) {
-      setFormError("Enter a valid email address.");
+      setFormError(t("auth.errEmail"));
       return;
     }
     if (password.length < 6) {
-      setFormError("Password must be at least 6 characters.");
+      setFormError(t("auth.errPasswordLength"));
       return;
     }
     setSaving(true);
@@ -102,18 +104,18 @@ export default function Admin({ token, currentUserId }) {
       await fetchStats();
       closeModal();
     } catch (err) {
-      setFormError(err.response?.data?.detail || "Could not create account. Try again.");
+      setFormError(err.response?.data?.detail || t("auth.errCreate"));
     }
     setSaving(false);
   };
 
   const submitResetPassword = async () => {
     if (newPassword.length < 6) {
-      setFormError("Password must be at least 6 characters.");
+      setFormError(t("auth.errPasswordLength"));
       return;
     }
     if (newPassword !== confirmPassword) {
-      setFormError("Passwords don't match.");
+      setFormError(t("auth.errPasswordMatch"));
       return;
     }
     setSaving(true);
@@ -126,7 +128,7 @@ export default function Admin({ token, currentUserId }) {
       );
       closeModal();
     } catch (err) {
-      setFormError(err.response?.data?.detail || "Could not reset password. Try again.");
+      setFormError(err.response?.data?.detail || t("admin.errReset"));
     }
     setSaving(false);
   };
@@ -135,13 +137,13 @@ export default function Admin({ token, currentUserId }) {
     <div className="max-w-7xl mx-auto py-lg space-y-md">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h1 className="font-headline-lg text-headline-lg text-on-surface">Admin</h1>
-          <p className="text-on-surface-variant mt-1">Platform statistics and user management</p>
+          <h1 className="font-headline-lg text-headline-lg text-on-surface">{t("admin.title")}</h1>
+          <p className="text-on-surface-variant mt-1">{t("admin.subtitle")}</p>
         </div>
         <div className="segmented self-start">
           {[
-            { id: "accounts", label: "Accounts", icon: "group" },
-            { id: "overview", label: "Overview", icon: "monitoring" },
+            { id: "accounts", label: t("admin.tab.accounts"), icon: "group" },
+            { id: "overview", label: t("admin.tab.overview"), icon: "monitoring" },
           ].map((tb) => (
             <button
               key={tb.id}
@@ -166,13 +168,13 @@ export default function Admin({ token, currentUserId }) {
       {tab === "accounts" && (
         <section className="glass rounded-2xl overflow-hidden">
           <div className="flex items-center justify-between px-md py-4 border-b border-white/70">
-            <h2 className="font-label-sm text-label-sm uppercase tracking-wider text-outline">User Accounts</h2>
+            <h2 className="font-label-sm text-label-sm uppercase tracking-wider text-outline">{t("admin.userAccounts")}</h2>
             <button type="button" className="btn-primary" onClick={openCreate}>
-              <Icon name="person_add" style={{ fontSize: "18px" }} /> Create Account
+              <Icon name="person_add" style={{ fontSize: "18px" }} /> {t("admin.createAccount")}
             </button>
           </div>
           {users.length === 0 ? (
-            <p className="p-md text-on-surface-variant">No users found.</p>
+            <p className="p-md text-on-surface-variant">{t("admin.noUsers")}</p>
           ) : (
             <ul className="divide-y divide-white/70">
               {users.map((u) => (
@@ -184,18 +186,18 @@ export default function Admin({ token, currentUserId }) {
                     <div className="min-w-0">
                       <p className="font-body-md text-body-md font-semibold text-on-surface flex items-center gap-2">
                         <span className="truncate">{u.name}</span>
-                        {u.id === currentUserId && <span className="chip chip-teal">you</span>}
+                        {u.id === currentUserId && <span className="chip chip-teal">{t("admin.you")}</span>}
                       </p>
                       <p className="text-[14px] text-on-surface-variant truncate">{u.email}</p>
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className={"chip " + (u.role === "admin" ? "chip-indigo" : "")}>{u.role}</span>
+                    <span className={"chip " + (u.role === "admin" ? "chip-indigo" : "")}>{t(`admin.role.${u.role}`)}</span>
                     <span className={"chip " + (u.is_suspended ? "chip-red" : "chip-teal")}>
-                      {u.is_suspended ? "Suspended" : "Active"}
+                      {u.is_suspended ? t("admin.suspended") : t("admin.active")}
                     </span>
-                    <button type="button" className="btn-glass py-1.5 px-3 text-[13px]" onClick={() => openResetPassword(u)} title="Reset password">
-                      <Icon name="key" style={{ fontSize: "16px" }} /> Reset Password
+                    <button type="button" className="btn-glass py-1.5 px-3 text-[13px]" onClick={() => openResetPassword(u)} title={t("admin.resetPassword")}>
+                      <Icon name="key" style={{ fontSize: "16px" }} /> {t("admin.resetPassword")}
                     </button>
                     <button
                       type="button"
@@ -204,15 +206,15 @@ export default function Admin({ token, currentUserId }) {
                       disabled={u.id === currentUserId}
                     >
                       <Icon name={u.is_suspended ? "lock_open" : "block"} style={{ fontSize: "16px" }} />
-                      {u.is_suspended ? "Reinstate" : "Suspend"}
+                      {u.is_suspended ? t("admin.reinstate") : t("admin.suspend")}
                     </button>
                     <button
                       type="button"
                       className="btn-danger p-2"
                       onClick={() => removeUser(u)}
                       disabled={u.id === currentUserId}
-                      title="Delete account"
-                      aria-label="Delete account"
+                      title={t("admin.deleteAccount")}
+                      aria-label={t("admin.deleteAccount")}
                     >
                       <Icon name="delete" style={{ fontSize: "18px" }} />
                     </button>
@@ -227,9 +229,9 @@ export default function Admin({ token, currentUserId }) {
       {tab === "overview" && stats && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-sm">
           {[
-            { label: "Active Users", icon: "group", value: stats.users.active, of: `/ ${stats.users.total}` },
-            { label: "EnergiBoxes Online", icon: "router", value: stats.energiboxes.online, of: `/ ${stats.energiboxes.total}` },
-            { label: "Alerts (7 days)", icon: "notifications", value: stats.alerts.last_7_days, of: `/ ${stats.alerts.total} total` },
+            { label: t("admin.stat.users"), icon: "group", value: stats.users.active, of: `/ ${stats.users.total}` },
+            { label: t("admin.stat.boxes"), icon: "router", value: stats.energiboxes.online, of: `/ ${stats.energiboxes.total}` },
+            { label: t("admin.stat.alerts"), icon: "notifications", value: stats.alerts.last_7_days, of: t("admin.stat.total", { count: stats.alerts.total }) },
           ].map((card) => (
             <div key={card.label} className="glass rounded-2xl p-md">
               <div className="flex items-center justify-between mb-4">
@@ -246,16 +248,16 @@ export default function Admin({ token, currentUserId }) {
 
       {/* ── Create Account modal ── */}
       {modal === "create" && (
-        <Modal title="Create Account" onClose={closeModal}>
+        <Modal title={t("admin.createAccount")} onClose={closeModal}>
           <div className="space-y-4">
-            <Field label="Full Name">
+            <Field label={t("auth.fullName")}>
               <input
                 className="glass-input"
                 value={newAccount.name}
                 onChange={(e) => setNewAccount({ ...newAccount, name: e.target.value })}
               />
             </Field>
-            <Field label="Email">
+            <Field label={t("auth.email")}>
               <input
                 className="glass-input"
                 type="email"
@@ -263,21 +265,21 @@ export default function Admin({ token, currentUserId }) {
                 onChange={(e) => setNewAccount({ ...newAccount, email: e.target.value })}
               />
             </Field>
-            <Field label="Password">
+            <Field label={t("auth.password")}>
               <input
                 className="glass-input"
                 type="text"
-                placeholder="At least 6 characters"
+                placeholder={t("admin.passwordPh")}
                 value={newAccount.password}
                 onChange={(e) => setNewAccount({ ...newAccount, password: e.target.value })}
               />
             </Field>
             <p className="text-[13px] text-on-surface-variant">
-              This creates a regular account — share this password with them so they can log in and change it.
+              {t("admin.createHint")}
             </p>
             {formError && <p className="text-error text-[14px]">{formError}</p>}
             <button type="button" className="btn-primary w-full py-3" onClick={submitCreate} disabled={saving}>
-              {saving ? "Creating..." : "Create Account"}
+              {saving ? t("common.creating") : t("admin.createAccount")}
             </button>
           </div>
         </Modal>
@@ -285,22 +287,21 @@ export default function Admin({ token, currentUserId }) {
 
       {/* ── Reset Password modal ── */}
       {modal?.resetPw && (
-        <Modal title="Reset Password" onClose={closeModal}>
+        <Modal title={t("admin.resetPassword")} onClose={closeModal}>
           <div className="space-y-4">
             <p className="text-[14px] text-on-surface-variant glass-subtle rounded-xl p-3">
-              Set a new password for <strong className="text-on-surface">{modal.resetPw.name}</strong> ({modal.resetPw.email}).
-              Use this when they've lost access to their account or forgotten their credentials.
+              {t("admin.resetIntro", { name: modal.resetPw.name, email: modal.resetPw.email })}
             </p>
-            <Field label="New Password">
+            <Field label={t("admin.newPassword")}>
               <input
                 className="glass-input"
                 type="text"
-                placeholder="At least 6 characters"
+                placeholder={t("admin.passwordPh")}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
               />
             </Field>
-            <Field label="Confirm New Password">
+            <Field label={t("admin.confirmNewPassword")}>
               <input
                 className="glass-input"
                 type="text"
@@ -310,7 +311,7 @@ export default function Admin({ token, currentUserId }) {
             </Field>
             {formError && <p className="text-error text-[14px]">{formError}</p>}
             <button type="button" className="btn-primary w-full py-3" onClick={submitResetPassword} disabled={saving}>
-              {saving ? "Saving..." : "Reset Password"}
+              {saving ? t("common.saving") : t("admin.resetPassword")}
             </button>
           </div>
         </Modal>

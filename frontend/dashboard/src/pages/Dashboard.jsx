@@ -60,14 +60,21 @@ function StatTile({ icon, label, value, unit, dark = false, children }) {
     </div>
   );
 }
-const MONTH_NAMES = ["January","February","March","April","May","June",
-  "July","August","September","October","November","December"];
+// The API labels a year's bars with English month abbreviations; this is
+// their order, so each can be re-rendered in the reader's language.
+const API_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const capitalize = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 
 export default function Dashboard({
   token, user, onLogout, onUpdateUser,
   homes = [], activeHomeId, onSwitchHome, onHomesChanged,
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const locale = language === "fr" ? "fr-FR" : "en-US";
+  // Numbers in the reader's convention: "9 456" and "119,7" in French.
+  const fmt = (value, digits = 1) =>
+    Number(value ?? 0).toLocaleString(locale, { maximumFractionDigits: digits });
   const isAdmin = user?.role === "admin";
   const [activeTab, setTab] = useState(isAdmin ? "admin" : "home");
   const [dashboard, setDashboard] = useState(null);
@@ -201,7 +208,7 @@ export default function Dashboard({
   const submitScheduleForm = async () => {
     const { monitored_point_id, on_time, off_time } = scheduleForm;
     if (scheduleModal === "create" && !monitored_point_id) {
-      setScheduleError("Pick a device.");
+      setScheduleError(t("sched.errDevice"));
       return;
     }
     try {
@@ -219,7 +226,7 @@ export default function Dashboard({
       setScheduleModal(null);
       fetchSchedules();
     } catch (err) {
-      setScheduleError("Could not save schedule.");
+      setScheduleError(t("sched.errSave"));
     }
   };
 
@@ -268,9 +275,14 @@ export default function Dashboard({
   };
 
   const getPeriodLabel = () => {
-    if (historyMode === "Day") return `${MONTH_NAMES[historyMonth-1]} ${historyDay}, ${historyYear}`;
-    if (historyMode === "Week") return `Week ${historyWeek}, ${historyYear}`;
-    if (historyMode === "Month") return `${MONTH_NAMES[historyMonth-1]} ${historyYear}`;
+    const date = new Date(historyYear, historyMonth - 1, historyDay);
+    if (historyMode === "Day") {
+      return date.toLocaleDateString(locale, { day: "numeric", month: "long", year: "numeric" });
+    }
+    if (historyMode === "Week") return t("history.week", { week: historyWeek, year: historyYear });
+    if (historyMode === "Month") {
+      return capitalize(date.toLocaleDateString(locale, { month: "long", year: "numeric" }));
+    }
     return `${historyYear}`;
   };
 
@@ -370,23 +382,23 @@ export default function Dashboard({
           <div className="max-w-7xl mx-auto py-lg space-y-md">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
               <div>
-                <h1 className="font-headline-lg text-headline-lg text-on-surface">Consumption History</h1>
-                <p className="text-on-surface-variant mt-1">Track your energy usage over time</p>
+                <h1 className="font-headline-lg text-headline-lg text-on-surface">{t("history.title")}</h1>
+                <p className="text-on-surface-variant mt-1">{t("history.subtitle")}</p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="segmented">
                   {["Day", "Week", "Month", "Year"].map((m) => (
                     <button key={m} type="button" aria-pressed={historyMode === m} onClick={() => setHistoryMode(m)}>
-                      {m}
+                      {t(`history.mode.${m}`)}
                     </button>
                   ))}
                 </div>
                 <div className="flex items-center gap-1 glass-subtle rounded-full p-1">
-                  <button type="button" className="btn-icon w-8 h-8" onClick={() => navigatePeriod(-1)} aria-label="Previous period">
+                  <button type="button" className="btn-icon w-8 h-8" onClick={() => navigatePeriod(-1)} aria-label={t("history.prev")}>
                     <Icon name="chevron_left" />
                   </button>
                   <span className="font-label-sm text-label-sm text-on-surface min-w-[9rem] text-center">{getPeriodLabel()}</span>
-                  <button type="button" className="btn-icon w-8 h-8" onClick={() => navigatePeriod(1)} aria-label="Next period">
+                  <button type="button" className="btn-icon w-8 h-8" onClick={() => navigatePeriod(1)} aria-label={t("history.next")}>
                     <Icon name="chevron_right" />
                   </button>
                 </div>
@@ -396,28 +408,40 @@ export default function Dashboard({
             {historyData && (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-sm">
-                  <StatTile icon="bolt" label="Total Consumption" value={historyData.total_kwh} unit="kWh">
+                  <StatTile icon="bolt" label={t("history.total")} value={fmt(historyData.total_kwh)} unit="kWh">
                     {historyData.change_vs_prev !== undefined && (
                       <span className={"inline-flex items-center gap-1 " + (historyData.change_vs_prev >= 0 ? "text-error" : "text-secondary")}>
                         <Icon name={historyData.change_vs_prev >= 0 ? "trending_up" : "trending_down"} style={{ fontSize: "16px" }} />
-                        {Math.abs(historyData.change_vs_prev)}% vs prev
+                        {t("history.vsPrev", { pct: Math.abs(historyData.change_vs_prev) })}
                       </span>
                     )}
                   </StatTile>
                   <StatTile
                     icon="avg_pace"
-                    label={historyMode === "Year" ? "Average per Month" : "Average per Day"}
-                    value={historyData.avg_per_day_kwh}
+                    label={historyMode === "Year" ? t("history.avgMonth") : t("history.avgDay")}
+                    value={fmt(historyData.avg_per_day_kwh)}
                     unit="kWh"
                   />
-                  <StatTile icon="payments" label="Estimated Cost" value={historyData.estimated_fcfa?.toLocaleString()} unit="FCFA" dark />
-                  <StatTile icon="calendar_today" label="Cost per Day" value={historyData.avg_fcfa_per_day?.toLocaleString() || "—"} unit="FCFA" />
+                  <StatTile icon="payments" label={t("history.estCost")} value={fmt(historyData.estimated_fcfa, 0)} unit="FCFA" dark />
+                  <StatTile icon="calendar_today" label={t("history.costDay")} value={historyData.avg_fcfa_per_day == null ? "—" : fmt(historyData.avg_fcfa_per_day, 0)} unit="FCFA" />
                 </div>
 
                 <div className="glass rounded-2xl p-md">
-                  <h3 className="font-headline-md text-[20px] leading-7 font-semibold text-on-surface mb-4">Consumption</h3>
+                  <h3 className="font-headline-md text-[20px] leading-7 font-semibold text-on-surface mb-4">{t("history.chart")}</h3>
                   <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={historyData.bars} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <BarChart
+                      data={
+                        historyMode === "Year"
+                          ? historyData.bars.map((bar) => ({
+                              ...bar,
+                              month: capitalize(
+                                new Date(2000, API_MONTHS.indexOf(bar.month), 1)
+                                  .toLocaleDateString(locale, { month: "short" })
+                                  .replace(".", "")
+                              ),
+                            }))
+                          : historyData.bars
+                      } margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(118,119,125,0.18)" vertical={false} />
                       <XAxis dataKey={getBarKey()} tick={{ fill: "#76777d", fontSize: 11 }} axisLine={false} tickLine={false} />
                       <YAxis tick={{ fill: "#76777d", fontSize: 11 }} axisLine={false} tickLine={false} unit=" kWh" width={64} />
@@ -430,7 +454,7 @@ export default function Dashboard({
                           backdropFilter: "blur(12px)",
                           boxShadow: "0 10px 30px -12px rgba(19,27,46,0.25)",
                         }}
-                        formatter={(v) => [`${v} kWh`, "Consumption"]}
+                        formatter={(v) => [`${fmt(v)} kWh`, t("history.chart")]}
                       />
                       <defs>
                         <linearGradient id="tealGrad" x1="0" y1="0" x2="0" y2="1">
@@ -445,15 +469,15 @@ export default function Dashboard({
 
                 {applianceData.length > 0 && (
                   <div className="glass rounded-2xl p-md">
-                    <h3 className="font-headline-md text-[20px] leading-7 font-semibold text-on-surface mb-4">Consumption by Appliance</h3>
+                    <h3 className="font-headline-md text-[20px] leading-7 font-semibold text-on-surface mb-4">{t("history.byAppliance")}</h3>
                     <ul className="space-y-4">
                       {applianceData.map((a, i) => (
                         <li key={i} className="space-y-1.5">
                           <div className="flex items-center gap-3">
                             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
                             <span className="text-on-surface truncate flex-1 min-w-0">{a.name}</span>
-                            <span className="font-data-label text-data-label text-on-surface whitespace-nowrap">{a.kwh} kWh</span>
-                            <span className="font-label-sm text-label-sm text-outline text-right w-12 shrink-0">{a.percentage}%</span>
+                            <span className="font-data-label text-data-label text-on-surface whitespace-nowrap">{fmt(a.kwh)} kWh</span>
+                            <span className="font-label-sm text-label-sm text-outline text-right w-12 shrink-0">{fmt(a.percentage, 1)}%</span>
                           </div>
                           <div className="h-2 rounded-full bg-white/60 overflow-hidden">
                             <div className="h-full rounded-full" style={{ width: `${a.percentage}%`, background: COLORS[i % COLORS.length] }} />
@@ -471,21 +495,21 @@ export default function Dashboard({
         {/* ── ALERTS TAB ── */}
         {activeTab === "alerts" && (
           <div className="max-w-5xl mx-auto py-lg space-y-lg">
-            <h1 className="font-headline-lg text-headline-lg text-on-surface">Alerts & Schedules</h1>
+            <h1 className="font-headline-lg text-headline-lg text-on-surface">{t("alerts.title")}</h1>
 
             <section className="space-y-sm">
-              <SectionTitle icon="notifications">Active Alerts</SectionTitle>
+              <SectionTitle icon="notifications">{t("alerts.active")}</SectionTitle>
               {alerts.length === 0 ? (
-                <EmptyCard icon="check_circle">No alerts — everything is normal</EmptyCard>
+                <EmptyCard icon="check_circle">{t("alerts.none")}</EmptyCard>
               ) : alerts.map((a, i) => {
                 const tone = ALERT_TONES[a.type] || ALERT_TONES.idle_waste;
                 return (
                   <div key={i} className="glass rounded-2xl p-4 flex items-start gap-4">
                     <span className={"icon-orb " + tone.orb}><Icon name={tone.icon} /></span>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-3">
+                      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                         <p className="font-body-md text-body-md font-semibold text-on-surface">{a.appliance}</p>
-                        <span className={"chip capitalize " + tone.chip}>{a.type.replace("_", " ")}</span>
+                        <span className={"chip " + tone.chip}>{t(`detail.alert.${a.type}`)}</span>
                       </div>
                       <p className="text-[14px] leading-5 text-on-surface-variant mt-1">{a.message}</p>
                       <p className="font-data-label text-[12px] text-outline mt-2">{a.created_at}</p>
@@ -496,28 +520,28 @@ export default function Dashboard({
             </section>
 
             <section className="space-y-sm">
-              <SectionTitle icon="lightbulb">AI Suggestions</SectionTitle>
+              <SectionTitle icon="lightbulb">{t("sugg.title")}</SectionTitle>
               {suggestions.length === 0 ? (
-                <EmptyCard icon="lightbulb">No suggestions yet</EmptyCard>
+                <EmptyCard icon="lightbulb">{t("sugg.none")}</EmptyCard>
               ) : suggestions.map((s2, i) => (
                 <div key={i} className={"glass rounded-2xl p-4 " + (s2.status === "ignored" ? "opacity-70" : "")}>
                   <div className="flex items-center justify-between gap-3">
                     <p className="font-body-md text-body-md font-semibold text-on-surface">{s2.appliance}</p>
-                    <span className={"chip capitalize " + (s2.status === "accepted" ? "chip-teal" : s2.status === "ignored" ? "" : "chip-amber")}>
-                      {s2.status}
+                    <span className={"chip " + (s2.status === "accepted" ? "chip-teal" : s2.status === "ignored" ? "" : "chip-amber")}>
+                      {t(`sugg.status.${s2.status}`)}
                     </span>
                   </div>
                   <p className="text-[14px] leading-6 text-on-surface-variant mt-2">{s2.suggestion}</p>
                   <div className="flex flex-wrap items-center justify-between gap-3 mt-3">
                     <span className="chip chip-teal text-[13px]">
                       <Icon name="savings" style={{ fontSize: "16px" }} />
-                      Save {s2.estimated_saving_fcfa} FCFA/month
+                      {t("sugg.save", { amount: Number(s2.estimated_saving_fcfa).toLocaleString(locale) })}
                     </span>
                     {s2.status === "pending" && (
                       <div className="flex gap-2">
-                        <button type="button" className="btn-glass py-2" onClick={() => ignoreSuggestion(s2.id)}>Ignore</button>
+                        <button type="button" className="btn-glass py-2" onClick={() => ignoreSuggestion(s2.id)}>{t("sugg.ignore")}</button>
                         <button type="button" className="btn-primary py-2" onClick={() => acceptSuggestion(s2.id)}>
-                          <Icon name="check" style={{ fontSize: "18px" }} /> Accept
+                          <Icon name="check" style={{ fontSize: "18px" }} /> {t("sugg.accept")}
                         </button>
                       </div>
                     )}
@@ -528,13 +552,13 @@ export default function Dashboard({
 
             <section className="space-y-sm">
               <div className="flex items-center justify-between">
-                <SectionTitle icon="schedule">Active Schedules</SectionTitle>
+                <SectionTitle icon="schedule">{t("sched.title")}</SectionTitle>
                 <button type="button" className="btn-primary py-2" onClick={openCreateSchedule}>
-                  <Icon name="add" style={{ fontSize: "18px" }} /> Create Schedule
+                  <Icon name="add" style={{ fontSize: "18px" }} /> {t("sched.create")}
                 </button>
               </div>
               {schedules.length === 0 ? (
-                <EmptyCard icon="schedule">No schedules yet</EmptyCard>
+                <EmptyCard icon="schedule">{t("sched.none")}</EmptyCard>
               ) : schedules.map((sc, i) => (
                 <div key={i} className={"glass rounded-2xl p-4 flex items-center gap-4 " + (sc.active ? "" : "opacity-70")}>
                   <span className="icon-orb"><Icon name="schedule" /></span>
@@ -548,14 +572,14 @@ export default function Dashboard({
                       <span className="chip font-data-label">
                         <Icon name="power_off" style={{ fontSize: "14px" }} /> {sc.off_time?.slice(0, 5)}
                       </span>
-                      <span className={"chip " + (sc.source === "ai" ? "chip-indigo" : "")}>{sc.source}</span>
+                      <span className={"chip " + (sc.source === "ai" ? "chip-indigo" : "")}>{t(`sched.source.${sc.source}`)}</span>
                     </div>
                   </div>
                   <div className="flex gap-1">
-                    <button type="button" className="btn-icon" onClick={() => openEditSchedule(sc)} aria-label="Edit schedule" title="Edit schedule">
+                    <button type="button" className="btn-icon" onClick={() => openEditSchedule(sc)} aria-label={t("sched.edit")} title={t("sched.edit")}>
                       <Icon name="edit" style={{ fontSize: "20px" }} />
                     </button>
-                    <button type="button" className="btn-icon hover:text-error" onClick={() => deleteSchedule(sc.id)} aria-label="Delete schedule" title="Delete schedule">
+                    <button type="button" className="btn-icon hover:text-error" onClick={() => deleteSchedule(sc.id)} aria-label={t("sched.delete")} title={t("sched.delete")}>
                       <Icon name="delete" style={{ fontSize: "20px" }} />
                     </button>
                   </div>
@@ -564,17 +588,17 @@ export default function Dashboard({
             </section>
 
             {scheduleModal && (
-              <Modal title={scheduleModal === "create" ? "Create Schedule" : "Edit Schedule"} onClose={() => setScheduleModal(null)}>
+              <Modal title={scheduleModal === "create" ? t("sched.create") : t("sched.edit")} onClose={() => setScheduleModal(null)}>
                 <div className="space-y-4">
                   {scheduleModal === "create" && (
                     <label className="block">
-                      <span className="block mb-1.5 font-label-sm text-label-sm text-on-surface-variant">Device</span>
+                      <span className="block mb-1.5 font-label-sm text-label-sm text-on-surface-variant">{t("sched.device")}</span>
                       <select
                         className="glass-input"
                         value={scheduleForm.monitored_point_id}
                         onChange={(e) => setScheduleForm({ ...scheduleForm, monitored_point_id: e.target.value })}
                       >
-                        <option value="">Select a device...</option>
+                        <option value="">{t("sched.selectDevice")}</option>
                         {scheduleDevices.map((d) => (
                           <option key={d.id} value={d.id}>{d.name} — {d.room}</option>
                         ))}
@@ -583,7 +607,7 @@ export default function Dashboard({
                   )}
                   <div className="grid grid-cols-2 gap-3">
                     <label className="block">
-                      <span className="block mb-1.5 font-label-sm text-label-sm text-on-surface-variant">Turn ON at</span>
+                      <span className="block mb-1.5 font-label-sm text-label-sm text-on-surface-variant">{t("sched.onAt")}</span>
                       <input
                         type="time"
                         className="glass-input font-data-label"
@@ -592,7 +616,7 @@ export default function Dashboard({
                       />
                     </label>
                     <label className="block">
-                      <span className="block mb-1.5 font-label-sm text-label-sm text-on-surface-variant">Turn OFF at</span>
+                      <span className="block mb-1.5 font-label-sm text-label-sm text-on-surface-variant">{t("sched.offAt")}</span>
                       <input
                         type="time"
                         className="glass-input font-data-label"
@@ -603,7 +627,7 @@ export default function Dashboard({
                   </div>
                   {scheduleError && <p className="text-error text-[14px]">{scheduleError}</p>}
                   <button type="button" className="btn-primary w-full py-3" onClick={submitScheduleForm}>
-                    {scheduleModal === "create" ? "Create" : "Save Changes"}
+                    {scheduleModal === "create" ? t("common.create") : t("common.saveChanges")}
                   </button>
                 </div>
               </Modal>

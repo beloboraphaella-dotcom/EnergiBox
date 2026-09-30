@@ -169,11 +169,15 @@ These are open, understood, and deliberately not papered over:
   the sessions in progress; the next complete session resumes the
   learning. Nothing wrong is ever written, but a restart-heavy deployment
   learns more slowly.
-- **Three screens are English-only, in both apps**: alerts, suggestions
-  and the sign-in/onboarding flow. They predate the mockups and were never
-  rebuilt; everything drawn from a mockup is translated, and
-  `backend/tests/test_i18n.py` keeps the two apps' translation files
-  identical.
+- **Messages written by the backend are English only.** Every screen of
+  both apps is translated, English and French, and the sign-in screens
+  carry their own language switch. But the text of an alert or of an
+  advisor suggestion is composed on the server and stored as it was
+  written, so it shows in English whatever the reader chose — as do the
+  error details the API returns (`"User not found"`, and so on). Fixing
+  that means storing a message key and its parameters instead of a
+  sentence. `backend/tests/test_i18n.py` keeps the two apps' translation
+  files identical.
 - **There is no dark theme.** The web app used to carry a light/dark
   toggle that set an attribute nothing read — the mockups' dark variant
   remaps to tokens that are themselves light, so the design system has no

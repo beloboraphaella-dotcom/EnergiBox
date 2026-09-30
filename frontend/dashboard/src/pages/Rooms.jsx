@@ -7,7 +7,7 @@ import { deviceIcon } from "../utils/deviceIcon";
 
 const API = "http://localhost:8000";
 export default function Rooms({ token, homeId, onBack }) {
-  const { t } = useLanguage();
+  const { t, tn } = useLanguage();
   const [rooms, setRooms] = useState([]);
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -73,7 +73,7 @@ export default function Rooms({ token, homeId, onBack }) {
   const submitRoom = async () => {
     const trimmed = roomName.trim();
     if (!trimmed) {
-      setRoomError("Room name is required.");
+      setRoomError(t("rooms.errNameRequired"));
       return;
     }
     const duplicate = rooms.some((r) =>
@@ -81,7 +81,7 @@ export default function Rooms({ token, homeId, onBack }) {
       !(modal !== "add" && r.id === modal.edit.id)
     );
     if (duplicate) {
-      setRoomError(`A room named "${trimmed}" already exists in this home.`);
+      setRoomError(t("onb.errRoomExists", { name: trimmed }));
       return;
     }
     setSaving(true);
@@ -95,25 +95,22 @@ export default function Rooms({ token, homeId, onBack }) {
       await fetchRooms();
       closeModal();
     } catch (err) {
-      setRoomError(err.response?.data?.detail || "Could not save room. Try again.");
+      setRoomError(err.response?.data?.detail || t("rooms.errSave"));
     }
     setSaving(false);
   };
 
   const deleteRoom = async (room) => {
     if (room.device_count > 0) {
-      window.alert(
-        `"${room.name}" has ${room.device_count} device${room.device_count !== 1 ? "s" : ""} in it. ` +
-        `Move or delete ${room.device_count !== 1 ? "them" : "it"} from the Devices tab before deleting this room.`
-      );
+      window.alert(t("rooms.errNotEmpty", { name: room.name, devices: tn("count.device", room.device_count) }));
       return;
     }
-    if (!window.confirm(`Delete "${room.name}"? This cannot be undone.`)) return;
+    if (!window.confirm(t("rooms.confirmDelete", { name: room.name }))) return;
     try {
       await axios.delete(`${API}/rooms/${room.id}`, authHeaders);
       fetchRooms();
     } catch (err) {
-      window.alert(err.response?.data?.detail || "Could not delete room.");
+      window.alert(err.response?.data?.detail || t("rooms.errDelete"));
     }
   };
 
@@ -133,9 +130,9 @@ export default function Rooms({ token, homeId, onBack }) {
             <Icon name="meeting_room" style={{ fontSize: "28px" }} />
           </span>
           <div>
-            <h1 className="font-headline-lg text-headline-lg text-on-surface">{room?.name || "Room"}</h1>
+            <h1 className="font-headline-lg text-headline-lg text-on-surface">{room?.name || t("rooms.fallbackName")}</h1>
             <p className="text-on-surface-variant">
-              {roomDevices.length} device{roomDevices.length !== 1 ? "s" : ""}
+              {tn("count.device", roomDevices.length)}
             </p>
           </div>
         </div>
@@ -168,7 +165,7 @@ export default function Rooms({ token, homeId, onBack }) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="font-body-md text-body-md font-semibold text-on-surface truncate">{d.name}</p>
-                    <span className="chip chip-indigo">{d.type === "socket" ? "Socket" : "Appliance"}</span>
+                    <span className="chip chip-indigo">{d.type === "socket" ? t("devices.socket") : t("devices.appliance")}</span>
                   </div>
                   <p className={"flex items-center gap-1.5 text-[13px] mt-0.5 " + (d.status === "online" ? "text-secondary" : "text-outline")}>
                     <span className={"w-1.5 h-1.5 rounded-full " + (d.status === "online" ? "bg-secondary" : "bg-outline-variant")} />
@@ -181,12 +178,12 @@ export default function Rooms({ token, homeId, onBack }) {
                 <button
                   type="button"
                   onClick={(e) => toggleDevice(e, d)}
-                  title={d.is_on ? "Turn off" : "Turn on"}
+                  title={d.is_on ? t("devices.turnOff") : t("devices.turnOn")}
                   aria-pressed={d.is_on}
                   className={"chip cursor-pointer " + (d.is_on ? "chip-teal" : "chip-red")}
                 >
                   <Icon name="power_settings_new" style={{ fontSize: "14px" }} />
-                  {d.is_on ? "On" : "Off"}
+                  {d.is_on ? t("common.on") : t("common.off")}
                 </button>
               </div>
             ))}
@@ -240,8 +237,8 @@ export default function Rooms({ token, homeId, onBack }) {
                     type="button"
                     className="btn-icon w-8 h-8"
                     onClick={(e) => { e.stopPropagation(); openEdit(room); }}
-                    title="Rename room"
-                    aria-label="Rename room"
+                    title={t("rooms.rename")}
+                    aria-label={t("rooms.rename")}
                   >
                     <Icon name="edit" style={{ fontSize: "18px" }} />
                   </button>
@@ -249,8 +246,8 @@ export default function Rooms({ token, homeId, onBack }) {
                     type="button"
                     className="btn-icon w-8 h-8 hover:text-error"
                     onClick={(e) => { e.stopPropagation(); deleteRoom(room); }}
-                    title="Delete room"
-                    aria-label="Delete room"
+                    title={t("rooms.delete")}
+                    aria-label={t("rooms.delete")}
                   >
                     <Icon name="delete" style={{ fontSize: "18px" }} />
                   </button>
@@ -261,7 +258,7 @@ export default function Rooms({ token, homeId, onBack }) {
                 {room.kw} <span className="font-body-md text-body-md text-outline">kW</span>
               </p>
               <p className="font-label-sm text-label-sm text-on-surface-variant mt-3 pt-3 border-t border-white/70">
-                {room.device_count} Device{room.device_count !== 1 ? "s" : ""}
+                {tn("count.device", room.device_count)}
               </p>
             </div>
           ))}
@@ -269,12 +266,12 @@ export default function Rooms({ token, homeId, onBack }) {
       )}
 
       {(modal === "add" || modal?.edit) && (
-        <Modal title={modal === "add" ? "Add Room" : "Rename Room"} onClose={closeModal}>
+        <Modal title={modal === "add" ? t("rooms.addModal") : t("rooms.renameModal")} onClose={closeModal}>
           <label className="block">
-            <span className="block mb-1.5 font-label-sm text-label-sm text-on-surface-variant">Room Name</span>
+            <span className="block mb-1.5 font-label-sm text-label-sm text-on-surface-variant">{t("onb.roomName")}</span>
             <input
               className="glass-input font-body-md text-body-md"
-              placeholder="e.g. Living Room"
+              placeholder={t("onb.roomNamePh")}
               value={roomName}
               onChange={(e) => setRoomName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submitRoom()}
@@ -283,7 +280,7 @@ export default function Rooms({ token, homeId, onBack }) {
           </label>
           {roomError && <p className="text-error text-[14px] mt-2">{roomError}</p>}
           <button type="button" className="btn-primary w-full py-3 mt-md" onClick={submitRoom} disabled={saving}>
-            {saving ? "Saving..." : modal === "add" ? "Create Room" : "Save Changes"}
+            {saving ? t("common.saving") : modal === "add" ? t("rooms.createRoom") : t("common.saveChanges")}
           </button>
         </Modal>
       )}

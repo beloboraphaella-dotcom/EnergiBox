@@ -26,8 +26,15 @@ export function LanguageProvider({ children }) {
     );
   };
 
+  // "3 rooms" / "1 pièce". French puts 0 and 1 in the singular, English
+  // only 1, so the rule follows the language rather than the number.
+  const tn = (key, count) => {
+    const one = language === "fr" ? count <= 1 : count === 1;
+    return t(`${key}.${one ? "one" : "other"}`, { count });
+  };
+
   return (
-    <LanguageContext.Provider value={{ language, setLanguage, t }}>
+    <LanguageContext.Provider value={{ language, setLanguage, t, tn }}>
       {children}
     </LanguageContext.Provider>
   );

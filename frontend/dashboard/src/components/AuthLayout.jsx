@@ -9,6 +9,7 @@ export default function AuthLayout({ title, subtitle, children, footer, wide = f
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-margin-mobile py-xl font-body-md text-body-md">
       <div className="app-backdrop app-backdrop-hero" aria-hidden="true" />
+      <LanguageToggle />
 
       <div className="flex items-center gap-3 mb-lg text-white">
         <span className="icon-orb w-12 h-12 bg-gradient-to-br from-secondary-fixed to-secondary-fixed-dim text-on-secondary-fixed border-white/60">
@@ -61,5 +62,29 @@ export function HeroError({ children }) {
       <Icon name="error" style={{ fontSize: "18px" }} className="mt-px text-error-container" />
       <span>{children}</span>
     </p>
+  );
+}
+
+/** EN / FR, top right. Without it these screens could only ever show the
+ * default language: the setting lives in Settings, behind sign-in. */
+function LanguageToggle() {
+  const { language, setLanguage } = useLanguage();
+  return (
+    <div className="absolute top-4 right-4 flex gap-1 rounded-full bg-white/10 border border-white/25 p-1">
+      {["fr", "en"].map((code) => (
+        <button
+          key={code}
+          type="button"
+          aria-pressed={language === code}
+          onClick={() => setLanguage(code)}
+          className={
+            "rounded-full px-3 py-1 text-[12px] font-semibold uppercase transition-colors " +
+            (language === code ? "bg-white/90 text-secondary" : "text-white/80 hover:bg-white/15")
+          }
+        >
+          {code}
+        </button>
+      ))}
+    </div>
   );
 }

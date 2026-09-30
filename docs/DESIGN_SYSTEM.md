@@ -87,7 +87,6 @@ extended-runtime state, indigo is informational.
 - **Dark theme.** Still none, as the README says: the design has no dark
   palette. The system is built on CSS variables and tokens, so one would
   slot in as a second backdrop and a second set of fills.
-- **Translation.** Sign-in, sign-up, onboarding, alerts, suggestions,
-  history and admin still carry English strings, and rooms partly does. They were restyled,
-  not rewritten; adding their keys to both translation files is the next
-  step.
+- **Server-written text.** Every screen is translated, but alert and
+  suggestion messages are composed in English by the backend and shown as
+  stored; see the README's known limitations.

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from "react-native";
 import { api } from "../api";
+import { useLanguage } from "../context/LanguageContext";
 import Icon from "../components/Icon";
 import { colors, spacing, type, glass } from "../theme";
 import { Chip, EmptyCard, Orb } from "../components/GlassUI";
@@ -8,6 +9,7 @@ import { Chip, EmptyCard, Orb } from "../components/GlassUI";
 const STATUS_TONE = { accepted: "teal", ignored: null, pending: "amber" };
 
 export default function SuggestionsScreen({ homeId }) {
+  const { t, language } = useLanguage();
   const [suggestions, setSuggestions] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -42,9 +44,9 @@ export default function SuggestionsScreen({ homeId }) {
       contentContainerStyle={styles.pageContent}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.secondary} />}
     >
-      <Text style={styles.title}>AI Suggestions</Text>
+      <Text style={styles.title}>{t("sugg.title")}</Text>
       {suggestions.length === 0 ? (
-        <EmptyCard icon="lightbulb">No suggestions yet</EmptyCard>
+        <EmptyCard icon="lightbulb">{t("sugg.none")}</EmptyCard>
       ) : (
         suggestions.map((s, i) => (
           <View key={i} style={[glass.card, styles.card, s.status === "ignored" && styles.cardMuted]}>
@@ -53,10 +55,12 @@ export default function SuggestionsScreen({ homeId }) {
               <View style={styles.headerText}>
                 <Text style={styles.appliance} numberOfLines={1}>{s.appliance}</Text>
                 <Chip tone="teal" icon="savings" style={styles.savingChip}>
-                  Save {s.estimated_saving_fcfa} FCFA/month
+                  {t("sugg.save", {
+                    amount: Number(s.estimated_saving_fcfa).toLocaleString(language === "fr" ? "fr-FR" : "en-US"),
+                  })}
                 </Chip>
               </View>
-              <Chip tone={STATUS_TONE[s.status]}>{s.status}</Chip>
+              <Chip tone={STATUS_TONE[s.status]}>{t(`sugg.status.${s.status}`)}</Chip>
             </View>
 
             <Text style={styles.suggText}>{s.suggestion}</Text>
@@ -64,11 +68,11 @@ export default function SuggestionsScreen({ homeId }) {
             {s.status === "pending" && (
               <View style={styles.buttons}>
                 <TouchableOpacity style={[glass.ghostButton, styles.flex]} onPress={() => ignore(s.id)} activeOpacity={0.8}>
-                  <Text style={glass.ghostButtonText}>Ignore</Text>
+                  <Text style={glass.ghostButtonText}>{t("sugg.ignore")}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[glass.primaryButton, styles.flex]} onPress={() => accept(s.id)} activeOpacity={0.85}>
                   <Icon name="check" size={18} color="#ffffff" />
-                  <Text style={glass.primaryButtonText}>Accept</Text>
+                  <Text style={glass.primaryButtonText}>{t("sugg.accept")}</Text>
                 </TouchableOpacity>
               </View>
             )}

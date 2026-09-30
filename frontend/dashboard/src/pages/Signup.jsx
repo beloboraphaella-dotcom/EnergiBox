@@ -1,12 +1,14 @@
 import { useState } from "react";
 import axios from "axios";
 import Icon from "../components/Icon";
+import { useLanguage } from "../context/LanguageContext";
 import AuthLayout, { HeroError, HeroField } from "../components/AuthLayout";
 
 const API = "http://localhost:8000";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Signup({ onSignupSuccess, onBackToLogin }) {
+  const { t } = useLanguage();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -18,19 +20,19 @@ export default function Signup({ onSignupSuccess, onBackToLogin }) {
   const handleSignup = async () => {
     setError("");
     if (!name.trim() || !email.trim() || !password) {
-      setError("Please fill in every field");
+      setError(t("auth.errAllFields"));
       return;
     }
     if (!EMAIL_REGEX.test(email.trim())) {
-      setError("Enter a valid email address");
+      setError(t("auth.errEmail"));
       return;
     }
     if (password !== confirmPassword) {
-      setError("Passwords don't match");
+      setError(t("auth.errPasswordMatch"));
       return;
     }
     if (password.length < 6) {
-      setError("Password must be at least 6 characters");
+      setError(t("auth.errPasswordLength"));
       return;
     }
 
@@ -47,7 +49,7 @@ export default function Signup({ onSignupSuccess, onBackToLogin }) {
       });
       onSignupSuccess(loginRes.data.access_token, loginRes.data.user);
     } catch (err) {
-      setError(err.response?.data?.detail || "Could not create account");
+      setError(err.response?.data?.detail || t("auth.errCreate"));
     }
     setLoading(false);
   };
@@ -56,7 +58,7 @@ export default function Signup({ onSignupSuccess, onBackToLogin }) {
     <button
       type="button"
       onClick={() => setShowPass(!showPass)}
-      aria-label={showPass ? "Hide password" : "Show password"}
+      aria-label={showPass ? t("common.hidePassword") : t("common.showPassword")}
       className="btn-icon w-8 h-8 text-white/80 hover:text-white hover:bg-white/15"
     >
       <Icon name={showPass ? "visibility_off" : "visibility"} style={{ fontSize: "20px" }} />
@@ -65,11 +67,11 @@ export default function Signup({ onSignupSuccess, onBackToLogin }) {
 
   return (
     <AuthLayout
-      title="Create Account"
-      subtitle="Start measuring what your home really uses."
+      title={t("auth.signUpTitle")}
+      subtitle={t("auth.signUpSubtitle")}
       footer={
         <button type="button" onClick={onBackToLogin} className="hover:text-white transition-colors">
-          Already have an account? <strong className="text-white">Log in</strong>
+          {t("auth.haveAccount")} <strong className="text-white">{t("auth.logIn")}</strong>
         </button>
       }
     >
@@ -83,7 +85,7 @@ export default function Signup({ onSignupSuccess, onBackToLogin }) {
         <HeroField
           icon="person"
           type="text"
-          placeholder="Full Name"
+          placeholder={t("auth.fullName")}
           autoComplete="name"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -91,7 +93,7 @@ export default function Signup({ onSignupSuccess, onBackToLogin }) {
         <HeroField
           icon="mail"
           type="email"
-          placeholder="Email"
+          placeholder={t("auth.email")}
           autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -99,7 +101,7 @@ export default function Signup({ onSignupSuccess, onBackToLogin }) {
         <HeroField
           icon="lock"
           type={showPass ? "text" : "password"}
-          placeholder="Password"
+          placeholder={t("auth.password")}
           autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -108,7 +110,7 @@ export default function Signup({ onSignupSuccess, onBackToLogin }) {
         <HeroField
           icon="lock_reset"
           type={showPass ? "text" : "password"}
-          placeholder="Confirm Password"
+          placeholder={t("auth.confirmPassword")}
           autoComplete="new-password"
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
@@ -117,7 +119,7 @@ export default function Signup({ onSignupSuccess, onBackToLogin }) {
         <HeroError>{error}</HeroError>
 
         <button type="submit" className="btn-primary w-full py-3 mt-2" disabled={loading}>
-          {loading ? "Creating account…" : "Sign up"}
+          {loading ? t("auth.creatingAccount") : t("auth.signUp")}
         </button>
       </form>
     </AuthLayout>

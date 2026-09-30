@@ -1,6 +1,7 @@
 import { useState } from "react";
 import axios from "axios";
 import Icon from "../components/Icon";
+import { useLanguage } from "../context/LanguageContext";
 import AuthLayout, { HeroError, HeroField } from "../components/AuthLayout";
 
 const API = "http://localhost:8000";
@@ -15,9 +16,10 @@ function normalizeMac(input) {
   return hex.toUpperCase().match(/.{2}/g).join(":");
 }
 
-const STEPS = ["Home", "Rooms", "Appliances", "Done"];
+const STEPS = ["home", "rooms", "appliances", "done"];
 
 export default function Onboarding({ token, onComplete }) {
+  const { t, tn } = useLanguage();
   const [step, setStep] = useState(0);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -36,7 +38,7 @@ export default function Onboarding({ token, onComplete }) {
 
   const createHome = async () => {
     if (!homeName.trim()) {
-      setError("Give your home a name");
+      setError(t("onb.errHomeName"));
       return;
     }
     setSaving(true);
@@ -59,7 +61,7 @@ export default function Onboarding({ token, onComplete }) {
       }
       setStep(1);
     } catch (err) {
-      setError("Could not create home. Try again.");
+      setError(t("onb.errCreateHome"));
     }
     setSaving(false);
   };
@@ -73,7 +75,7 @@ export default function Onboarding({ token, onComplete }) {
     const trimmed = newRoomName.trim();
     if (!trimmed) return;
     if (rooms.some((r) => r.name.toLowerCase() === trimmed.toLowerCase())) {
-      setError(`A room named "${trimmed}" already exists in this home.`);
+      setError(t("onb.errRoomExists", { name: trimmed }));
       return;
     }
     setSaving(true);
@@ -87,7 +89,7 @@ export default function Onboarding({ token, onComplete }) {
       setRooms((r) => [...r, res.data]);
       setNewRoomName("");
     } catch (err) {
-      setError(err.response?.data?.detail || "Could not add room.");
+      setError(err.response?.data?.detail || t("onb.errAddRoom"));
     }
     setSaving(false);
   };
@@ -95,12 +97,12 @@ export default function Onboarding({ token, onComplete }) {
   const addDevice = async () => {
     const { room_id, name, type, mac } = newDevice;
     if (!room_id || !name.trim() || !mac.trim()) {
-      setError("Room, name and MAC address are required.");
+      setError(t("onb.errDeviceFields"));
       return;
     }
     const normalizedMac = normalizeMac(mac.trim());
     if (!normalizedMac) {
-      setError("Enter a valid MAC address — 12 hex digits, e.g. AA:BB:CC:DD:EE:FF.");
+      setError(t("onb.errMac"));
       return;
     }
     setSaving(true);
@@ -114,12 +116,10 @@ export default function Onboarding({ token, onComplete }) {
       setDevices((d) => [...d, res.data]);
       setNewDevice({ room_id: "", name: "", type: "appliance", mac: "" });
     } catch (err) {
-      setError(err.response?.data?.detail || "Could not add device. Check the MAC address.");
+      setError(err.response?.data?.detail || t("onb.errAddDevice"));
     }
     setSaving(false);
   };
-
-  const plural = (n, word) => `${n} ${word}${n !== 1 ? "s" : ""}`;
 
   return (
     <AuthLayout wide>
@@ -139,7 +139,7 @@ export default function Onboarding({ token, onComplete }) {
                 {i < step ? <Icon name="check" style={{ fontSize: "18px" }} /> : i + 1}
               </span>
               <span className={"text-[12px] font-semibold " + (i <= step ? "text-white" : "text-white/55")}>
-                {label}
+                {t(`onb.step.${label}`)}
               </span>
             </div>
             {i < STEPS.length - 1 && (
@@ -152,16 +152,16 @@ export default function Onboarding({ token, onComplete }) {
       {/* STEP 0: Home */}
       {step === 0 && (
         <div className="space-y-4">
-          <StepTitle title="Set up your home" hint="This is the first thing every EnergiBox account needs — you can add more homes later." />
-          <HeroLabel text="Home Name">
-            <HeroField icon="home" placeholder="e.g. My Home" value={homeName} onChange={(e) => setHomeName(e.target.value)} />
+          <StepTitle title={t("onb.home.title")} hint={t("onb.home.hint")} />
+          <HeroLabel text={t("onb.homeName")}>
+            <HeroField icon="home" placeholder={t("onb.homeNamePh")} value={homeName} onChange={(e) => setHomeName(e.target.value)} />
           </HeroLabel>
-          <HeroLabel text="Address (optional)">
-            <HeroField icon="location_on" placeholder="e.g. Yaoundé, Cameroun" value={homeAddress} onChange={(e) => setHomeAddress(e.target.value)} />
+          <HeroLabel text={t("onb.address")}>
+            <HeroField icon="location_on" placeholder={t("onb.addressPh")} value={homeAddress} onChange={(e) => setHomeAddress(e.target.value)} />
           </HeroLabel>
           <HeroError>{error}</HeroError>
           <button type="button" className="btn-primary w-full py-3" onClick={createHome} disabled={saving}>
-            {saving ? "Creating…" : "Continue"}
+            {saving ? t("common.creating") : t("common.continue")}
           </button>
         </div>
       )}
@@ -169,7 +169,7 @@ export default function Onboarding({ token, onComplete }) {
       {/* STEP 1: Rooms */}
       {step === 1 && (
         <div className="space-y-4">
-          <StepTitle title="Add your rooms" hint="Add every room you want to monitor. You need at least one to continue." />
+          <StepTitle title={t("onb.rooms.title")} hint={t("onb.rooms.hint")} />
           {rooms.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {rooms.map((r) => (
@@ -177,26 +177,26 @@ export default function Onboarding({ token, onComplete }) {
               ))}
             </div>
           )}
-          <HeroLabel text="Room Name">
+          <HeroLabel text={t("onb.roomName")}>
             <div className="flex gap-2">
               <div className="flex-1">
                 <HeroField
                   icon="meeting_room"
-                  placeholder="e.g. Living Room"
+                  placeholder={t("onb.roomNamePh")}
                   value={newRoomName}
                   onChange={(e) => setNewRoomName(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && addRoom()}
                 />
               </div>
               <button type="button" className="btn-glass px-4 bg-white/80" onClick={addRoom} disabled={saving || !newRoomName.trim()}>
-                <Icon name="add" style={{ fontSize: "18px" }} /> Add
+                <Icon name="add" style={{ fontSize: "18px" }} /> {t("onb.add")}
               </button>
             </div>
           </HeroLabel>
           <HeroError>{error}</HeroError>
-          <StepNav onBack={goBack}>
+          <StepNav onBack={goBack} label={t("common.back")}>
             <button type="button" className="btn-primary flex-1 py-3" onClick={() => setStep(2)} disabled={rooms.length === 0}>
-              Continue ({plural(rooms.length, "room")})
+              {t("onb.continueRooms", { rooms: tn("count.room", rooms.length) })}
             </button>
           </StepNav>
         </div>
@@ -205,7 +205,7 @@ export default function Onboarding({ token, onComplete }) {
       {/* STEP 2: Appliances */}
       {step === 2 && (
         <div className="space-y-4">
-          <StepTitle title="Add your appliances & sockets" hint="Pair each EnergiBox by its MAC address. You need at least one device to finish setup." />
+          <StepTitle title={t("onb.devices.title")} hint={t("onb.devices.hint")} />
           {devices.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {devices.map((d) => (
@@ -213,20 +213,20 @@ export default function Onboarding({ token, onComplete }) {
               ))}
             </div>
           )}
-          <HeroLabel text="Room">
+          <HeroLabel text={t("onb.room")}>
             <select
               className="glass-input-hero [&>option]:text-on-surface"
               value={newDevice.room_id}
               onChange={(e) => setNewDevice({ ...newDevice, room_id: e.target.value })}
             >
-              <option value="">Select a room...</option>
+              <option value="">{t("onb.selectRoom")}</option>
               {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
           </HeroLabel>
-          <HeroLabel text="Name">
-            <HeroField icon="label" placeholder="e.g. Fridge" value={newDevice.name} onChange={(e) => setNewDevice({ ...newDevice, name: e.target.value })} />
+          <HeroLabel text={t("onb.deviceName")}>
+            <HeroField icon="label" placeholder={t("onb.deviceNamePh")} value={newDevice.name} onChange={(e) => setNewDevice({ ...newDevice, name: e.target.value })} />
           </HeroLabel>
-          <HeroLabel text="Type">
+          <HeroLabel text={t("onb.type")}>
             <div className="grid grid-cols-2 gap-2">
               {["appliance", "socket"].map((type) => (
                 <button
@@ -242,12 +242,12 @@ export default function Onboarding({ token, onComplete }) {
                   }
                 >
                   <Icon name={type === "socket" ? "power" : "kitchen"} style={{ fontSize: "18px" }} />
-                  {type === "appliance" ? "Appliance" : "Socket"}
+                  {type === "appliance" ? t("devices.appliance") : t("devices.socket")}
                 </button>
               ))}
             </div>
           </HeroLabel>
-          <HeroLabel text="EnergiBox MAC Address">
+          <HeroLabel text={t("onb.mac")}>
             <HeroField
               icon="router"
               placeholder="AA:BB:CC:DD:EE:FF"
@@ -258,11 +258,11 @@ export default function Onboarding({ token, onComplete }) {
           </HeroLabel>
           <HeroError>{error}</HeroError>
           <button type="button" className="btn-glass w-full py-3 bg-white/80" onClick={addDevice} disabled={saving}>
-            <Icon name="add_link" style={{ fontSize: "18px" }} /> Pair this device
+            <Icon name="add_link" style={{ fontSize: "18px" }} /> {t("onb.pair")}
           </button>
-          <StepNav onBack={goBack}>
+          <StepNav onBack={goBack} label={t("common.back")}>
             <button type="button" className="btn-primary flex-1 py-3" onClick={() => setStep(3)} disabled={devices.length === 0}>
-              Finish ({plural(devices.length, "device")})
+              {t("onb.finish", { devices: tn("count.device", devices.length) })}
             </button>
           </StepNav>
         </div>
@@ -275,11 +275,15 @@ export default function Onboarding({ token, onComplete }) {
             <Icon name="celebration" style={{ fontSize: "32px" }} />
           </span>
           <StepTitle
-            title="You're all set!"
-            hint={`${homeName} is ready with ${plural(rooms.length, "room")} and ${plural(devices.length, "device")}.`}
+            title={t("onb.done.title")}
+            hint={t("onb.done.hint", {
+              home: homeName,
+              rooms: tn("count.room", rooms.length),
+              devices: tn("count.device", devices.length),
+            })}
           />
           <button type="button" className="btn-primary w-full py-3" onClick={onComplete}>
-            Go to Dashboard
+            {t("onb.goDashboard")}
           </button>
         </div>
       )}
@@ -314,11 +318,11 @@ function HeroChip({ icon, children }) {
   );
 }
 
-function StepNav({ onBack, children }) {
+function StepNav({ onBack, label, children }) {
   return (
     <div className="flex gap-2 pt-2">
       <button type="button" className="btn-glass px-4 py-3 bg-white/15 text-white border-white/30 hover:bg-white/25" onClick={onBack}>
-        <Icon name="arrow_back" style={{ fontSize: "18px" }} /> Back
+        <Icon name="arrow_back" style={{ fontSize: "18px" }} /> {label}
       </button>
       {children}
     </div>

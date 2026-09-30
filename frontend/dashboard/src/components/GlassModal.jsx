@@ -1,8 +1,10 @@
 import Icon from "./Icon";
+import { useLanguage } from "../context/LanguageContext";
 
 /** The one modal of the app: a bottom sheet on phones, a centred glass
  * dialog from `sm` up, over a blurred scrim. Clicking the scrim closes. */
 export default function GlassModal({ title, onClose, children }) {
+  const { t } = useLanguage();
   return (
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center glass-scrim p-0 sm:p-4"
@@ -19,7 +21,7 @@ export default function GlassModal({ title, onClose, children }) {
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t("common.close")}
             className="p-2 rounded-full text-on-surface-variant hover:bg-white/60 transition-colors active:scale-95 duration-150"
           >
             <Icon name="close" style={{ fontSize: "20px" }} />
