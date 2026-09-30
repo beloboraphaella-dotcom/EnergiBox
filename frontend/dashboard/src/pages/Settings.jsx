@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import Icon from "../components/Icon";
+import Switch from "../components/Switch";
+import { reducedTransparency, setReducedTransparency } from "../utils/preferences";
+import {
+  disableNotifications, enableNotifications, notificationsEnabled, notificationsSupported,
+} from "../utils/notifications";
 import { useLanguage } from "../context/LanguageContext";
 
 const API = "http://localhost:8000";
@@ -435,6 +440,7 @@ export default function Settings({ token, user, homeId, onLogout, onUpdateUser }
                 ))}
               </div>
             </div>
+            <DisplayPreferences labelClass={labelClass} />
           </div>
 
           <div className="mt-8 pt-6 border-t border-white/70 flex justify-end">
@@ -454,6 +460,57 @@ export default function Settings({ token, user, homeId, onLogout, onUpdateUser }
         <p className="font-label-sm text-label-sm text-on-surface-variant">
           {t("settings.version", { version: "1.0" })}
         </p>
+      </div>
+    </div>
+  );
+}
+
+/** Alert notifications while the tab is in the background, and the
+ * opaque display for bright light. Both stay on this browser. */
+function DisplayPreferences({ labelClass }) {
+  const { t } = useLanguage();
+  const [notify, setNotify] = useState(notificationsEnabled);
+  const [denied, setDenied] = useState(false);
+  const [opaque, setOpaque] = useState(reducedTransparency);
+
+  const toggleNotify = async (on) => {
+    if (!on) {
+      disableNotifications();
+      setNotify(false);
+      return;
+    }
+    const result = await enableNotifications();
+    setNotify(result === "granted");
+    setDenied(result === "denied");
+  };
+
+  return (
+    <div className="space-y-4">
+      <span className={labelClass}>{t("settings.display")}</span>
+      {notificationsSupported() && (
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-on-surface">{t("settings.notify")}</p>
+            <p className="text-[13px] text-on-surface-variant">
+              {denied ? t("settings.notifyDenied") : t("settings.notifyHint")}
+            </p>
+          </div>
+          <Switch checked={notify} onChange={toggleNotify} label={t("settings.notify")} />
+        </div>
+      )}
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-on-surface">{t("settings.opaque")}</p>
+          <p className="text-[13px] text-on-surface-variant">{t("settings.opaqueHint")}</p>
+        </div>
+        <Switch
+          checked={opaque}
+          onChange={(on) => {
+            setReducedTransparency(on);
+            setOpaque(on);
+          }}
+          label={t("settings.opaque")}
+        />
       </div>
     </div>
   );

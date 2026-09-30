@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS homes (
     user_id    INT          NOT NULL,
     name       VARCHAR(120) NOT NULL,
     address    VARCHAR(255) NULL,
+    -- Spending target for a calendar month; see migrations/005_budget_and_push.sql.
+    monthly_budget_fcfa INT NULL,
     created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_homes_user (user_id),
     CONSTRAINT fk_homes_user FOREIGN KEY (user_id) REFERENCES users (id)
@@ -145,6 +147,21 @@ CREATE TABLE IF NOT EXISTS ai_suggestions (
     KEY idx_suggestions_point_status (monitored_point_id, status),
     KEY idx_suggestions_point_kind_status (monitored_point_id, kind, status),
     CONSTRAINT fk_suggestions_point FOREIGN KEY (monitored_point_id) REFERENCES monitored_points (id)
+) ENGINE=InnoDB;
+
+-- Phones to notify of new alerts (Expo push tokens); see push.py and
+-- migrations/005_budget_and_push.sql.
+CREATE TABLE IF NOT EXISTS push_tokens (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    user_id    INT          NOT NULL,
+    token      VARCHAR(255) NOT NULL,
+    platform   VARCHAR(20)  NOT NULL,
+    language   VARCHAR(5)   NOT NULL DEFAULT 'en',
+    created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_push_tokens_token (token),
+    KEY idx_push_tokens_user (user_id),
+    CONSTRAINT fk_push_tokens_user FOREIGN KEY (user_id) REFERENCES users (id)
+        ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- ── Two things worth knowing about this schema ─────────────────────────

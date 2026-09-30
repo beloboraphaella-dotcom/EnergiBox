@@ -1,8 +1,14 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import Icon from "../components/Icon";
+import Modal from "../components/GlassModal";
+import Skeleton from "../components/Skeleton";
+import Switch from "../components/Switch";
+import { useToast } from "../components/Toast";
 import { deviceIcon } from "../utils/deviceIcon";
 import { useLanguage } from "../context/LanguageContext";
+import { useLiveRefresh } from "../live/LiveContext";
+import { useDeviceToggle } from "../live/useDeviceToggle";
 
 const API = "http://localhost:8000";
 
@@ -15,49 +21,89 @@ const API = "http://localhost:8000";
 const GAUGE_RADIUS = 45;
 const GAUGE_CIRCUMFERENCE = 2 * Math.PI * GAUGE_RADIUS; // 282.7, as in the mockup
 
-function formatWatts(watts) {
-  if (watts >= 1000) return { value: (watts / 1000).toFixed(1), unit: "kW" };
-  return { value: Math.round(watts).toString(), unit: "W" };
+function formatWatts(watts, locale) {
+  if (watts >= 1000) {
+    return { value: (watts / 1000).toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }), unit: "kW" };
+  }
+  return { value: Math.round(watts).toLocaleString(locale), unit: "W" };
 }
 
-export default function Overview({ token, homeId, onOpenDevices }) {
-  const { t, language } = useLanguage();
+export default function Overview({ token, homeId, onOpenDevices, onOpenDevice }) {
+  const { t, tn, locale } = useLanguage();
+  const toast = useToast();
   const [overview, setOverview] = useState(null);
   const [devices, setDevices] = useState([]);
   const [hourly, setHourly] = useState(null);
   const [range, setRange] = useState("today");
+  const [budgetOpen, setBudgetOpen] = useState(false);
+  const [allOffOpen, setAllOffOpen] = useState(false);
+  const [switchingAll, setSwitchingAll] = useState(false);
 
-  const locale = language === "fr" ? "fr-FR" : "en-US";
   const auth = { headers: { Authorization: `Bearer ${token}` } };
 
-  useEffect(() => {
+  const setDeviceState = useCallback((mac, isOn) => {
+    setDevices((list) => list.map((d) => (d.mac === mac ? { ...d, is_on: isOn } : d)));
+  }, []);
+  const { toggle, apply, busy } = useDeviceToggle(token, setDeviceState);
+
+  const load = async () => {
     if (!homeId) return;
-    let cancelled = false;
+    const results = await Promise.allSettled([
+      axios.get(`${API}/stats/overview?home_id=${homeId}`, auth),
+      axios.get(`${API}/devices?home_id=${homeId}`, auth),
+      axios.get(`${API}/history/hourly?home_id=${homeId}`, auth),
+    ]);
+    // Each card degrades on its own — one failing request must not blank
+    // the whole dashboard.
+    if (results[0].status === "fulfilled") setOverview(results[0].value.data);
+    if (results[1].status === "fulfilled") setDevices(apply(results[1].value.data));
+    if (results[2].status === "fulfilled") setHourly(results[2].value.data);
+  };
 
-    const load = async () => {
-      const results = await Promise.allSettled([
-        axios.get(`${API}/stats/overview?home_id=${homeId}`, auth),
-        axios.get(`${API}/devices?home_id=${homeId}`, auth),
-        axios.get(`${API}/history/hourly?home_id=${homeId}`, auth),
-      ]);
-      if (cancelled) return;
-      // Each card degrades on its own — one failing request must not blank
-      // the whole dashboard.
-      if (results[0].status === "fulfilled") setOverview(results[0].value.data);
-      if (results[1].status === "fulfilled") setDevices(results[1].value.data);
-      if (results[2].status === "fulfilled") setHourly(results[2].value.data);
-    };
-
+  useEffect(() => {
+    setOverview(null);
     load();
-    const interval = setInterval(load, 3000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [homeId, token]);
+  }, [homeId, token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useLiveRefresh(load, { topics: ["devices", "alerts"], interval: 3000 });
+
+  const switchAllOff = async () => {
+    setSwitchingAll(true);
+    try {
+      const res = await axios.post(`${API}/homes/${homeId}/all-off`, null, auth);
+      const switched = res.data.switched || [];
+      setDevices((list) => list.map((d) => (switched.includes(d.mac) ? { ...d, is_on: false } : d)));
+      toast.show(tn("allOff.done", switched.length), { tone: "success" });
+      if (res.data.failed?.length) toast.show(tn("allOff.partial", res.data.failed.length), { tone: "error" });
+    } catch (err) {
+      toast.show(err.response?.data?.detail || t("allOff.error"), { tone: "error" });
+    }
+    setSwitchingAll(false);
+    setAllOffOpen(false);
+    load();
+  };
+
+  if (!overview && devices.length === 0) {
+    return (
+      <div role="status" aria-label={t("common.loading")} className="max-w-7xl mx-auto py-lg space-y-lg">
+        <div className="space-y-2">
+          <Skeleton className="h-9 w-64" />
+          <Skeleton className="h-5 w-80 max-w-full" />
+        </div>
+        <Skeleton className="h-36" />
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-sm">
+          <Skeleton className="md:col-span-4 h-64" />
+          <div className="md:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-sm">
+            {[0, 1].map((i) => <Skeleton key={i} className="h-64" />)}
+          </div>
+        </div>
+        <Skeleton className="h-72" />
+      </div>
+    );
+  }
 
   const liveWatts = devices.reduce((sum, d) => sum + (d.watts || 0), 0);
-  const live = formatWatts(liveWatts);
+  const live = formatWatts(liveWatts, locale);
 
   // The mockup's gauge has no stated maximum. Scaling against today's peak
   // makes it read as "current draw against the busiest the house has been
@@ -70,6 +116,7 @@ export default function Overview({ token, homeId, onOpenDevices }) {
   const changeVsYesterday = overview?.today?.change_vs_yesterday ?? 0;
   const estimatedFcfa = overview?.month?.estimated_fcfa ?? 0;
   const projectedFcfa = overview?.month?.projected_fcfa ?? 0;
+  const budgetFcfa = overview?.month?.budget_fcfa ?? null;
   const onlineCount = overview?.devices?.online ?? 0;
 
   // The household's own busiest hour, from today's readings. Distinct
@@ -79,6 +126,7 @@ export default function Overview({ token, homeId, onOpenDevices }) {
   const peakHourWatts = hourly?.max_watts ?? 0;
 
   const activeDevices = devices.slice(0, 8);
+  const onDevices = devices.filter((d) => d.is_on);
 
   return (
     <div className="max-w-7xl mx-auto py-lg space-y-lg">
@@ -105,6 +153,15 @@ export default function Overview({ token, homeId, onOpenDevices }) {
         </div>
       </div>
 
+      {/* Money first: what the month costs, where it is heading, and how
+          that compares with the household's own budget. */}
+      <BudgetCard
+        estimated={estimatedFcfa}
+        projected={projectedFcfa}
+        budget={budgetFcfa}
+        onEdit={() => setBudgetOpen(true)}
+      />
+
       {/* Hero: bento grid */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-sm">
         {/* Real-time consumption gauge */}
@@ -116,7 +173,7 @@ export default function Overview({ token, homeId, onOpenDevices }) {
             </span>
           </div>
           <div className="relative w-48 h-48 mt-4">
-            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100" aria-hidden="true">
               <circle cx="50" cy="50" fill="none" r={GAUGE_RADIUS} stroke="rgba(255,255,255,0.75)" strokeWidth="8" />
               <defs>
                 <linearGradient id="gaugeGradient" x1="0" y1="0" x2="1" y2="1">
@@ -149,7 +206,7 @@ export default function Overview({ token, homeId, onOpenDevices }) {
         </div>
 
         {/* Summary cards */}
-        <div className="md:col-span-8 grid grid-cols-1 sm:grid-cols-3 gap-sm">
+        <div className="md:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-sm">
           {/* Today's usage */}
           <div className="glass rounded-2xl p-md flex flex-col justify-between">
             <div className="flex justify-between items-start mb-4">
@@ -170,29 +227,8 @@ export default function Overview({ token, homeId, onOpenDevices }) {
                 />
                 <span>
                   {changeVsYesterday > 0 ? "+" : ""}
-                  {changeVsYesterday}% {t("overview.vsYesterday")}
+                  {changeVsYesterday.toLocaleString(locale)}% {t("overview.vsYesterday")}
                 </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Estimated cost */}
-          <div className="glass-dark rounded-2xl p-md flex flex-col justify-between relative overflow-hidden">
-            <div className="absolute -right-6 -top-6 w-28 h-28 bg-secondary-fixed/25 rounded-full blur-2xl" />
-            <div className="flex justify-between items-start mb-4 relative z-10">
-              <span className="font-data-label text-data-label text-primary-fixed-dim uppercase">
-                {t("overview.estCost")}
-              </span>
-              <Icon name="payments" className="text-secondary-fixed" />
-            </div>
-            <div className="relative z-10">
-              <div className="font-headline-lg text-headline-lg text-inverse-on-surface">
-                {estimatedFcfa.toLocaleString(locale)}{" "}
-                <span className="font-body-md text-body-md text-primary-fixed-dim">FCFA</span>
-              </div>
-              <div className="mt-2 text-sm text-primary-fixed-dim">
-                {t("overview.projected")}: {projectedFcfa.toLocaleString(locale)} FCFA/
-                {t("overview.perMonth")}
               </div>
             </div>
           </div>
@@ -217,8 +253,8 @@ export default function Overview({ token, homeId, onOpenDevices }) {
                   {peakHour === null
                     ? t("overview.peakNoneHint")
                     : t("overview.peakDraw", {
-                        watts: formatWatts(peakHourWatts).value,
-                        unit: formatWatts(peakHourWatts).unit,
+                        watts: formatWatts(peakHourWatts, locale).value,
+                        unit: formatWatts(peakHourWatts, locale).unit,
                       })}
                 </span>
               </div>
@@ -232,17 +268,25 @@ export default function Overview({ token, homeId, onOpenDevices }) {
 
       {/* Active devices */}
       <div>
-        <div className="flex justify-between items-center mb-4">
+        <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
           <h3 className="font-headline-md text-headline-md text-on-surface">
             {t("overview.activeDevices")}
           </h3>
-          <button
-            type="button"
-            onClick={onOpenDevices}
-            className="font-label-sm text-label-sm text-secondary hover:underline"
-          >
-            {t("overview.viewAll")}
-          </button>
+          <div className="flex items-center gap-2">
+            {onDevices.length > 0 && (
+              <button type="button" onClick={() => setAllOffOpen(true)} className="btn-glass py-2">
+                <Icon name="power_settings_new" style={{ fontSize: "18px" }} />
+                {t("allOff.button")}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onOpenDevices}
+              className="font-label-sm text-label-sm text-secondary hover:underline px-2 py-2"
+            >
+              {t("overview.viewAll")}
+            </button>
+          </div>
         </div>
 
         {activeDevices.length === 0 ? (
@@ -252,14 +296,22 @@ export default function Overview({ token, homeId, onOpenDevices }) {
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-sm">
             {activeDevices.map((device) => {
-              const draw = formatWatts(device.watts || 0);
+              const draw = formatWatts(device.watts || 0, locale);
               return (
-                <button
+                <div
                   key={device.id}
-                  type="button"
-                  onClick={onOpenDevices}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onOpenDevice?.(device.mac)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onOpenDevice?.(device.mac);
+                    }
+                  }}
+                  aria-label={t("overview.openDevice", { name: device.name })}
                   className={
-                    "glass glass-hover rounded-2xl p-4 flex flex-col justify-between h-32 text-left cursor-pointer group " +
+                    "glass glass-hover rounded-2xl p-4 flex flex-col justify-between h-32 text-left cursor-pointer group focus-visible:outline-2 focus-visible:outline-secondary " +
                     (device.is_on ? "" : "opacity-70")
                   }
                 >
@@ -267,19 +319,12 @@ export default function Overview({ token, homeId, onOpenDevices }) {
                     <span className={"icon-orb w-9 h-9 " + (device.is_on ? "" : "text-outline shadow-none")}>
                       <Icon name={deviceIcon(device.name, device.type)} style={{ fontSize: "20px" }} />
                     </span>
-                    <div
-                      className={
-                        "w-8 h-4 rounded-full relative " +
-                        (device.is_on ? "bg-secondary" : "bg-outline-variant/50")
-                      }
-                    >
-                      <div
-                        className={
-                          "w-3 h-3 bg-white rounded-full absolute top-0.5 shadow-sm transition-all " +
-                          (device.is_on ? "right-0.5" : "left-0.5")
-                        }
-                      />
-                    </div>
+                    <Switch
+                      checked={device.is_on}
+                      disabled={busy[device.mac]}
+                      onChange={() => toggle(device)}
+                      label={t(device.is_on ? "devices.turnOffNamed" : "devices.turnOnNamed", { name: device.name })}
+                    />
                   </div>
                   <div>
                     <div className="font-body-md text-body-md text-on-surface font-medium truncate">
@@ -294,13 +339,207 @@ export default function Overview({ token, homeId, onOpenDevices }) {
                       {device.is_on ? `${draw.value} ${draw.unit}` : t("overview.off")}
                     </div>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {budgetOpen && (
+        <BudgetModal
+          token={token}
+          homeId={homeId}
+          current={budgetFcfa}
+          projected={projectedFcfa}
+          onClose={() => setBudgetOpen(false)}
+          onSaved={() => {
+            setBudgetOpen(false);
+            load();
+          }}
+        />
+      )}
+
+      {allOffOpen && (
+        <Modal title={t("allOff.title")} onClose={() => setAllOffOpen(false)}>
+          <p className="text-on-surface-variant mb-3">{tn("allOff.confirm", onDevices.length)}</p>
+          <ul className="flex flex-wrap gap-2 mb-5">
+            {onDevices.map((d) => (
+              <li key={d.mac} className="chip chip-teal">{d.name}</li>
+            ))}
+          </ul>
+          <p className="text-[14px] text-outline mb-5">{t("allOff.hint")}</p>
+          <div className="flex gap-3">
+            <button type="button" className="btn-glass flex-1 py-3" onClick={() => setAllOffOpen(false)}>
+              {t("common.cancel")}
+            </button>
+            <button type="button" className="btn-primary flex-1 py-3" onClick={switchAllOff} disabled={switchingAll}>
+              <Icon name="power_settings_new" style={{ fontSize: "18px" }} />
+              {switchingAll ? t("allOff.working") : t("allOff.button")}
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
+  );
+}
+
+/** The month in money: spent so far, the projection at the current pace,
+ * and — once the household has set one — a bar against their budget. */
+function BudgetCard({ estimated, projected, budget, onEdit }) {
+  const { t, locale } = useLanguage();
+  const money = (v) => Math.round(v).toLocaleString(locale);
+  const ratio = budget ? Math.min(estimated / budget, 1) : 0;
+  const projectedRatio = budget ? Math.min(projected / budget, 1) : 0;
+  const over = budget ? projected - budget : 0;
+  const tone = !budget ? null : over > 0 ? "over" : projected > budget * 0.9 ? "near" : "ok";
+
+  return (
+    <div className="glass-dark rounded-2xl p-md relative overflow-hidden">
+      <div className="absolute -right-10 -top-10 w-40 h-40 bg-secondary-fixed/25 rounded-full blur-2xl" />
+      <div className="relative z-10 grid gap-md md:grid-cols-[1fr_1.4fr] md:items-center">
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Icon name="payments" className="text-secondary-fixed" />
+            <span className="font-data-label text-data-label text-primary-fixed-dim uppercase">
+              {t("budget.thisMonth")}
+            </span>
+          </div>
+          <div className="font-display-metrics text-[40px] leading-[48px] text-inverse-on-surface">
+            {money(estimated)} <span className="font-body-md text-body-md text-primary-fixed-dim">FCFA</span>
+          </div>
+          <p className="mt-1 text-[15px] text-primary-fixed-dim">
+            {t("budget.projection", { amount: money(projected) })}
+          </p>
+        </div>
+
+        <div>
+          {budget ? (
+            <>
+              <div className="flex justify-between items-baseline mb-2 gap-3">
+                <span className="font-label-sm text-label-sm text-inverse-on-surface">
+                  {t("budget.of", { amount: money(budget) })}
+                </span>
+                <button type="button" onClick={onEdit} className="font-label-sm text-label-sm text-secondary-fixed hover:underline py-1">
+                  {t("budget.edit")}
+                </button>
+              </div>
+              <div
+                className="h-3 rounded-full bg-white/15 overflow-hidden relative"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={budget}
+                aria-valuenow={Math.round(estimated)}
+                aria-label={t("budget.of", { amount: money(budget) })}
+              >
+                <div className="absolute inset-y-0 left-0 bg-white/25 rounded-full" style={{ width: `${projectedRatio * 100}%` }} />
+                <div
+                  className={
+                    "absolute inset-y-0 left-0 rounded-full " +
+                    (tone === "over" ? "bg-[#ff8a80]" : tone === "near" ? "bg-[#ffcc80]" : "bg-secondary-fixed")
+                  }
+                  style={{ width: `${ratio * 100}%` }}
+                />
+              </div>
+              <p className={"mt-2 text-[14px] " + (tone === "over" ? "text-[#ffb4ab]" : tone === "near" ? "text-[#ffddb0]" : "text-primary-fixed-dim")}>
+                {tone === "over"
+                  ? t("budget.over", { amount: money(over) })
+                  : t("budget.left", { amount: money(Math.max(budget - estimated, 0)) })}
+              </p>
+            </>
+          ) : (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <p className="text-[15px] text-primary-fixed-dim flex-1">{t("budget.none")}</p>
+              <button type="button" onClick={onEdit} className="btn-glass py-2 bg-white/90">
+                <Icon name="savings" style={{ fontSize: "18px" }} />
+                {t("budget.set")}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BudgetModal({ token, homeId, current, projected, onClose, onSaved }) {
+  const { t, locale } = useLanguage();
+  const [value, setValue] = useState(current ? String(current) : "");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  // Round figures a household is likely to pick, around the projection.
+  const base = Math.max(5000, Math.ceil((projected || 10000) / 5000) * 5000);
+  const suggestions = [base, base + 5000, base + 10000];
+
+  const save = async (amount) => {
+    if (amount !== 0 && (!Number.isFinite(amount) || amount < 0)) {
+      setError(t("budget.errAmount"));
+      return;
+    }
+    setSaving(true);
+    try {
+      await axios.put(`${API}/homes/${homeId}/budget?amount=${amount}`, null, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      onSaved();
+    } catch (err) {
+      setError(err.response?.data?.detail || t("budget.errSave"));
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title={t("budget.title")} onClose={onClose}>
+      <p className="text-on-surface-variant mb-4">{t("budget.intro")}</p>
+      <div className="flex flex-wrap gap-2 mb-4">
+        {suggestions.map((amount) => (
+          <button
+            key={amount}
+            type="button"
+            onClick={() => setValue(String(amount))}
+            aria-pressed={value === String(amount)}
+            className={
+              "px-3 py-2 rounded-full font-data-label text-[14px] " +
+              (value === String(amount) ? "bg-white/90 text-secondary ring-1 ring-secondary/40" : "glass-subtle text-on-surface-variant")
+            }
+          >
+            {amount.toLocaleString(locale)} FCFA
+          </button>
+        ))}
+      </div>
+      <label className="block mb-4">
+        <span className="block mb-1.5 font-label-sm text-label-sm text-on-surface-variant">{t("budget.amount")}</span>
+        <div className="relative">
+          <input
+            type="number"
+            inputMode="numeric"
+            min="0"
+            step="500"
+            className="glass-input pr-16 font-data-label"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            autoFocus
+          />
+          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-outline font-label-sm">FCFA</span>
+        </div>
+      </label>
+      {error && <p className="text-error text-[14px] mb-3">{error}</p>}
+      <div className="flex gap-3">
+        {current ? (
+          <button type="button" className="btn-glass flex-1 py-3" onClick={() => save(0)} disabled={saving}>
+            {t("budget.remove")}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="btn-primary flex-1 py-3"
+          onClick={() => save(Math.round(Number(value)))}
+          disabled={saving || !value}
+        >
+          {saving ? t("common.saving") : t("common.save")}
+        </button>
+      </div>
+    </Modal>
   );
 }
 

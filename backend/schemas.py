@@ -70,3 +70,18 @@ class AdminCreateUserRequest(_EmailModel):
 
 class AdminResetPasswordRequest(BaseModel):
     new_password: str = NewPassword
+
+
+class PushTokenRequest(BaseModel):
+    """A phone's Expo push token, sent by the mobile app after sign-in."""
+
+    token: str = Field(min_length=10, max_length=255)
+    platform: str = Field(pattern=r"^(ios|android)$")
+    language: str = Field(default="en", pattern=r"^(en|fr)$")
+
+    @field_validator("token")
+    @classmethod
+    def expo_token(cls, value):
+        if not value.startswith(("ExponentPushToken[", "ExpoPushToken[")):
+            raise ValueError("Not an Expo push token")
+        return value

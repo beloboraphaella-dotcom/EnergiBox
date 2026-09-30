@@ -129,6 +129,27 @@
     .glass-dark { background: #131b2e; }
     .glass-hero { background: rgba(15, 60, 66, 0.96); }
   }
+  /* The same, chosen by hand in Settings: the OS setting above exists on
+     few systems, and bright sunlight calls for it on any of them. */
+  html.reduce-transparency :is(.glass, .glass-strong, .glass-subtle, .glass-dark, .glass-hero) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  html.reduce-transparency .glass { background: rgba(255, 255, 255, 0.95); }
+  html.reduce-transparency .glass-strong { background: #ffffff; }
+  html.reduce-transparency .glass-subtle { background: rgba(255, 255, 255, 0.88); }
+  html.reduce-transparency .glass-dark { background: #131b2e; }
+  html.reduce-transparency .glass-hero { background: rgba(15, 60, 66, 0.96); }
+  html.reduce-transparency .app-backdrop { filter: saturate(0.35) brightness(1.06); }
+
+  /* Loading placeholders, in the shape of the content to come. */
+  .skeleton {
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0.8) 50%, rgba(255, 255, 255, 0.45) 100%);
+    background-size: 200% 100%;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    border-radius: 1rem;
+    animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  }
 
   /* Interactive glass: a card you can click lifts slightly. */
   .glass-hover {
@@ -382,4 +403,22 @@
     transform: scale(0.95);
     box-shadow: 0 0 0 0 rgba(0, 106, 97, 0);
   }
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* Toasts slide up from the bottom edge. */
+.toast-in {
+  animation: toast-in 0.22s ease-out;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton, .toast-in, .pulse-dot { animation: none; }
 }

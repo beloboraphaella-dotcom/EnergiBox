@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Icon from "./Icon";
 import { useLanguage } from "../context/LanguageContext";
+import ConnectionBanner from "./ConnectionBanner";
 
 /** The navigation shell shared by every screen in the mockups: a fixed
  * 256px sidebar from `md` up, a fixed top bar, and a bottom tab bar below
@@ -101,6 +102,7 @@ export default function AppShell({
           mainClassName
         }
       >
+        <ConnectionBanner />
         {children}
       </main>
 

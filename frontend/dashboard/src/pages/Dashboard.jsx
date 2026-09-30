@@ -13,6 +13,9 @@ import AppShell from "../components/AppShell";
 import Icon from "../components/Icon";
 import Modal from "../components/GlassModal";
 import Overview from "./Overview";
+import Skeleton from "../components/Skeleton";
+import { useLiveRefresh } from "../live/LiveContext";
+import { SCHEDULE_PRESETS } from "../utils/schedulePresets";
 
 const API = "http://localhost:8000";
 // Appliance series. Distinct hues that sit with the teal brand on glass;
@@ -77,12 +80,13 @@ export default function Dashboard({
     Number(value ?? 0).toLocaleString(locale, { maximumFractionDigits: digits });
   const isAdmin = user?.role === "admin";
   const [activeTab, setTab] = useState(isAdmin ? "admin" : "home");
-  const [dashboard, setDashboard] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [schedules, setSchedules] = useState([]);
-  const [overviewData, setOverviewData] = useState(null);
-  const [roomsData, setRoomsData] = useState([]);
+  const [alertsLoaded, setAlertsLoaded] = useState(false);
+  // A device to open when the Devices tab is next shown (from a card on
+  // the dashboard), so a tap lands on that device and not on the list.
+  const [deviceToOpen, setDeviceToOpen] = useState(null);
   const [showRooms, setShowRooms] = useState(false);
 
   // History state
@@ -103,19 +107,12 @@ export default function Dashboard({
   const authHeaders = { headers: { Authorization: `Bearer ${token}` } };
   const hid = () => `home_id=${activeHomeId}`;
 
-  const fetchDashboard = async () => {
-    if (!activeHomeId) return;
-    try {
-      const res = await axios.get(`${API}/dashboard?${hid()}`, authHeaders);
-      setDashboard(res.data);
-    } catch (err) {}
-  };
-
   const fetchAlerts = async () => {
     if (!activeHomeId) return;
     try {
       const res = await axios.get(`${API}/alerts?${hid()}`, authHeaders);
       setAlerts(res.data);
+      setAlertsLoaded(true);
     } catch (err) {}
   };
 
@@ -124,18 +121,6 @@ export default function Dashboard({
     try {
       const res = await axios.get(`${API}/suggestions?${hid()}`, authHeaders);
       setSuggestions(res.data);
-    } catch (err) {}
-  };
-
-  const fetchOverview = async () => {
-    if (!activeHomeId) return;
-    try {
-      const [overRes, roomRes] = await Promise.all([
-        axios.get(`${API}/stats/overview?${hid()}`, authHeaders),
-        axios.get(`${API}/rooms/consumption?${hid()}`, authHeaders)
-      ]);
-      setOverviewData(overRes.data);
-      setRoomsData(roomRes.data);
     } catch (err) {}
   };
 
@@ -189,9 +174,11 @@ export default function Dashboard({
     fetchSchedules();
   };
 
-  const openCreateSchedule = async () => {
+  /** `pointId` preselects the device, when the schedule is offered from a
+   * suggestion about it. */
+  const openCreateSchedule = async (pointId = "") => {
     setScheduleError("");
-    setScheduleForm({ monitored_point_id: "", on_time: "22:00", off_time: "05:00" });
+    setScheduleForm({ monitored_point_id: pointId ? String(pointId) : "", on_time: "22:00", off_time: "05:00" });
     try {
       const res = await axios.get(`${API}/devices?${hid()}`, authHeaders);
       setScheduleDevices(res.data);
@@ -230,18 +217,16 @@ export default function Dashboard({
     }
   };
 
-  const controlDevice = async (mac, command) => {
-    await axios.post(`${API}/control/${mac}?command=${command}`, null, authHeaders);
-    setTimeout(fetchDashboard, 500);
-  };
-
-  useEffect(() => {
-    if (isAdmin) return; // admins never load household consumption data
-    fetchDashboard();
-    fetchOverview();
-    const interval = setInterval(fetchDashboard, 2000);
-    return () => clearInterval(interval);
-  }, [isAdmin, activeHomeId]);
+  // This used to poll /dashboard every two seconds on every tab, for
+  // figures no screen displayed any more. Only the alerts tab refreshes
+  // here now, and only when told something changed.
+  useLiveRefresh(
+    () => {
+      fetchAlerts();
+      fetchSuggestions();
+    },
+    { topics: ["alerts", "suggestions"], interval: 15000, enabled: !isAdmin && activeTab === "alerts" }
+  );
 
   useEffect(() => {
     if (activeTab === "alerts") {
@@ -292,16 +277,6 @@ export default function Dashboard({
     return "day";
   };
 
-  const navTabs = isAdmin
-    ? [{ id: "admin", icon: "🛡", label: t("nav.admin") }]
-    : [
-        { id: "home",    icon: "⚡", label: t("nav.home") },
-        { id: "devices", icon: "🔌", label: t("nav.devices") },
-        { id: "history", icon: "📊", label: t("nav.history") },
-        { id: "alerts",  icon: "🔔", label: t("nav.alerts") },
-        { id: "profile", icon: "👤", label: t("nav.profile") },
-      ];
-
   // Sidebar items. The mockups ship four; the app has more screens than
   // that, so the extra ones are added here in the same style rather than
   // being left unreachable. The bottom tab bar takes the first four plus
@@ -332,7 +307,14 @@ export default function Dashboard({
       return;
     }
     setShowRooms(false);
+    if (key !== "devices") setDeviceToOpen(null);
     setTab(key);
+  };
+
+  const openDevice = (mac) => {
+    setDeviceToOpen(mac);
+    setShowRooms(false);
+    setTab("devices");
   };
 
   const activeKey = showRooms && activeTab === "home" ? "rooms" : activeTab;
@@ -368,6 +350,7 @@ export default function Dashboard({
               token={token}
               homeId={activeHomeId}
               onOpenDevices={() => handleNavigate("devices")}
+              onOpenDevice={openDevice}
             />
           )}
         {activeTab === "home" && showRooms && (
@@ -375,7 +358,9 @@ export default function Dashboard({
         )}
 
         {/* ── DEVICES TAB ── */}
-        {activeTab === "devices" && <Devices token={token} homeId={activeHomeId} />}
+        {activeTab === "devices" && (
+          <Devices token={token} homeId={activeHomeId} initialMac={deviceToOpen} key={deviceToOpen || "list"} />
+        )}
 
         {/* ── HISTORY TAB ── */}
         {activeTab === "history" && (
@@ -404,6 +389,15 @@ export default function Dashboard({
                 </div>
               </div>
             </div>
+
+            {!historyData && (
+              <div role="status" aria-label={t("common.loading")} className="space-y-md">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-sm">
+                  {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-28" />)}
+                </div>
+                <Skeleton className="h-80" />
+              </div>
+            )}
 
             {historyData && (
               <>
@@ -443,8 +437,8 @@ export default function Dashboard({
                           : historyData.bars
                       } margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(118,119,125,0.18)" vertical={false} />
-                      <XAxis dataKey={getBarKey()} tick={{ fill: "#76777d", fontSize: 11 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fill: "#76777d", fontSize: 11 }} axisLine={false} tickLine={false} unit=" kWh" width={64} />
+                      <XAxis dataKey={getBarKey()} tick={{ fill: "#626369", fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: "#626369", fontSize: 11 }} axisLine={false} tickLine={false} unit=" kWh" width={64} />
                       <Tooltip
                         cursor={{ fill: "rgba(255,255,255,0.45)" }}
                         contentStyle={{
@@ -499,7 +493,12 @@ export default function Dashboard({
 
             <section className="space-y-sm">
               <SectionTitle icon="notifications">{t("alerts.active")}</SectionTitle>
-              {alerts.length === 0 ? (
+              {!alertsLoaded ? (
+                <div role="status" aria-label={t("common.loading")} className="space-y-sm">
+                  <Skeleton className="h-24" />
+                  <Skeleton className="h-24" />
+                </div>
+              ) : alerts.length === 0 ? (
                 <EmptyCard icon="check_circle">{t("alerts.none")}</EmptyCard>
               ) : alerts.map((a, i) => {
                 const tone = ALERT_TONES[a.type] || ALERT_TONES.idle_waste;
@@ -537,14 +536,21 @@ export default function Dashboard({
                       <Icon name="savings" style={{ fontSize: "16px" }} />
                       {t("sugg.save", { amount: Number(s2.estimated_saving_fcfa).toLocaleString(locale) })}
                     </span>
-                    {s2.status === "pending" && (
-                      <div className="flex gap-2">
-                        <button type="button" className="btn-glass py-2" onClick={() => ignoreSuggestion(s2.id)}>{t("sugg.ignore")}</button>
-                        <button type="button" className="btn-primary py-2" onClick={() => acceptSuggestion(s2.id)}>
-                          <Icon name="check" style={{ fontSize: "18px" }} /> {t("sugg.accept")}
+                    <div className="flex flex-wrap gap-2">
+                      {s2.status !== "ignored" && s2.monitored_point_id && (
+                        <button type="button" className="btn-glass py-2" onClick={() => openCreateSchedule(s2.monitored_point_id)}>
+                          <Icon name="schedule" style={{ fontSize: "18px" }} /> {t("sugg.schedule")}
                         </button>
-                      </div>
-                    )}
+                      )}
+                      {s2.status === "pending" && (
+                        <>
+                          <button type="button" className="btn-glass py-2" onClick={() => ignoreSuggestion(s2.id)}>{t("sugg.ignore")}</button>
+                          <button type="button" className="btn-primary py-2" onClick={() => acceptSuggestion(s2.id)}>
+                            <Icon name="check" style={{ fontSize: "18px" }} /> {t("sugg.accept")}
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -553,7 +559,7 @@ export default function Dashboard({
             <section className="space-y-sm">
               <div className="flex items-center justify-between">
                 <SectionTitle icon="schedule">{t("sched.title")}</SectionTitle>
-                <button type="button" className="btn-primary py-2" onClick={openCreateSchedule}>
+                <button type="button" className="btn-primary py-2" onClick={() => openCreateSchedule()}>
                   <Icon name="add" style={{ fontSize: "18px" }} /> {t("sched.create")}
                 </button>
               </div>
@@ -605,6 +611,28 @@ export default function Dashboard({
                       </select>
                     </label>
                   )}
+                  <div>
+                    <span className="block mb-1.5 font-label-sm text-label-sm text-on-surface-variant">{t("sched.presets")}</span>
+                    <div className="flex flex-wrap gap-2">
+                      {SCHEDULE_PRESETS.map((preset) => {
+                        const selected = scheduleForm.on_time === preset.on && scheduleForm.off_time === preset.off;
+                        return (
+                          <button
+                            key={preset.key}
+                            type="button"
+                            aria-pressed={selected}
+                            onClick={() => setScheduleForm({ ...scheduleForm, on_time: preset.on, off_time: preset.off })}
+                            className={
+                              "px-3 py-2 rounded-full font-label-sm text-label-sm transition-colors " +
+                              (selected ? "bg-white/90 text-secondary ring-1 ring-secondary/40" : "glass-subtle text-on-surface-variant hover:bg-white/70")
+                            }
+                          >
+                            {t(`sched.preset.${preset.key}`)} <span className="font-data-label text-[12px] opacity-80">{preset.on}–{preset.off}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
                     <label className="block">
                       <span className="block mb-1.5 font-label-sm text-label-sm text-on-surface-variant">{t("sched.onAt")}</span>

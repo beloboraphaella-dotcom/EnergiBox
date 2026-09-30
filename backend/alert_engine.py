@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import push
 import runtime
 from config import get_connection as get_db
 
@@ -102,6 +103,7 @@ def create_alert(monitored_point_id, alert_type, message):
         """, (monitored_point_id, alert_type, message, datetime.now()))
         conn.commit()
         print(f"ALERT GENERATED: {message}")
+        push.notify_alert(monitored_point_id, alert_type)
     
     conn.close()
 

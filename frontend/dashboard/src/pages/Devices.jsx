@@ -1,9 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
 import { useLanguage } from "../context/LanguageContext";
 import Icon from "../components/Icon";
 import Modal from "../components/GlassModal";
 import { deviceIcon } from "../utils/deviceIcon";
+import Skeleton from "../components/Skeleton";
+import Switch from "../components/Switch";
+import { useToast } from "../components/Toast";
+import { useLiveRefresh } from "../live/LiveContext";
+import { useDeviceToggle } from "../live/useDeviceToggle";
 
 const API = "http://localhost:8000";
 
@@ -21,15 +26,20 @@ function normalizeMac(input) {
  * stores "appliance" or "socket", so the name is the only signal. Kept in
  * step with the same helper on the dashboard and in the mobile app. */
 
-export default function Devices({ token, homeId }) {
+export default function Devices({ token, homeId, initialMac = null }) {
   const { t, language } = useLanguage();
   const [devices, setDevices] = useState([]);
+  const [loaded, setLoaded] = useState(false);
   const [rooms, setRooms] = useState([]);
   const [filter, setFilter] = useState("all");
-  const [selectedMac, setSelectedMac] = useState(null);
+  const [selectedMac, setSelectedMac] = useState(initialMac);
   const [controlling, setControlling] = useState(false);
   const [activeModal, setActiveModal] = useState(null);
-  const [togglingMacs, setTogglingMacs] = useState({});
+
+  const setDeviceState = useCallback((mac, isOn) => {
+    setDevices((list) => list.map((d) => (d.mac === mac ? { ...d, is_on: isOn } : d)));
+  }, []);
+  const { toggle, apply, busy } = useDeviceToggle(token, setDeviceState);
 
   const [newDevice, setNewDevice] = useState({ room_id: "", name: "", type: "appliance", mac: "" });
   const [deviceError, setDeviceError] = useState("");
@@ -42,7 +52,8 @@ export default function Devices({ token, homeId }) {
     if (!homeId) return;
     try {
       const res = await axios.get(`${API}/devices?home_id=${homeId}`, authHeaders);
-      setDevices(res.data);
+      setDevices(apply(res.data));
+      setLoaded(true);
     } catch (err) {
       // Left alone deliberately: a failed poll keeps the last good list on
       // screen instead of blanking it.
@@ -62,25 +73,9 @@ export default function Devices({ token, homeId }) {
   useEffect(() => {
     fetchDevices();
     fetchRooms();
-    const interval = setInterval(fetchDevices, 3000);
-    return () => clearInterval(interval);
   }, [homeId]);
 
-  const toggleDevice = async (e, d) => {
-    e.stopPropagation();
-    if (togglingMacs[d.mac]) return;
-    const nextIsOn = !d.is_on;
-    setTogglingMacs((prev) => ({ ...prev, [d.mac]: true }));
-    try {
-      await axios.post(`${API}/control/${d.mac}?command=${nextIsOn ? "ON" : "OFF"}`, null, authHeaders);
-      setDevices((prev) => prev.map((x) => (x.mac === d.mac ? { ...x, is_on: nextIsOn } : x)));
-      setTimeout(fetchDevices, 500);
-    } catch (err) {
-      // The command did not reach the relay, so leave the switch as it was
-      // rather than showing a state the device never entered.
-    }
-    setTogglingMacs((prev) => ({ ...prev, [d.mac]: false }));
-  };
+  useLiveRefresh(fetchDevices, { topics: ["devices"], interval: 3000, enabled: !selectedMac });
 
   const closeModals = () => {
     setActiveModal(null);
@@ -216,7 +211,11 @@ export default function Devices({ token, homeId }) {
       </div>
 
       {/* Device grid */}
-      {filtered.length === 0 ? (
+      {!loaded ? (
+        <div role="status" aria-label={t("common.loading")} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-sm">
+          {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-48" />)}
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="glass rounded-2xl p-md text-center text-on-surface-variant">
           {devices.length === 0 ? t("devices.empty") : t("devices.emptyRoom")}
         </div>
@@ -227,9 +226,18 @@ export default function Devices({ token, homeId }) {
             return (
               <div
                 key={d.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => setSelectedMac(d.mac)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setSelectedMac(d.mac);
+                  }
+                }}
+                aria-label={t("overview.openDevice", { name: d.name })}
                 className={
-                  "glass rounded-2xl p-5 hover:shadow-[0_4px_12px_rgba(0,106,97,0.05)] transition-shadow group relative cursor-pointer " +
+                  "glass rounded-2xl p-5 hover:shadow-[0_4px_12px_rgba(0,106,97,0.05)] transition-shadow group relative cursor-pointer focus-visible:outline-2 focus-visible:outline-secondary " +
                   (isOn ? "" : "opacity-75")
                 }
               >
@@ -245,28 +253,12 @@ export default function Devices({ token, homeId }) {
                     <Icon name={deviceIcon(d.name, d.type)} />
                   </div>
 
-                  {/* Toggle */}
-                  <button
-                    type="button"
-                    onClick={(e) => toggleDevice(e, d)}
-                    disabled={togglingMacs[d.mac]}
-                    aria-label={isOn ? t("devices.turnOff") : t("devices.turnOn")}
-                    aria-pressed={isOn}
-                    className="relative inline-block w-10 h-5 shrink-0 disabled:opacity-50"
-                  >
-                    <span
-                      className={
-                        "block h-5 w-10 rounded-full transition-colors duration-300 " +
-                        (isOn ? "bg-secondary" : "bg-outline-variant")
-                      }
-                    />
-                    <span
-                      className={
-                        "absolute top-0 w-5 h-5 rounded-full bg-white border-4 transition-all duration-300 " +
-                        (isOn ? "right-0 border-secondary" : "left-0 border-outline-variant")
-                      }
-                    />
-                  </button>
+                  <Switch
+                    checked={isOn}
+                    disabled={busy[d.mac]}
+                    onChange={() => toggle(d)}
+                    label={t(isOn ? "devices.turnOffNamed" : "devices.turnOnNamed", { name: d.name })}
+                  />
                 </div>
 
                 <div className="mb-4">
@@ -317,7 +309,7 @@ export default function Devices({ token, homeId }) {
                     type="button"
                     onClick={(e) => { e.stopPropagation(); setSelectedMac(d.mac); }}
                     aria-label={t("devices.edit")}
-                    className="p-1.5 rounded text-outline hover:text-on-surface hover:bg-white/60 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                    className="p-2.5 -m-1 rounded-full text-outline hover:text-on-surface hover:bg-white/60 transition-colors md:opacity-0 md:group-hover:opacity-100 focus:opacity-100"
                   >
                     <Icon name="edit" style={{ fontSize: "18px" }} />
                   </button>
@@ -425,6 +417,9 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
   const [history, setHistory] = useState(null);
   const [range, setRange] = useState("24h");
   const [toggling, setToggling] = useState(false);
+  const pendingOn = useRef(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [edit, setEdit] = useState({ name: "", type: "appliance", room_id: "" });
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -436,9 +431,13 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
   const fetchDevice = async () => {
     try {
       const res = await axios.get(`${API}/devices/${mac}`, authHeaders);
-      setDevice(res.data);
+      // A refresh that lands mid-command must not flick the switch back.
+      setDevice(pendingOn.current === null ? res.data : { ...res.data, is_on: pendingOn.current });
+      setLoadFailed(false);
     } catch (err) {
-      setError(t("detail.loadError"));
+      // Only the first load reports here. A failed refresh keeps the last
+      // figures on screen, and the shell's banner says the server is gone.
+      setLoadFailed(true);
     }
   };
 
@@ -453,9 +452,9 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
 
   useEffect(() => {
     fetchDevice();
-    const interval = setInterval(fetchDevice, 3000);
-    return () => clearInterval(interval);
   }, [mac]);
+
+  useLiveRefresh(fetchDevice, { topics: ["devices", "alerts"], interval: 3000 });
 
   useEffect(() => { fetchHistory(); }, [mac, range]);
 
@@ -465,18 +464,24 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
     }
   }, [device?.id]);
 
+  // Shows the new state at once and puts it back if the command fails;
+  // see live/useDeviceToggle.js for the list screens' version.
   const togglePower = async () => {
     if (!device || toggling) return;
     const nextIsOn = !device.is_on;
+    pendingOn.current = nextIsOn;
     setToggling(true);
     setError("");
+    setDevice((prev) => ({ ...prev, is_on: nextIsOn }));
     try {
       await axios.post(`${API}/control/${mac}?command=${nextIsOn ? "ON" : "OFF"}`, null, authHeaders);
-      setDevice((prev) => ({ ...prev, is_on: nextIsOn }));
-      setTimeout(fetchDevice, 500);
     } catch (err) {
-      setError(err.response?.data?.detail || t("detail.toggleError"));
+      setDevice((prev) => ({ ...prev, is_on: !nextIsOn }));
+      const message = err.response?.data?.detail || t("detail.toggleError");
+      setError(message);
+      toast.show(message, { tone: "error" });
     }
+    pendingOn.current = null;
     setToggling(false);
   };
 
@@ -514,7 +519,7 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
           <Icon name="arrow_back" style={{ fontSize: "18px" }} />
           {t("detail.back")}
         </button>
-        <p className="text-on-surface-variant">{error || t("detail.loading")}</p>
+        <p className="text-on-surface-variant">{loadFailed ? t("detail.loadError") : t("detail.loading")}</p>
       </div>
     );
   }
@@ -548,28 +553,12 @@ function DeviceDetail({ mac, rooms, token, homeId, onBack, onOpenControl }) {
           <span className="font-label-sm text-label-sm text-on-surface-variant">
             {isOn ? t("detail.active") : t("detail.standby")}
           </span>
-          <button
-            type="button"
-            onClick={togglePower}
+          <Switch
+            checked={isOn}
             disabled={toggling}
-            role="switch"
-            aria-checked={isOn}
-            aria-label={isOn ? t("devices.turnOff") : t("devices.turnOn")}
-            className="relative inline-block w-12 h-6 shrink-0 disabled:opacity-50"
-          >
-            <span
-              className={
-                "block h-6 w-12 rounded-full transition-colors duration-300 " +
-                (isOn ? "bg-secondary" : "bg-outline-variant")
-              }
-            />
-            <span
-              className={
-                "absolute top-0 w-6 h-6 rounded-full bg-white border-4 transition-all duration-300 " +
-                (isOn ? "right-0 border-secondary" : "left-0 border-surface-tint")
-              }
-            />
-          </button>
+            onChange={togglePower}
+            label={t(isOn ? "devices.turnOffNamed" : "devices.turnOnNamed", { name: device.name })}
+          />
           <button
             type="button"
             onClick={() => onOpenControl?.()}
@@ -914,6 +903,9 @@ function DeviceControl({ mac, token, onBack }) {
   const [device, setDevice] = useState(null);
   const [history, setHistory] = useState(null);
   const [toggling, setToggling] = useState(false);
+  const pendingOn = useRef(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const toast = useToast();
   const [error, setError] = useState("");
 
   const locale = language === "fr" ? "fr-FR" : "en-US";
@@ -922,17 +914,21 @@ function DeviceControl({ mac, token, onBack }) {
   const fetchDevice = async () => {
     try {
       const res = await axios.get(`${API}/devices/${mac}`, authHeaders);
-      setDevice(res.data);
+      // A refresh that lands mid-command must not flick the switch back.
+      setDevice(pendingOn.current === null ? res.data : { ...res.data, is_on: pendingOn.current });
+      setLoadFailed(false);
     } catch (err) {
-      setError(t("detail.loadError"));
+      // Only the first load reports here. A failed refresh keeps the last
+      // figures on screen, and the shell's banner says the server is gone.
+      setLoadFailed(true);
     }
   };
 
   useEffect(() => {
     fetchDevice();
-    const interval = setInterval(fetchDevice, 3000);
-    return () => clearInterval(interval);
   }, [mac]);
+
+  useLiveRefresh(fetchDevice, { topics: ["devices", "alerts"], interval: 3000 });
 
   useEffect(() => {
     // Only feeds the draw bar's ceiling, so once per device is enough.
@@ -944,18 +940,24 @@ function DeviceControl({ mac, token, onBack }) {
       .catch(() => {});
   }, [mac, token]);
 
+  // Shows the new state at once and puts it back if the command fails;
+  // see live/useDeviceToggle.js for the list screens' version.
   const togglePower = async () => {
     if (!device || toggling) return;
     const nextIsOn = !device.is_on;
+    pendingOn.current = nextIsOn;
     setToggling(true);
     setError("");
+    setDevice((prev) => ({ ...prev, is_on: nextIsOn }));
     try {
       await axios.post(`${API}/control/${mac}?command=${nextIsOn ? "ON" : "OFF"}`, null, authHeaders);
-      setDevice((prev) => ({ ...prev, is_on: nextIsOn }));
-      setTimeout(fetchDevice, 500);
     } catch (err) {
-      setError(err.response?.data?.detail || t("detail.toggleError"));
+      setDevice((prev) => ({ ...prev, is_on: !nextIsOn }));
+      const message = err.response?.data?.detail || t("detail.toggleError");
+      setError(message);
+      toast.show(message, { tone: "error" });
     }
+    pendingOn.current = null;
     setToggling(false);
   };
 
@@ -970,7 +972,7 @@ function DeviceControl({ mac, token, onBack }) {
           <Icon name="arrow_back" style={{ fontSize: "18px" }} />
           {t("control.back")}
         </button>
-        <p className="text-on-surface-variant mt-lg">{error || t("detail.loading")}</p>
+        <p className="text-on-surface-variant mt-lg">{loadFailed ? t("detail.loadError") : t("detail.loading")}</p>
       </div>
     );
   }

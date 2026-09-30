@@ -6,13 +6,15 @@ from auth import (
 import rate_limit
 from rate_limit import login_limiter, register_limiter
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, Depends, Query, Request
+from fastapi import FastAPI, HTTPException, Depends, Query, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 import energy
 import leader
+import live
+import push
 import tariff
 from config import CORS_ORIGINS, get_connection as get_raw_db, pooling_enabled
 from database import engine, Base
@@ -21,6 +23,7 @@ from schemas import (
     AdminResetPasswordRequest,
     ChangePasswordRequest,
     LoginRequest,
+    PushTokenRequest,
     RegisterRequest,
     UpdateProfileRequest,
 )
@@ -98,9 +101,42 @@ def _probe_advisor_schema():
               f"keeping one suggestion per device")
 
 
+_has_budget_column = False
+
+
+def _probe_home_features():
+    """Decide once whether homes carry a monthly budget and whether
+    phones can be notified (migration 005)."""
+    global _has_budget_column
+    try:
+        conn = get_raw_db()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SHOW COLUMNS FROM homes LIKE 'monthly_budget_fcfa'")
+            _has_budget_column = cursor.fetchone() is not None
+            push.probe(conn)
+        finally:
+            conn.close()
+    except Exception as exc:
+        print(f"homes: database unreachable at startup ({exc!r}) — "
+              f"no budgets, no phone notifications")
+    if not _has_budget_column:
+        print("homes: monthly_budget_fcfa is absent — apply "
+              "backend/migrations/005_budget_and_push.sql to let households set a budget")
+
+
+def _home_budget(cursor, home_id):
+    if not _has_budget_column:
+        return None
+    cursor.execute("SELECT monthly_budget_fcfa FROM homes WHERE id = %s", (home_id,))
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
 _probe_energy_schema()
 _probe_rate_limit_schema()
 _probe_advisor_schema()
+_probe_home_features()
 mqtt_client = start_mqtt()
 # Every worker connects to the broker and runs the scheduler loop, but
 # only the one holding the lock consumes telemetry and acts on schedules:
@@ -373,6 +409,9 @@ def health():
             # schedules. Exactly one should say "leader" at any time.
             "background": "leader" if leader.is_leader() else "standby",
             "suggestions": "per_kind" if _advisor_uses_kinds() else "per_device",
+            # Migration 005: monthly budgets and phone notifications.
+            "budgets": "enabled" if _has_budget_column else "disabled",
+            "push": "enabled" if push.enabled() else "disabled",
             "status": "healthy" if healthy else "degraded",
         },
     )
@@ -1180,16 +1219,19 @@ def get_homes(user: dict = Depends(get_current_user)):
     user_id = user["user_id"]
     conn = get_raw_db()
     cursor = conn.cursor()
-    cursor.execute("""
+    budget = "h.monthly_budget_fcfa" if _has_budget_column else "NULL"
+    cursor.execute(f"""
         SELECT h.id, h.name, h.address,
                (SELECT COUNT(*) FROM rooms WHERE home_id = h.id) as room_count,
-               (SELECT COUNT(*) FROM monitored_points mp JOIN rooms r ON mp.room_id = r.id WHERE r.home_id = h.id) as device_count
+               (SELECT COUNT(*) FROM monitored_points mp JOIN rooms r ON mp.room_id = r.id WHERE r.home_id = h.id) as device_count,
+               {budget}
         FROM homes h WHERE h.user_id = %s ORDER BY h.created_at
     """, (user_id,))
     rows = cursor.fetchall()
     conn.close()
     return [
-        {"id": row[0], "name": row[1], "address": row[2], "room_count": row[3], "device_count": row[4]}
+        {"id": row[0], "name": row[1], "address": row[2], "room_count": row[3], "device_count": row[4],
+         "monthly_budget_fcfa": row[5]}
         for row in rows
     ]
 
@@ -1248,6 +1290,74 @@ def delete_home(home_id: int, user: dict = Depends(get_scoped_user)):
     conn.close()
     return {"message": "Home deleted"}
 
+@app.put("/homes/{home_id}/budget")
+def set_home_budget(home_id: int, amount: int = None, user: dict = Depends(get_scoped_user)):
+    """Set the home's monthly spending target in FCFA; omit amount (or
+    send 0) to clear it."""
+    if not _has_budget_column:
+        raise HTTPException(
+            status_code=409,
+            detail="Budgets need migration 005 (backend/migrations/005_budget_and_push.sql)",
+        )
+    if amount is not None and amount < 0:
+        raise HTTPException(status_code=400, detail="The budget cannot be negative")
+    value = amount or None
+    conn = get_raw_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE homes SET monthly_budget_fcfa = %s WHERE id = %s", (value, home_id))
+    conn.commit()
+    conn.close()
+    return {"id": home_id, "monthly_budget_fcfa": value}
+
+@app.post("/homes/{home_id}/all-off")
+def switch_all_off(home_id: int, room_id: int = None, user: dict = Depends(get_scoped_user)):
+    """Switch off every device of the home (or of one of its rooms) that
+    is on. One request instead of one per device, and one place that
+    decides what "on" means (_derive_is_on)."""
+    if room_id is not None and _room_home_id(room_id) != home_id:
+        raise HTTPException(status_code=404, detail="Room not found")
+    from mqtt_client import send_command, record_command_sent
+    switched, failed = [], []
+    for device in get_devices(home_id, user):
+        if room_id is not None and device["room_id"] != room_id:
+            continue
+        if not device["is_on"]:
+            continue
+        if send_command(device["mac"], "OFF"):
+            record_command_sent(device["mac"], "OFF")
+            switched.append(device["mac"])
+        else:
+            failed.append(device["mac"])
+    if failed and not switched:
+        raise HTTPException(
+            status_code=503,
+            detail="Cannot reach the MQTT broker — no device was switched",
+        )
+    return {"switched": switched, "failed": failed}
+
+@app.post("/push/register")
+def register_push_token(body: PushTokenRequest, user: dict = Depends(get_current_user)):
+    """Remember this phone's Expo push token, to notify it of new alerts."""
+    if not push.enabled():
+        raise HTTPException(
+            status_code=409,
+            detail="Notifications need migration 005 (backend/migrations/005_budget_and_push.sql)",
+        )
+    push.register(user["user_id"], body.token, body.platform, body.language)
+    return {"message": "Registered"}
+
+@app.delete("/push/register")
+def unregister_push_token(token: str, user: dict = Depends(get_current_user)):
+    if push.enabled():
+        push.unregister(user["user_id"], token)
+    return {"message": "Unregistered"}
+
+@app.websocket("/ws/live")
+async def live_updates(websocket: WebSocket):
+    """Tells a client when its home's devices, alerts or suggestions
+    changed, so it refetches instead of polling. See live.py."""
+    await live.serve(websocket)
+
 @app.put("/auth/profile")
 def update_profile(body: UpdateProfileRequest, user: dict = Depends(get_current_user)):
     """Update the current user's display name"""
@@ -1268,10 +1378,12 @@ def get_suggestions(home_id: int, user: dict = Depends(get_scoped_user)):
     cursor = conn.cursor()
     cursor.execute("""
         SELECT s.id, mp.name, s.suggestion_text,
-               s.estimated_saving_fcfa, s.status, s.created_at
+               s.estimated_saving_fcfa, s.status, s.created_at,
+               mp.id, e.mac_address
         FROM ai_suggestions s
         JOIN monitored_points mp ON s.monitored_point_id = mp.id
         JOIN rooms r ON mp.room_id = r.id
+        JOIN energiboxes e ON mp.energibox_id = e.id
         WHERE r.home_id = %s
         ORDER BY s.created_at DESC
     """, (home_id,))
@@ -1284,7 +1396,10 @@ def get_suggestions(home_id: int, user: dict = Depends(get_scoped_user)):
             "suggestion": row[2],
             "estimated_saving_fcfa": row[3],
             "status": row[4],
-            "created_at": str(row[5])
+            "created_at": str(row[5]),
+            # So an app can offer to schedule the device the advice is about.
+            "monitored_point_id": row[6],
+            "mac": row[7],
         }
         for row in rows
     ]
@@ -1626,6 +1741,8 @@ def get_overview(home_id: int, user: dict = Depends(get_scoped_user)):
     """, (home_id,))
     active_alerts = cursor.fetchone()[0] or 0
 
+    budget = _home_budget(cursor, home_id)
+
     conn.close()
 
     # Calculate changes
@@ -1652,7 +1769,9 @@ def get_overview(home_id: int, user: dict = Depends(get_scoped_user)):
             "kwh": round(month_kwh, 3),
             "change_vs_last_month": pct_change(month_kwh, last_month_kwh),
             "estimated_fcfa": round(tariff.monthly_cost(month_kwh), 0),
-            "projected_fcfa": round(tariff.monthly_cost(projected_kwh), 0)
+            "projected_fcfa": round(tariff.monthly_cost(projected_kwh), 0),
+            # None when no budget is set, or before migration 005.
+            "budget_fcfa": budget,
         },
         "devices": {
             "total": total_devices,

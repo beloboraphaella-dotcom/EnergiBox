@@ -5,6 +5,10 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Onboarding from "./pages/Onboarding";
 import { LanguageProvider } from "./context/LanguageContext";
+import { ToastProvider } from "./components/Toast";
+import { LiveProvider } from "./live/LiveContext";
+import { isConnectivityError, reportFailure, reportOk } from "./live/connection";
+import { applyReducedTransparency } from "./utils/preferences";
 import Icon from "./components/Icon";
 
 const API = "http://localhost:8000";
@@ -22,8 +26,14 @@ let logoutHandler = () => {
 };
 
 axios.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    reportOk();
+    return response;
+  },
   (error) => {
+    // Feeds the "connection lost" banner; see live/connection.js.
+    if (isConnectivityError(error)) reportFailure();
+    else reportOk();
     if (error.response?.status === 401) {
       logoutHandler();
     }
@@ -31,10 +41,14 @@ axios.interceptors.response.use(
   }
 );
 
+applyReducedTransparency();
+
 function App() {
   return (
     <LanguageProvider>
-      <AppInner />
+      <ToastProvider>
+        <AppInner />
+      </ToastProvider>
     </LanguageProvider>
   );
 }
@@ -141,16 +155,18 @@ function AppInner() {
   }
 
   return (
-    <Dashboard
-      token={token}
-      user={user}
-      homes={homes}
-      activeHomeId={activeHomeId}
-      onSwitchHome={handleSwitchHome}
-      onHomesChanged={() => fetchHomes(token)}
-      onLogout={handleLogout}
-      onUpdateUser={handleUpdateUser}
-    />
+    <LiveProvider token={token} homeId={activeHomeId}>
+      <Dashboard
+        token={token}
+        user={user}
+        homes={homes}
+        activeHomeId={activeHomeId}
+        onSwitchHome={handleSwitchHome}
+        onHomesChanged={() => fetchHomes(token)}
+        onLogout={handleLogout}
+        onUpdateUser={handleUpdateUser}
+      />
+    </LiveProvider>
   );
 }
 

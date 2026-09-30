@@ -1,13 +1,18 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { useLanguage } from "../context/LanguageContext";
 import Icon from "../components/Icon";
 import Modal from "../components/GlassModal";
 import { deviceIcon } from "../utils/deviceIcon";
+import Skeleton from "../components/Skeleton";
+import Switch from "../components/Switch";
+import { useToast } from "../components/Toast";
+import { useLiveRefresh } from "../live/LiveContext";
+import { useDeviceToggle } from "../live/useDeviceToggle";
 
 const API = "http://localhost:8000";
 export default function Rooms({ token, homeId, onBack }) {
-  const { t, tn } = useLanguage();
+  const { t, tn, locale } = useLanguage();
   const [rooms, setRooms] = useState([]);
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -17,6 +22,13 @@ export default function Rooms({ token, homeId, onBack }) {
   const [roomName, setRoomName] = useState("");
   const [roomError, setRoomError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [switchingOff, setSwitchingOff] = useState(false);
+  const toast = useToast();
+
+  const setDeviceState = useCallback((mac, isOn) => {
+    setDevices((list) => list.map((d) => (d.mac === mac ? { ...d, is_on: isOn } : d)));
+  }, []);
+  const { toggle, apply, busy } = useDeviceToggle(token, setDeviceState);
 
   const authHeaders = { headers: { Authorization: `Bearer ${token}` } };
 
@@ -33,23 +45,31 @@ export default function Rooms({ token, homeId, onBack }) {
     if (!homeId) return;
     try {
       const res = await axios.get(`${API}/devices?home_id=${homeId}`, authHeaders);
-      setDevices(res.data);
+      setDevices(apply(res.data));
     } catch (err) {}
   };
 
   useEffect(() => {
     fetchRooms();
     fetchDevices();
-    const interval = setInterval(() => { fetchRooms(); fetchDevices(); }, 3000);
-    return () => clearInterval(interval);
   }, [homeId]);
 
-  const toggleDevice = async (e, d) => {
-    e.stopPropagation();
+  useLiveRefresh(() => { fetchRooms(); fetchDevices(); }, { topics: ["devices"], interval: 3000 });
+
+  /** Leaving a room: everything in it off, in one request. */
+  const switchRoomOff = async (room) => {
+    setSwitchingOff(true);
     try {
-      await axios.post(`${API}/control/${d.mac}?command=${d.is_on ? "OFF" : "ON"}`, null, authHeaders);
-      setTimeout(fetchDevices, 500);
-    } catch (err) {}
+      const res = await axios.post(`${API}/homes/${homeId}/all-off?room_id=${room.id}`, null, authHeaders);
+      const switched = res.data.switched || [];
+      setDevices((list) => list.map((d) => (switched.includes(d.mac) ? { ...d, is_on: false } : d)));
+      toast.show(tn("allOff.done", switched.length), { tone: "success" });
+      if (res.data.failed?.length) toast.show(tn("allOff.partial", res.data.failed.length), { tone: "error" });
+    } catch (err) {
+      toast.show(err.response?.data?.detail || t("allOff.error"), { tone: "error" });
+    }
+    setSwitchingOff(false);
+    fetchDevices();
   };
 
   const closeModal = () => {
@@ -129,12 +149,18 @@ export default function Rooms({ token, homeId, onBack }) {
           <span className="icon-orb w-14 h-14">
             <Icon name="meeting_room" style={{ fontSize: "28px" }} />
           </span>
-          <div>
+          <div className="flex-1 min-w-0">
             <h1 className="font-headline-lg text-headline-lg text-on-surface">{room?.name || t("rooms.fallbackName")}</h1>
             <p className="text-on-surface-variant">
               {tn("count.device", roomDevices.length)}
             </p>
           </div>
+          {room && roomDevices.some((d) => d.is_on) && (
+            <button type="button" className="btn-glass py-2" onClick={() => switchRoomOff(room)} disabled={switchingOff}>
+              <Icon name="power_settings_new" style={{ fontSize: "18px" }} />
+              {switchingOff ? t("allOff.working") : t("allOff.room")}
+            </button>
+          )}
         </div>
 
         <div className="glass-dark rounded-2xl p-md relative overflow-hidden">
@@ -143,7 +169,7 @@ export default function Rooms({ token, homeId, onBack }) {
             {t("rooms.roomConsumption")}
           </p>
           <p className="font-display-metrics text-display-metrics mt-2 relative">
-            {roomKw.toFixed(2)}{" "}
+            {roomKw.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{" "}
             <span className="font-body-lg text-body-lg text-primary-fixed-dim">kW</span>
           </p>
         </div>
@@ -173,18 +199,14 @@ export default function Rooms({ token, homeId, onBack }) {
                   </p>
                 </div>
                 <p className="font-data-label text-data-label text-on-surface whitespace-nowrap">
-                  {(d.watts / 1000).toFixed(2)} kW
+                  {(d.watts / 1000).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kW
                 </p>
-                <button
-                  type="button"
-                  onClick={(e) => toggleDevice(e, d)}
-                  title={d.is_on ? t("devices.turnOff") : t("devices.turnOn")}
-                  aria-pressed={d.is_on}
-                  className={"chip cursor-pointer " + (d.is_on ? "chip-teal" : "chip-red")}
-                >
-                  <Icon name="power_settings_new" style={{ fontSize: "14px" }} />
-                  {d.is_on ? t("common.on") : t("common.off")}
-                </button>
+                <Switch
+                  checked={d.is_on}
+                  disabled={busy[d.mac]}
+                  onChange={() => toggle(d)}
+                  label={t(d.is_on ? "devices.turnOffNamed" : "devices.turnOnNamed", { name: d.name })}
+                />
               </div>
             ))}
           </div>
@@ -211,7 +233,9 @@ export default function Rooms({ token, homeId, onBack }) {
       </div>
 
       {loading ? (
-        <div className="glass rounded-2xl p-lg text-center text-on-surface-variant">{t("rooms.loading")}</div>
+        <div role="status" aria-label={t("rooms.loading")} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-sm">
+          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-44" />)}
+        </div>
       ) : rooms.length === 0 ? (
         <div className="glass rounded-2xl p-lg text-center">
           <p className="text-on-surface-variant mb-4">{t("rooms.noRooms")}</p>
@@ -225,17 +249,22 @@ export default function Rooms({ token, homeId, onBack }) {
               role="button"
               tabIndex={0}
               onClick={() => setSelectedRoomId(room.id)}
-              onKeyDown={(e) => e.key === "Enter" && setSelectedRoomId(room.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setSelectedRoomId(room.id);
+                }
+              }}
               className="glass glass-hover rounded-2xl p-5 cursor-pointer group"
             >
               <div className="flex justify-between items-start mb-4">
                 <span className="icon-orb">
                   <Icon name="meeting_room" />
                 </span>
-                <div className="flex gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
+                <div className="flex gap-1 -mr-2 -mt-2">
                   <button
                     type="button"
-                    className="btn-icon w-8 h-8"
+                    className="btn-icon w-11 h-11"
                     onClick={(e) => { e.stopPropagation(); openEdit(room); }}
                     title={t("rooms.rename")}
                     aria-label={t("rooms.rename")}
@@ -244,7 +273,7 @@ export default function Rooms({ token, homeId, onBack }) {
                   </button>
                   <button
                     type="button"
-                    className="btn-icon w-8 h-8 hover:text-error"
+                    className="btn-icon w-11 h-11 hover:text-error"
                     onClick={(e) => { e.stopPropagation(); deleteRoom(room); }}
                     title={t("rooms.delete")}
                     aria-label={t("rooms.delete")}
@@ -255,7 +284,7 @@ export default function Rooms({ token, homeId, onBack }) {
               </div>
               <p className="font-body-lg text-body-lg font-semibold text-on-surface">{room.name}</p>
               <p className="font-headline-md text-headline-md text-secondary mt-1">
-                {room.kw} <span className="font-body-md text-body-md text-outline">kW</span>
+                {Number(room.kw).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="font-body-md text-body-md text-outline">kW</span>
               </p>
               <p className="font-label-sm text-label-sm text-on-surface-variant mt-3 pt-3 border-t border-white/70">
                 {tn("count.device", room.device_count)}
