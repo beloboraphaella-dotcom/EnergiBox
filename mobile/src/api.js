@@ -1,6 +1,7 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE } from "./config";
+import { isConnectivityError, reportFailure, reportOk } from "./live/connection";
 
 export const api = axios.create({ baseURL: API_BASE });
 
@@ -17,16 +18,24 @@ export function setLogoutHandler(fn) {
 }
 
 api.interceptors.request.use(async (config) => {
-  const token = await AsyncStorage.getItem("token");
+  const [[, token], [, language]] = await AsyncStorage.multiGet(["token", "language"]);
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // The API returns alerts, suggestions and reports in this language.
+  config.headers["Accept-Language"] = language === "fr" ? "fr" : "en";
   return config;
 });
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    reportOk();
+    return response;
+  },
   async (error) => {
+    // Feeds the "connection lost" banner; see live/connection.js.
+    if (isConnectivityError(error)) reportFailure();
+    else reportOk();
     if (error.response?.status === 401) {
       await logoutHandler();
     }

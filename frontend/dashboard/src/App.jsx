@@ -5,6 +5,11 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Onboarding from "./pages/Onboarding";
 import { LanguageProvider } from "./context/LanguageContext";
+import { ToastProvider } from "./components/Toast";
+import { LiveProvider } from "./live/LiveContext";
+import { isConnectivityError, reportFailure, reportOk } from "./live/connection";
+import { applyReducedTransparency } from "./utils/preferences";
+import Icon from "./components/Icon";
 
 const API = "http://localhost:8000";
 
@@ -21,8 +26,14 @@ let logoutHandler = () => {
 };
 
 axios.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    reportOk();
+    return response;
+  },
   (error) => {
+    // Feeds the "connection lost" banner; see live/connection.js.
+    if (isConnectivityError(error)) reportFailure();
+    else reportOk();
     if (error.response?.status === 401) {
       logoutHandler();
     }
@@ -30,10 +41,14 @@ axios.interceptors.response.use(
   }
 );
 
+applyReducedTransparency();
+
 function App() {
   return (
     <LanguageProvider>
-      <AppInner />
+      <ToastProvider>
+        <AppInner />
+      </ToastProvider>
     </LanguageProvider>
   );
 }
@@ -126,8 +141,11 @@ function AppInner() {
 
   if (homes === null) {
     return (
-      <div style={styles.loading}>
-        <span style={styles.loadingLogo}>⚡</span>
+      <div className="min-h-screen flex items-center justify-center" role="status" aria-label="Loading">
+        <div className="app-backdrop" aria-hidden="true" />
+        <span className="icon-orb w-16 h-16 bg-gradient-to-br from-secondary-fixed to-secondary-fixed-dim text-on-secondary-fixed animate-pulse">
+          <Icon name="bolt" fill style={{ fontSize: "32px" }} />
+        </span>
       </div>
     );
   }
@@ -137,25 +155,19 @@ function AppInner() {
   }
 
   return (
-    <Dashboard
-      token={token}
-      user={user}
-      homes={homes}
-      activeHomeId={activeHomeId}
-      onSwitchHome={handleSwitchHome}
-      onHomesChanged={() => fetchHomes(token)}
-      onLogout={handleLogout}
-      onUpdateUser={handleUpdateUser}
-    />
+    <LiveProvider token={token} homeId={activeHomeId}>
+      <Dashboard
+        token={token}
+        user={user}
+        homes={homes}
+        activeHomeId={activeHomeId}
+        onSwitchHome={handleSwitchHome}
+        onHomesChanged={() => fetchHomes(token)}
+        onLogout={handleLogout}
+        onUpdateUser={handleUpdateUser}
+      />
+    </LiveProvider>
   );
 }
-
-const styles = {
-  loading: {
-    minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
-    background: "#f8fafc",
-  },
-  loadingLogo: { fontSize: "40px" },
-};
 
 export default App;

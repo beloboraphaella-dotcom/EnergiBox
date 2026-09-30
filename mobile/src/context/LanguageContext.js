@@ -7,7 +7,7 @@
 // arrives: a first frame in English for a French user, rather than a
 // blank screen for everyone while a one-key read completes.
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { translations } from "./translations";
@@ -43,17 +43,28 @@ export function LanguageProvider({ children }) {
 
   // Values are substituted into {placeholders}. An unknown key falls back
   // to English and then to the key itself, so a missing string shows up
-  // as something searchable instead of as blank space.
-  const t = (key, vars) => {
+  // as something searchable instead of as blank space. Stable per
+  // language, so screens can list t in their hook dependencies.
+  const t = useCallback((key, vars) => {
     const template = translations[language]?.[key] ?? translations.en[key] ?? key;
     if (!vars) return template;
     return template.replace(/\{(\w+)\}/g, (match, name) =>
       Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match
     );
-  };
+  }, [language]);
+
+  // "3 rooms" / "1 pièce". French puts 0 and 1 in the singular, English
+  // only 1, so the rule follows the language rather than the number.
+  const tn = useCallback((key, count) => {
+    const one = language === "fr" ? count <= 1 : count === 1;
+    return t(`${key}.${one ? "one" : "other"}`, { count });
+  }, [language, t]);
+
+  // For toLocaleString and friends: "9 459" and "30/09/2026" in French.
+  const locale = language === "fr" ? "fr-FR" : "en-US";
 
   return (
-    <LanguageContext.Provider value={{ language, setLanguage, t }}>
+    <LanguageContext.Provider value={{ language, setLanguage, t, tn, locale }}>
       {children}
     </LanguageContext.Provider>
   );

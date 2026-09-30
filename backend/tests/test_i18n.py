@@ -101,7 +101,9 @@ for app_root, blocks in ((ROOT / "frontend/dashboard/src", web),
     for path in sources:
         if path.name == "translations.js":
             continue
-        for key in re.findall(r't\(\s*"([a-zA-Z0-9_.]+)"', path.read_text(encoding="utf-8")):
+        # The lookbehind keeps setSheet("create") or Alert.alert("EnergiBox")
+        # from reading as a call to t(): only a bare t( counts.
+        for key in re.findall(r'(?<![\w$.])t\(\s*"([a-zA-Z0-9_.]+)"', path.read_text(encoding="utf-8")):
             if key not in blocks["en"]:
                 missing.append(f"{path.name}:{key}")
 check("aucun appel a une cle inexistante", not missing, missing[:5])

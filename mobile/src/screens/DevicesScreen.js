@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, ActivityIndicator, useWindowDimensions,
@@ -6,8 +6,15 @@ import {
 } from "react-native";
 import { api } from "../api";
 import Icon from "../components/Icon";
-import { colors, spacing, radius, type, glassCard, surfaceCard } from "../theme";
+import GradientFill from "../components/GradientFill";
+import { colors, spacing, radius, type, glassCard, surfaceCard, glass } from "../theme";
 import { useLanguage } from "../context/LanguageContext";
+import Skeleton, { SkeletonList } from "../components/Skeleton";
+import Switch from "../components/Switch";
+import { useToast } from "../components/Toast";
+import { useLiveRefresh } from "../live/LiveContext";
+import { useDeviceToggle } from "../live/useDeviceToggle";
+import { failure, tap } from "../haptics";
 
 // The "My Devices" mockup uses this teal for the primary action and the
 // live-draw figures rather than the palette's `secondary` (#006a61). It is
@@ -43,20 +50,25 @@ function getIcon(name = "", type = "appliance") {
   return type === "socket" ? "power" : "devices_other";
 }
 
-export default function DevicesScreen({ homeId }) {
-  const { t } = useLanguage();
+export default function DevicesScreen({ homeId, initialMac = null }) {
+  const { t, locale } = useLanguage();
   const [devices, setDevices] = useState([]);
+  const [loaded, setLoaded] = useState(false);
   const [rooms, setRooms] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState("all");
-  const [selectedMac, setSelectedMac] = useState(null);
+  const [selectedMac, setSelectedMac] = useState(initialMac);
   const [controlling, setControlling] = useState(false);
-  const [togglingMacs, setTogglingMacs] = useState({});
   const [addOpen, setAddOpen] = useState(false);
   const [newDevice, setNewDevice] = useState({ room_id: "", name: "", type: "appliance", mac: "" });
   const [deviceError, setDeviceError] = useState("");
   const [saving, setSaving] = useState(false);
   const { width } = useWindowDimensions();
+
+  const setDeviceState = useCallback((mac, isOn) => {
+    setDevices((list) => list.map((d) => (d.mac === mac ? { ...d, is_on: isOn } : d)));
+  }, []);
+  const { toggle, apply, busy } = useDeviceToggle(setDeviceState);
 
   const fetchAll = useCallback(async () => {
     if (!homeId) return;
@@ -64,35 +76,23 @@ export default function DevicesScreen({ homeId }) {
       api.get(`/devices?home_id=${homeId}`),
       api.get(`/rooms?home_id=${homeId}`),
     ]);
-    if (results[0].status === "fulfilled") setDevices(results[0].value.data);
+    if (results[0].status === "fulfilled") {
+      setDevices(apply(results[0].value.data));
+      setLoaded(true);
+    }
     if (results[1].status === "fulfilled") setRooms(results[1].value.data);
-  }, [homeId]);
+  }, [homeId, apply]);
 
   useEffect(() => {
     fetchAll();
-    const interval = setInterval(fetchAll, 3000);
-    return () => clearInterval(interval);
   }, [fetchAll]);
+
+  useLiveRefresh(fetchAll, { topics: ["devices"], interval: 3000, enabled: !selectedMac });
 
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchAll();
     setRefreshing(false);
-  };
-
-  const toggleDevice = async (d) => {
-    if (togglingMacs[d.mac]) return;
-    const nextIsOn = !d.is_on;
-    setTogglingMacs((prev) => ({ ...prev, [d.mac]: true }));
-    try {
-      await api.post(`/control/${d.mac}?command=${nextIsOn ? "ON" : "OFF"}`);
-      setDevices((prev) => prev.map((x) => (x.mac === d.mac ? { ...x, is_on: nextIsOn } : x)));
-      setTimeout(fetchAll, 500);
-    } catch (err) {
-      // The command never reached the relay, so leave the switch alone
-      // rather than showing a state the device never entered.
-    }
-    setTogglingMacs((prev) => ({ ...prev, [d.mac]: false }));
   };
 
   const closeAdd = () => {
@@ -169,6 +169,7 @@ export default function DevicesScreen({ homeId }) {
         activeOpacity={0.8}
         onPress={() => setAddOpen(true)}
       >
+        <GradientFill />
         <Icon name="add" size={20} color="#ffffff" />
         <Text style={styles.addButtonLabel}>{t("devices.addBox")}</Text>
       </TouchableOpacity>
@@ -189,7 +190,7 @@ export default function DevicesScreen({ homeId }) {
         <Text style={styles.statLabel}>{t("devices.totalDraw")}</Text>
         <View style={styles.drawRow}>
           <Text style={styles.drawValue}>
-            {totalKw.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+            {totalKw.toLocaleString(locale, { maximumFractionDigits: 1 })}
           </Text>
           <Text style={styles.drawUnit}>kW</Text>
         </View>
@@ -226,7 +227,12 @@ export default function DevicesScreen({ homeId }) {
       </ScrollView>
 
       {/* Device cards */}
-      {filtered.length === 0 ? (
+      {!loaded ? (
+        <SkeletonList label={t("common.loading")}>
+          <Skeleton height={150} />
+          <Skeleton height={150} />
+        </SkeletonList>
+      ) : filtered.length === 0 ? (
         <View style={[surfaceCard, styles.emptyCard]}>
           <Text style={styles.emptyText}>
             {devices.length === 0 ? t("devices.empty") : t("devices.emptyRoom")}
@@ -240,6 +246,8 @@ export default function DevicesScreen({ homeId }) {
               key={d.id}
               onPress={() => setSelectedMac(d.mac)}
               activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={t("overview.openDevice", { name: d.name })}
               style={[glassCard, styles.deviceCard, { width: cardWidth }, !isOn && styles.deviceCardOff]}
             >
               <View style={styles.deviceTop}>
@@ -251,26 +259,14 @@ export default function DevicesScreen({ homeId }) {
                   />
                 </View>
 
-                <TouchableOpacity
-                  onPress={() => toggleDevice(d)}
-                  disabled={togglingMacs[d.mac]}
-                  activeOpacity={0.7}
-                  accessibilityRole="switch"
-                  accessibilityState={{ checked: isOn }}
-                  style={[
-                    styles.toggle,
-                    { backgroundColor: isOn ? colors.secondary : colors.outlineVariant },
-                    togglingMacs[d.mac] && { opacity: 0.5 },
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.toggleKnob,
-                      isOn ? styles.toggleKnobOn : styles.toggleKnobOff,
-                      { borderColor: isOn ? colors.secondary : colors.outlineVariant },
-                    ]}
+                <View style={styles.switchSlot}>
+                  <Switch
+                    value={isOn}
+                    disabled={busy[d.mac]}
+                    onValueChange={() => toggle(d)}
+                    label={t(isOn ? "devices.turnOffNamed" : "devices.turnOnNamed", { name: d.name })}
                   />
-                </TouchableOpacity>
+                </View>
               </View>
 
               <View style={styles.deviceMiddle}>
@@ -306,7 +302,7 @@ export default function DevicesScreen({ homeId }) {
                   {t("devices.currentDraw")}
                 </Text>
                 <Text style={[styles.deviceDraw, { color: isOn ? ACCENT : colors.onSurfaceVariant }]}>
-                  {Math.round(d.watts || 0)} W
+                  {Math.round(d.watts || 0).toLocaleString(locale)} W
                 </Text>
               </View>
             </TouchableOpacity>
@@ -407,6 +403,7 @@ export default function DevicesScreen({ homeId }) {
                 activeOpacity={0.8}
                 style={[styles.submitButton, saving && { opacity: 0.6 }]}
               >
+                <GradientFill />
                 {saving ? (
                   <ActivityIndicator color={colors.onSecondary} />
                 ) : (
@@ -447,20 +444,27 @@ const ALERT_TITLE_KEYS = {
  * and door-open history needs a sensor the hardware lacks. That slot shows
  * this device's real alerts instead. */
 function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const [device, setDevice] = useState(null);
   const [history, setHistory] = useState(null);
   const [range, setRange] = useState("24h");
   const [toggling, setToggling] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const pendingOn = useRef(null);
+  const toast = useToast();
   const [error, setError] = useState("");
   const { width } = useWindowDimensions();
 
   const fetchDevice = useCallback(async () => {
     try {
       const res = await api.get(`/devices/${mac}`);
-      setDevice(res.data);
+      // A refresh that lands mid-command must not flick the switch back.
+      setDevice(pendingOn.current === null ? res.data : { ...res.data, is_on: pendingOn.current });
+      setLoadFailed(false);
     } catch (err) {
-      setError(t("detail.loadError"));
+      // Only the first load reports here; a failed refresh keeps the last
+      // figures and the shell's banner says the server is unreachable.
+      setLoadFailed(true);
     }
   }, [mac]);
 
@@ -475,24 +479,32 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
 
   useEffect(() => {
     fetchDevice();
-    const interval = setInterval(fetchDevice, 3000);
-    return () => clearInterval(interval);
   }, [fetchDevice]);
+
+  useLiveRefresh(fetchDevice, { topics: ["devices", "alerts"], interval: 3000 });
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
+  // The new state shows at once, with a tap under the thumb; it goes back
+  // with a message if the command fails. See live/useDeviceToggle.js.
   const togglePower = async () => {
     if (!device || toggling) return;
     const nextIsOn = !device.is_on;
+    pendingOn.current = nextIsOn;
+    tap();
     setToggling(true);
     setError("");
+    setDevice((prev) => ({ ...prev, is_on: nextIsOn }));
     try {
       await api.post(`/control/${mac}?command=${nextIsOn ? "ON" : "OFF"}`);
-      setDevice((prev) => ({ ...prev, is_on: nextIsOn }));
-      setTimeout(fetchDevice, 500);
     } catch (err) {
-      setError(err.response?.data?.detail || t("detail.toggleError"));
+      setDevice((prev) => ({ ...prev, is_on: !nextIsOn }));
+      failure();
+      const message = err.response?.data?.detail || t("detail.toggleError");
+      setError(message);
+      toast.show(message, { tone: "error" });
     }
+    pendingOn.current = null;
     setToggling(false);
   };
 
@@ -503,7 +515,7 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
           <Icon name="arrow_back" size={20} color={colors.onSurfaceVariant} />
           <Text style={styles.backLabel}>{t("detail.back")}</Text>
         </TouchableOpacity>
-        {error ? <Text style={styles.emptyText}>{error}</Text> : <ActivityIndicator color={colors.secondary} />}
+        {loadFailed ? <Text style={styles.emptyText}>{t("detail.loadError")}</Text> : <ActivityIndicator color={colors.secondary} />}
       </View>
     );
   }
@@ -517,7 +529,13 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
     <ScrollView style={styles.page} contentContainerStyle={styles.pageContent}>
       {/* Task header */}
       <View style={styles.detailHeader}>
-        <TouchableOpacity onPress={onBack} activeOpacity={0.7} style={styles.iconButton}>
+        <TouchableOpacity
+          onPress={onBack}
+          activeOpacity={0.7}
+          style={styles.iconButton}
+          accessibilityRole="button"
+          accessibilityLabel={t("detail.back")}
+        >
           <Icon name="arrow_back" size={22} color={colors.onSurfaceVariant} />
         </TouchableOpacity>
         <View style={styles.detailTitleWrap}>
@@ -527,31 +545,19 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
         <TouchableOpacity
           onPress={onOpenControl}
           activeOpacity={0.7}
+          accessibilityRole="button"
           accessibilityLabel={t("control.open")}
           style={styles.iconButton}
         >
           <Icon name="power_settings_new" size={22} color={colors.onSurfaceVariant} />
         </TouchableOpacity>
-        <TouchableOpacity
-          onPress={togglePower}
+        <Switch
+          size="lg"
+          value={isOn}
           disabled={toggling}
-          activeOpacity={0.7}
-          accessibilityRole="switch"
-          accessibilityState={{ checked: isOn }}
-          style={[
-            styles.bigToggle,
-            { backgroundColor: isOn ? colors.secondary : colors.outlineVariant },
-            toggling && { opacity: 0.5 },
-          ]}
-        >
-          <View
-            style={[
-              styles.bigToggleKnob,
-              isOn ? styles.bigToggleKnobOn : styles.bigToggleKnobOff,
-              { borderColor: isOn ? colors.secondary : colors.surfaceTint },
-            ]}
-          />
-        </TouchableOpacity>
+          onValueChange={togglePower}
+          label={t(isOn ? "devices.turnOffNamed" : "devices.turnOnNamed", { name: device.name })}
+        />
       </View>
 
       {error ? (
@@ -590,10 +596,11 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
 
       {/* Monthly cost */}
       <View style={styles.costCardDetail}>
+        <GradientFill kind="dark" />
         <Text style={styles.costLabel}>{t("detail.monthlyCost")}</Text>
         <View style={styles.metricRow}>
           <Text style={[styles.metricValue, { color: colors.inverseOnSurface }]}>
-            {(cost?.estimated_fcfa ?? 0).toLocaleString()}
+            {(cost?.estimated_fcfa ?? 0).toLocaleString(locale)}
           </Text>
           <Text style={[styles.metricUnit, { color: colors.secondaryFixed }]}>FCFA</Text>
         </View>
@@ -601,12 +608,12 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
           <View style={styles.costItem}>
             <Text style={styles.costItemLabel}>{t("detail.dailyAvg")}</Text>
             <Text style={styles.costItemValue}>
-              {(cost?.daily_avg_fcfa ?? 0).toLocaleString()} FCFA
+              {(cost?.daily_avg_fcfa ?? 0).toLocaleString(locale)} FCFA
             </Text>
           </View>
           <View style={styles.costItem}>
             <Text style={styles.costItemLabel}>{t("detail.projectedUsage")}</Text>
-            <Text style={styles.costItemValue}>{(cost?.projected_kwh ?? 0).toLocaleString()} kWh</Text>
+            <Text style={styles.costItemValue}>{(cost?.projected_kwh ?? 0).toLocaleString(locale)} kWh</Text>
           </View>
         </View>
       </View>
@@ -645,7 +652,7 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
       {/* This device's alerts */}
       {alerts.length === 0 ? (
         <View style={[glassCard, styles.insightCard]}>
-          <View style={[styles.insightIcon, { backgroundColor: colors.surfaceContainerLow }]}>
+          <View style={[glass.orb, styles.insightIcon]}>
             <Icon name="check_circle" size={22} color={colors.secondary} />
           </View>
           <View style={styles.insightBody}>
@@ -658,11 +665,9 @@ function DeviceDetail({ mac, homeId, onBack, onOpenControl }) {
           <View key={i} style={[glassCard, styles.insightCard]}>
             <View
               style={[
+                glass.orb,
                 styles.insightIcon,
-                {
-                  backgroundColor:
-                    a.type === "spike" ? "rgba(255, 218, 214, 0.35)" : colors.surfaceContainerLow,
-                },
+                a.type === "spike" && { backgroundColor: "rgba(255, 218, 214, 0.75)" },
               ]}
             >
               <Icon
@@ -761,26 +766,33 @@ function HistoryBars({ history, width, emptyLabel }) {
  * opacity from a temporary Google URL that will stop resolving. Purely
  * ornamental, so it is dropped rather than baked in as a broken link. */
 function DeviceControl({ mac, onBack }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const [device, setDevice] = useState(null);
   const [ceilingWatts, setCeilingWatts] = useState(0);
   const [toggling, setToggling] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const pendingOn = useRef(null);
+  const toast = useToast();
   const [error, setError] = useState("");
 
   const fetchDevice = useCallback(async () => {
     try {
       const res = await api.get(`/devices/${mac}`);
-      setDevice(res.data);
+      // A refresh that lands mid-command must not flick the switch back.
+      setDevice(pendingOn.current === null ? res.data : { ...res.data, is_on: pendingOn.current });
+      setLoadFailed(false);
     } catch (err) {
-      setError(t("detail.loadError"));
+      // Only the first load reports here; a failed refresh keeps the last
+      // figures and the shell's banner says the server is unreachable.
+      setLoadFailed(true);
     }
   }, [mac]);
 
   useEffect(() => {
     fetchDevice();
-    const interval = setInterval(fetchDevice, 3000);
-    return () => clearInterval(interval);
   }, [fetchDevice]);
+
+  useLiveRefresh(fetchDevice, { topics: ["devices", "alerts"], interval: 3000 });
 
   useEffect(() => {
     // Only feeds the draw bar's ceiling, so once per device is enough.
@@ -789,18 +801,26 @@ function DeviceControl({ mac, onBack }) {
       .catch(() => {});
   }, [mac]);
 
+  // The new state shows at once, with a tap under the thumb; it goes back
+  // with a message if the command fails. See live/useDeviceToggle.js.
   const togglePower = async () => {
     if (!device || toggling) return;
     const nextIsOn = !device.is_on;
+    pendingOn.current = nextIsOn;
+    tap();
     setToggling(true);
     setError("");
+    setDevice((prev) => ({ ...prev, is_on: nextIsOn }));
     try {
       await api.post(`/control/${mac}?command=${nextIsOn ? "ON" : "OFF"}`);
-      setDevice((prev) => ({ ...prev, is_on: nextIsOn }));
-      setTimeout(fetchDevice, 500);
     } catch (err) {
-      setError(err.response?.data?.detail || t("detail.toggleError"));
+      setDevice((prev) => ({ ...prev, is_on: !nextIsOn }));
+      failure();
+      const message = err.response?.data?.detail || t("detail.toggleError");
+      setError(message);
+      toast.show(message, { tone: "error" });
     }
+    pendingOn.current = null;
     setToggling(false);
   };
 
@@ -811,7 +831,7 @@ function DeviceControl({ mac, onBack }) {
           <Icon name="arrow_back" size={20} color={colors.onSurfaceVariant} />
           <Text style={styles.backLabel}>{t("control.back")}</Text>
         </TouchableOpacity>
-        {error ? <Text style={styles.emptyText}>{error}</Text> : <ActivityIndicator color={colors.secondary} />}
+        {loadFailed ? <Text style={styles.emptyText}>{t("detail.loadError")}</Text> : <ActivityIndicator color={colors.secondary} />}
       </View>
     );
   }
@@ -819,8 +839,8 @@ function DeviceControl({ mac, onBack }) {
   const isOn = device.is_on;
   const watts = device.watts || 0;
   const draw = watts >= 1000
-    ? { value: (watts / 1000).toFixed(1), unit: "kW" }
-    : { value: String(Math.round(watts)), unit: "W" };
+    ? { value: (watts / 1000).toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }), unit: "kW" }
+    : { value: Math.round(watts).toLocaleString(locale), unit: "W" };
   const ceiling = Math.max(ceilingWatts, watts, 1);
   const drawPct = Math.min((watts / ceiling) * 100, 100);
 
@@ -937,6 +957,7 @@ function DeviceControl({ mac, onBack }) {
 }
 
 const styles = StyleSheet.create({
+  switchSlot: { marginTop: -8, marginRight: -8 },
   controlCard: { padding: spacing.md, alignItems: "center", gap: spacing.md, marginTop: spacing.xs },
   controlName: { ...type.headlineLg, color: colors.onSurface, textAlign: "center" },
   controlStatusRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
@@ -968,7 +989,7 @@ const styles = StyleSheet.create({
   metricUnitPlain: { ...type.bodyMd, color: colors.onSurfaceVariant, marginBottom: 6 },
   drawTrack: {
     height: 6, borderRadius: radius.full,
-    backgroundColor: colors.surfaceVariant, overflow: "hidden", marginTop: spacing.xs,
+    backgroundColor: "rgba(255, 255, 255, 0.7)", overflow: "hidden", marginTop: spacing.xs,
   },
   drawFill: { height: "100%", borderRadius: radius.full },
 
@@ -1010,8 +1031,7 @@ const styles = StyleSheet.create({
   statusText: { ...type.labelSm, color: colors.onSurfaceVariant },
 
   costCardDetail: {
-    backgroundColor: colors.primaryContainer,
-    borderRadius: radius.xl,
+    ...glass.dark,
     padding: spacing.md, gap: spacing.sm, minHeight: 160,
   },
   costLabel: { ...type.bodyLg, color: colors.primaryFixedDim },
@@ -1026,12 +1046,15 @@ const styles = StyleSheet.create({
   historyHeader: { gap: spacing.sm },
   sectionTitle: { ...type.headlineMd, color: colors.onSurface },
   rangeTabs: {
+    ...glass.subtle,
     flexDirection: "row", alignSelf: "flex-start",
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: radius.lg, padding: 4,
+    borderRadius: radius.full, padding: 4,
   },
-  rangeTab: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.DEFAULT },
-  rangeTabActive: { backgroundColor: colors.secondaryContainer },
+  rangeTab: {
+    paddingHorizontal: spacing.sm, paddingVertical: 5, borderRadius: radius.full,
+    borderWidth: 1, borderColor: "transparent",
+  },
+  rangeTabActive: glass.pillActive,
   rangeTabLabel: { ...type.labelSm },
 
   chartRow: { flexDirection: "row", alignItems: "flex-end", marginTop: spacing.sm },
@@ -1050,17 +1073,20 @@ const styles = StyleSheet.create({
   insightTitle: { ...type.bodyMd, color: colors.onSurface },
   insightText: { ...type.labelSm, color: colors.onSurfaceVariant, marginTop: 4 },
 
-  modalScrim: { flex: 1, backgroundColor: "rgba(11, 28, 48, 0.4)", justifyContent: "flex-end" },
+  modalScrim: { flex: 1, backgroundColor: glass.scrim, justifyContent: "flex-end" },
+  // A form sheet sits on a scrim, not on the backdrop, so it is kept near
+  // opaque: there is nothing behind it worth seeing through.
   modalSheet: {
-    backgroundColor: colors.surfaceContainerLowest,
-    borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl,
-    borderWidth: 1, borderColor: "rgba(198, 198, 205, 0.3)",
+    ...glass.strong,
+    backgroundColor: "rgba(248, 250, 255, 0.95)",
+    borderBottomLeftRadius: 0, borderBottomRightRadius: 0,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
     maxHeight: "88%",
   },
   modalHeader: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: "rgba(198, 198, 205, 0.2)",
+    borderBottomWidth: 1, borderBottomColor: glass.divider,
   },
   modalTitle: { ...type.headlineMd, fontSize: 20, lineHeight: 28, color: colors.onSurface },
   modalClose: { padding: 8, borderRadius: radius.full },
@@ -1068,23 +1094,19 @@ const styles = StyleSheet.create({
   fieldLabel: { ...type.labelSm, color: colors.onSurfaceVariant, marginTop: spacing.xs },
   input: {
     ...type.bodyMd,
-    color: colors.onSurface,
-    backgroundColor: colors.surfaceContainerLow,
-    borderWidth: 1, borderColor: "rgba(198, 198, 205, 0.5)",
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.sm, paddingVertical: 12,
+    ...glass.input,
+    borderColor: "rgba(198, 198, 205, 0.6)",
   },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
   fieldError: { ...type.labelSm, color: colors.error, marginTop: spacing.xs },
   submitButton: {
-    backgroundColor: colors.secondary,
-    borderRadius: radius.lg,
-    paddingVertical: 14, alignItems: "center",
+    ...glass.primaryButton,
     marginTop: spacing.sm,
   },
-  submitLabel: { ...type.labelSm, color: colors.onSecondary },
+  submitLabel: glass.primaryButtonText,
 
-  page: { flex: 1, backgroundColor: colors.background },
+  // Transparent: the ambient backdrop behind AppShell shows through.
+  page: { flex: 1, backgroundColor: "transparent" },
   pageContent: { padding: spacing.marginMobile, paddingBottom: spacing.xl, gap: spacing.sm },
 
   header: { marginBottom: spacing.xs },
@@ -1092,12 +1114,11 @@ const styles = StyleSheet.create({
   subtitle: { ...type.bodyMd, color: colors.onSurfaceVariant },
 
   addButton: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.xs,
-    backgroundColor: ACCENT,
-    paddingHorizontal: spacing.md, paddingVertical: 14,
-    borderRadius: radius.full, alignSelf: "flex-start",
+    ...glass.primaryButton,
+    paddingHorizontal: spacing.md,
+    alignSelf: "flex-start",
   },
-  addButtonLabel: { ...type.labelSm, color: "#ffffff" },
+  addButtonLabel: glass.primaryButtonText,
 
   statsRow: { flexDirection: "row", gap: spacing.sm },
   statCard: {
@@ -1107,8 +1128,8 @@ const styles = StyleSheet.create({
   statValue: { ...type.headlineMd, color: colors.onBackground },
 
   drawCard: {
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: radius.xl,
+    ...glass.subtle,
+    borderRadius: 16,
     padding: spacing.sm,
   },
   drawRow: { flexDirection: "row", alignItems: "baseline", gap: spacing.xs },
@@ -1120,22 +1141,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm, paddingVertical: 6,
     borderRadius: radius.full, borderWidth: 1,
   },
-  filterPillActive: { backgroundColor: colors.secondaryContainer, borderColor: "transparent" },
-  filterPillIdle: { backgroundColor: colors.surface, borderColor: colors.outlineVariant },
+  filterPillActive: glass.pillActive,
+  filterPillIdle: glass.pillIdle,
   filterLabel: { ...type.labelSm },
 
   deviceCard: { padding: 20, gap: spacing.sm },
   deviceCardOff: { opacity: 0.8 },
   deviceTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  iconCircle: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: colors.surfaceContainerLow,
-    borderWidth: 1, borderColor: "rgba(198, 198, 205, 0.5)",
-    alignItems: "center", justifyContent: "center",
-  },
+  iconCircle: { ...glass.orb, width: 40, height: 40, borderRadius: 20 },
   iconCircleOff: {
-    backgroundColor: colors.surfaceContainerLowest,
-    borderColor: "rgba(198, 198, 205, 0.3)",
+    backgroundColor: "rgba(255, 255, 255, 0.4)",
+    borderColor: "rgba(255, 255, 255, 0.7)",
+    boxShadow: "none",
   },
   toggle: { width: 40, height: 20, borderRadius: radius.full, justifyContent: "center" },
   toggleKnob: {
@@ -1153,7 +1170,7 @@ const styles = StyleSheet.create({
 
   deviceBottom: {
     paddingTop: spacing.sm,
-    borderTopWidth: 1, borderTopColor: "rgba(198, 198, 205, 0.3)",
+    borderTopWidth: 1, borderTopColor: glass.divider,
   },
   drawCaption: { ...type.labelSm },
   deviceDraw: { ...type.dataLabel, marginTop: 2 },
@@ -1161,52 +1178,4 @@ const styles = StyleSheet.create({
   emptyCard: { padding: spacing.md, alignItems: "center" },
   emptyText: { ...type.bodyMd, color: colors.onSurfaceVariant, textAlign: "center" },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-
-  pageHeader: { padding: 16, paddingBottom: 8 },
-  pageTitle: { fontSize: 24, fontWeight: "700", color: "#0f172a", marginBottom: 4 },
-  pageSub: { fontSize: 13, color: "#64748b" },
-  pageSubBold: { fontWeight: "700", color: "#3b82f6" },
-  filterBtn: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, backgroundColor: "#f1f5f9" },
-  filterBtnActive: { backgroundColor: "#3b82f6" },
-  filterBtnText: { fontSize: 13, fontWeight: "600", color: "#64748b" },
-  filterBtnTextActive: { color: "#fff" },
-
-  deviceRow: {
-    flexDirection: "row", alignItems: "center", gap: 14,
-    backgroundColor: "#fff", borderRadius: 14, padding: 14, marginBottom: 10,
-  },
-  deviceIconBox: { width: 44, height: 44, borderRadius: 12, backgroundColor: "#eff6ff", justifyContent: "center", alignItems: "center" },
-  deviceIcon: { fontSize: 20 },
-  deviceInfo: { flex: 1 },
-  deviceNameRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  deviceRoom: { fontSize: 12, color: "#94a3b8", marginTop: 2 },
-  deviceStatus: { fontSize: 11, fontWeight: "600", marginTop: 2 },
-  deviceRight: { alignItems: "flex-end", gap: 6 },
-  deviceKw: { fontSize: 14, fontWeight: "700", color: "#0f172a" },
-  typeTag: { backgroundColor: "#eff6ff", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
-  typeTagText: { fontSize: 9, fontWeight: "700", color: "#3b82f6", textTransform: "uppercase" },
-
-  backBtn: { color: "#3b82f6", fontSize: 14, fontWeight: "600", marginBottom: 16 },
-  detailIcon: { fontSize: 36 },
-  detailName: { fontSize: 20, fontWeight: "700", color: "#0f172a" },
-  detailRoom: { fontSize: 13, color: "#94a3b8", marginTop: 2 },
-
-  powerCard: {
-    backgroundColor: "#3b82f6", borderRadius: 18, padding: 20,
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20,
-  },
-  powerLabel: { fontSize: 12, color: "rgba(255,255,255,0.75)", marginBottom: 4 },
-  powerWatts: { fontSize: 28, fontWeight: "700", color: "#fff" },
-  powerUnit: { fontSize: 14, fontWeight: "400" },
-
-  sectionLabel: { fontSize: 11, fontWeight: "700", color: "#94a3b8", letterSpacing: 0.5, marginBottom: 10 },
-  runtimeRow: { flexDirection: "row", gap: 10, marginBottom: 20 },
-  runtimeCard: { flex: 1, backgroundColor: "#fff", borderRadius: 14, padding: 14, alignItems: "center" },
-  runtimeLabel: { fontSize: 11, color: "#94a3b8", marginBottom: 4 },
-  runtimeValue: { fontSize: 16, fontWeight: "700", color: "#0f172a" },
-
-  card: { backgroundColor: "#fff", borderRadius: 14, paddingHorizontal: 16 },
-  infoRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
-  infoLabel: { fontSize: 13, color: "#94a3b8" },
-  infoValue: { fontSize: 13, fontWeight: "600", color: "#0f172a" },
 });

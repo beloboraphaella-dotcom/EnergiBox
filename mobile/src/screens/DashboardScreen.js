@@ -6,8 +6,17 @@ import {
 import Svg, { Circle, Path, Defs, LinearGradient, Stop } from "react-native-svg";
 import { api } from "../api";
 import Icon from "../components/Icon";
-import { colors, spacing, radius, type, glassCard, surfaceCard } from "../theme";
+import GradientFill from "../components/GradientFill";
+import { colors, spacing, type, glassCard, surfaceCard, glass } from "../theme";
 import { useLanguage } from "../context/LanguageContext";
+import { Chip, ErrorText, Field, GhostButton, GlassSheet, PrimaryButton } from "../components/GlassUI";
+import Skeleton, { SkeletonList } from "../components/Skeleton";
+import Switch from "../components/Switch";
+import { useToast } from "../components/Toast";
+import { useLiveRefresh } from "../live/LiveContext";
+import { useDeviceToggle } from "../live/useDeviceToggle";
+import { failure, success } from "../haptics";
+import { deviceIcon } from "../utils";
 
 // This card used to read "18:00 - 21:00 / High tariff period", mirroring
 // an advisor constant. Cameroon's low-voltage tariff has no time-of-day
@@ -19,21 +28,11 @@ const GAUGE_SIZE = 192;
 const GAUGE_RADIUS = 45;
 const GAUGE_CIRCUMFERENCE = 2 * Math.PI * GAUGE_RADIUS;
 
-function deviceIcon(name = "") {
-  const n = name.toLowerCase();
-  if (/frig|fridge|réfrig|refrig|freezer|congel/.test(n)) return "kitchen";
-  if (/clim|ac\b|air|cond/.test(n)) return "ac_unit";
-  if (/heater|chauffe|boiler|ballon/.test(n)) return "water_heater";
-  if (/light|lamp|lumi|ampoule/.test(n)) return "lightbulb";
-  if (/tv|télé|tele|screen/.test(n)) return "tv";
-  if (/fan|ventil/.test(n)) return "mode_fan";
-  if (/pump|pompe/.test(n)) return "water_pump";
-  return "power";
-}
-
-function formatWatts(watts) {
-  if (watts >= 1000) return { value: (watts / 1000).toFixed(1), unit: "kW" };
-  return { value: String(Math.round(watts)), unit: "W" };
+function formatWatts(watts, locale) {
+  if (watts >= 1000) {
+    return { value: (watts / 1000).toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }), unit: "kW" };
+  }
+  return { value: Math.round(watts).toLocaleString(locale), unit: "W" };
 }
 
 /** Catmull-Rom through every point as cubic Béziers — the same curve the
@@ -56,13 +55,22 @@ function buildSpline(pts) {
   return d;
 }
 
-export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }) {
-  const { t } = useLanguage();
+export default function DashboardScreen({ homeId, onOpenDevices, onOpenDevice, onOnlineCount }) {
+  const { t, tn, locale } = useLanguage();
+  const toast = useToast();
   const [overview, setOverview] = useState(null);
   const [devices, setDevices] = useState([]);
   const [hourly, setHourly] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [budgetOpen, setBudgetOpen] = useState(false);
+  const [allOffOpen, setAllOffOpen] = useState(false);
+  const [switchingAll, setSwitchingAll] = useState(false);
   const { width } = useWindowDimensions();
+
+  const setDeviceState = useCallback((mac, isOn) => {
+    setDevices((list) => list.map((d) => (d.mac === mac ? { ...d, is_on: isOn } : d)));
+  }, []);
+  const { toggle, apply, busy } = useDeviceToggle(setDeviceState);
 
   const fetchAll = useCallback(async () => {
     if (!homeId) return;
@@ -74,19 +82,19 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
       api.get(`/history/hourly?home_id=${homeId}`),
     ]);
     if (results[0].status === "fulfilled") setOverview(results[0].value.data);
-    if (results[1].status === "fulfilled") setDevices(results[1].value.data);
+    if (results[1].status === "fulfilled") setDevices(apply(results[1].value.data));
     if (results[2].status === "fulfilled") setHourly(results[2].value.data);
     // The top app bar owns the connectivity indicator, so hand it the count.
     if (results[0].status === "fulfilled") {
       onOnlineCount?.(results[0].value.data?.devices?.online ?? 0);
     }
-  }, [homeId, onOnlineCount]);
+  }, [homeId, onOnlineCount, apply]);
 
   useEffect(() => {
     fetchAll();
-    const interval = setInterval(fetchAll, 3000);
-    return () => clearInterval(interval);
   }, [fetchAll]);
+
+  useLiveRefresh(fetchAll, { topics: ["devices", "alerts"], interval: 3000 });
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -94,8 +102,40 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
     setRefreshing(false);
   };
 
+  const switchAllOff = async () => {
+    setSwitchingAll(true);
+    try {
+      const res = await api.post(`/homes/${homeId}/all-off`);
+      const switched = res.data.switched || [];
+      setDevices((list) => list.map((d) => (switched.includes(d.mac) ? { ...d, is_on: false } : d)));
+      success();
+      toast.show(tn("allOff.done", switched.length), { tone: "success" });
+      if (res.data.failed?.length) toast.show(tn("allOff.partial", res.data.failed.length), { tone: "error" });
+    } catch (err) {
+      failure();
+      toast.show(err.response?.data?.detail || t("allOff.error"), { tone: "error" });
+    }
+    setSwitchingAll(false);
+    setAllOffOpen(false);
+    fetchAll();
+  };
+
+  if (!overview && devices.length === 0) {
+    return (
+      <ScrollView style={styles.page} contentContainerStyle={styles.pageContent}>
+        <SkeletonList label={t("common.loading")}>
+          <Skeleton height={36} style={{ width: "60%" }} radius={12} />
+          <Skeleton height={150} />
+          <Skeleton height={250} />
+          <Skeleton height={130} />
+          <Skeleton height={130} />
+        </SkeletonList>
+      </ScrollView>
+    );
+  }
+
   const liveWatts = devices.reduce((sum, d) => sum + (d.watts || 0), 0);
-  const live = formatWatts(liveWatts);
+  const live = formatWatts(liveWatts, locale);
   const peakWatts = Math.max(hourly?.max_watts || 0, liveWatts, 1);
   const dashOffset = GAUGE_CIRCUMFERENCE * (1 - Math.min(liveWatts / peakWatts, 1));
 
@@ -103,32 +143,39 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
   const change = overview?.today?.change_vs_yesterday ?? 0;
   const estimatedFcfa = overview?.month?.estimated_fcfa ?? 0;
   const projectedFcfa = overview?.month?.projected_fcfa ?? 0;
+  const budgetFcfa = overview?.month?.budget_fcfa ?? null;
 
-  // The web lays the device grid out with CSS grid; here the card width is
-  // computed so two fit per row inside the page gutters.
   // The household's own busiest hour, from today's readings. Distinct
   // from `peakWatts` above, which is the gauge's ceiling.
   const peakHour = hourly?.peak_hour ?? null;
   const peakHourWatts = hourly?.max_watts ?? 0;
+  const peakDraw = formatWatts(peakHourWatts, locale);
 
+  // Two device cards per row inside the page gutters.
   const cardWidth = (width - spacing.marginMobile * 2 - spacing.sm) / 2;
+  const onDevices = devices.filter((d) => d.is_on);
 
   return (
     <ScrollView
       style={styles.page}
       contentContainerStyle={styles.pageContent}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.secondary} />}
     >
-      {/* Header */}
-      {/* The mockup's connection badge is `hidden md:flex` — it does not
-          appear on phones, where the top app bar carries a wifi button
-          instead. */}
       <View style={styles.headerRow}>
         <View style={styles.headerText}>
-          <Text style={styles.title}>{t("overview.title")}</Text>
+          <Text style={styles.title} accessibilityRole="header">{t("overview.title")}</Text>
           <Text style={styles.subtitle}>{t("overview.subtitle")}</Text>
         </View>
       </View>
+
+      {/* Money first: the month so far, its projection, and the budget. */}
+      <BudgetCard
+        estimated={estimatedFcfa}
+        projected={projectedFcfa}
+        forecast={overview?.month?.forecast}
+        budget={budgetFcfa}
+        onEdit={() => setBudgetOpen(true)}
+      />
 
       {/* Live gauge */}
       <View style={[glassCard, styles.gaugeCard]}>
@@ -137,15 +184,25 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
           <Text style={styles.liveLabel}>{t("overview.live").toUpperCase()}</Text>
         </View>
 
-        <View style={styles.gaugeWrap}>
+        <View
+          style={styles.gaugeWrap}
+          accessible
+          accessibilityLabel={`${t("overview.live")} : ${live.value} ${live.unit}`}
+        >
           <Svg width={GAUGE_SIZE} height={GAUGE_SIZE} viewBox="0 0 100 100">
             <Circle
               cx="50" cy="50" r={GAUGE_RADIUS} fill="none"
-              stroke={colors.surfaceContainerLow} strokeWidth="8"
+              stroke="rgba(255, 255, 255, 0.8)" strokeWidth="8"
             />
+            <Defs>
+              <LinearGradient id="gaugeGradient" x1="0" y1="0" x2="1" y2="1">
+                <Stop offset="0" stopColor={colors.secondaryFixedDim} />
+                <Stop offset="1" stopColor={colors.secondary} />
+              </LinearGradient>
+            </Defs>
             <Circle
               cx="50" cy="50" r={GAUGE_RADIUS} fill="none"
-              stroke={colors.secondary} strokeWidth="8" strokeLinecap="round"
+              stroke="url(#gaugeGradient)" strokeWidth="8" strokeLinecap="round"
               strokeDasharray={`${GAUGE_CIRCUMFERENCE.toFixed(1)}`}
               strokeDashoffset={dashOffset.toFixed(1)}
               transform="rotate(-90 50 50)"
@@ -166,7 +223,7 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
         </View>
         <View>
           <Text style={styles.statValue}>
-            {todayKwh.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+            {todayKwh.toLocaleString(locale, { maximumFractionDigits: 1 })}
             <Text style={styles.statUnit}> kWh</Text>
           </Text>
           <View style={styles.statFootRow}>
@@ -177,28 +234,9 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
             />
             <Text style={styles.statFoot}>
               {change > 0 ? "+" : ""}
-              {change}% {t("overview.vsYesterday")}
+              {change.toLocaleString(locale)}% {t("overview.vsYesterday")}
             </Text>
           </View>
-        </View>
-      </View>
-
-      {/* Estimated cost */}
-      <View style={styles.costCard}>
-        <View style={styles.statTop}>
-          <Text style={[styles.statLabel, { color: colors.primaryFixedDim }]}>
-            {t("overview.estCost").toUpperCase()}
-          </Text>
-          <Icon name="payments" size={24} color={colors.secondaryFixed} />
-        </View>
-        <View>
-          <Text style={[styles.statValue, { color: colors.inverseOnSurface }]}>
-            {estimatedFcfa.toLocaleString()}
-            <Text style={[styles.statUnit, { color: colors.primaryFixedDim }]}> FCFA</Text>
-          </Text>
-          <Text style={[styles.statFoot, { color: colors.primaryFixedDim, marginTop: 8 }]}>
-            {t("overview.projected")}: {projectedFcfa.toLocaleString()} FCFA/{t("overview.perMonth")}
-          </Text>
         </View>
       </View>
 
@@ -206,7 +244,7 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
       <View style={[surfaceCard, styles.statCard]}>
         <View style={styles.statTop}>
           <Text style={styles.statLabel}>{t("overview.peakTime").toUpperCase()}</Text>
-          <Icon name="schedule" size={24} color={colors.tertiaryContainer} />
+          <Icon name="schedule" size={24} color={colors.onTertiaryContainer} />
         </View>
         <View>
           <Text style={styles.peakValue}>
@@ -215,14 +253,11 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
               : `${String(peakHour).padStart(2, "0")}:00`}
           </Text>
           <View style={styles.statFootRow}>
-            <Icon name="bolt" size={16} color={colors.tertiaryContainer} />
+            <Icon name="bolt" size={16} color={colors.onTertiaryContainer} />
             <Text style={styles.statFoot}>
               {peakHour === null
                 ? t("overview.peakNoneHint")
-                : t("overview.peakDraw", {
-                    watts: formatWatts(peakHourWatts).value,
-                    unit: formatWatts(peakHourWatts).unit,
-                  })}
+                : t("overview.peakDraw", { watts: peakDraw.value, unit: peakDraw.unit })}
             </Text>
           </View>
         </View>
@@ -233,11 +268,19 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
 
       {/* Active devices */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>{t("overview.activeDevices")}</Text>
-        <TouchableOpacity onPress={onOpenDevices} activeOpacity={0.7}>
+        <Text style={styles.sectionTitle} accessibilityRole="header">{t("overview.activeDevices")}</Text>
+        <TouchableOpacity onPress={onOpenDevices} activeOpacity={0.7} hitSlop={12} accessibilityRole="button">
           <Text style={styles.viewAll}>{t("overview.viewAll")}</Text>
         </TouchableOpacity>
       </View>
+      {onDevices.length > 0 && (
+        <GhostButton
+          icon="power_settings_new"
+          label={t("allOff.button")}
+          onPress={() => setAllOffOpen(true)}
+          style={styles.allOff}
+        />
+      )}
 
       {devices.length === 0 ? (
         <View style={[surfaceCard, styles.emptyCard]}>
@@ -246,12 +289,14 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
       ) : (
         <View style={styles.deviceGrid}>
           {devices.slice(0, 8).map((device) => {
-            const draw = formatWatts(device.watts || 0);
+            const draw = formatWatts(device.watts || 0, locale);
             return (
               <TouchableOpacity
                 key={device.id}
-                onPress={onOpenDevices}
+                onPress={() => onOpenDevice?.(device.mac)}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={t("overview.openDevice", { name: device.name })}
                 style={[
                   surfaceCard,
                   styles.deviceCard,
@@ -260,22 +305,19 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
                 ]}
               >
                 <View style={styles.deviceTop}>
-                  <Icon name={deviceIcon(device.name)} size={24} color={colors.onSurfaceVariant} />
-                  <View
-                    style={[
-                      styles.toggle,
-                      {
-                        backgroundColor: device.is_on
-                          ? colors.secondary
-                          : "rgba(198, 198, 205, 0.5)",
-                      },
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.toggleKnob,
-                        device.is_on ? styles.toggleKnobOn : styles.toggleKnobOff,
-                      ]}
+                  <View style={[glass.orb, styles.deviceOrb]}>
+                    <Icon
+                      name={deviceIcon(device.name, device.type)}
+                      size={20}
+                      color={device.is_on ? colors.secondary : colors.outline}
+                    />
+                  </View>
+                  <View style={styles.switchSlot}>
+                    <Switch
+                      value={device.is_on}
+                      disabled={busy[device.mac]}
+                      onValueChange={() => toggle(device)}
+                      label={t(device.is_on ? "devices.turnOffNamed" : "devices.turnOnNamed", { name: device.name })}
                     />
                   </View>
                 </View>
@@ -297,7 +339,180 @@ export default function DashboardScreen({ homeId, onOpenDevices, onOnlineCount }
           })}
         </View>
       )}
+
+      <BudgetSheet
+        visible={budgetOpen}
+        homeId={homeId}
+        current={budgetFcfa}
+        projected={projectedFcfa}
+        onClose={() => setBudgetOpen(false)}
+        onSaved={() => {
+          setBudgetOpen(false);
+          fetchAll();
+        }}
+      />
+
+      <GlassSheet visible={allOffOpen} title={t("allOff.title")} onClose={() => setAllOffOpen(false)}>
+        <Text style={styles.sheetText}>{tn("allOff.confirm", onDevices.length)}</Text>
+        <View style={styles.chipRow}>
+          {onDevices.map((d) => (
+            <Chip key={d.mac} tone="teal">{d.name}</Chip>
+          ))}
+        </View>
+        <Text style={styles.sheetHint}>{t("allOff.hint")}</Text>
+        <PrimaryButton
+          icon="power_settings_new"
+          label={switchingAll ? t("allOff.working") : t("allOff.button")}
+          onPress={switchAllOff}
+          disabled={switchingAll}
+        />
+        <GhostButton label={t("common.cancel")} onPress={() => setAllOffOpen(false)} />
+      </GlassSheet>
     </ScrollView>
+  );
+}
+
+/** The month in money: spent so far, the projection at the current pace,
+ * and — once the household has set one — a bar against their budget.
+ * Same card as the web dashboard's. */
+function BudgetCard({ estimated, projected, forecast, budget, onEdit }) {
+  const { t, locale } = useLanguage();
+  const money = (v) => Math.round(v).toLocaleString(locale);
+  const ratio = budget ? Math.min(estimated / budget, 1) : 0;
+  const projectedRatio = budget ? Math.min(projected / budget, 1) : 0;
+  const over = budget ? projected - budget : 0;
+  const tone = !budget ? null : over > 0 ? "over" : projected > budget * 0.9 ? "near" : "ok";
+  const barColor = tone === "over" ? "#ff8a80" : tone === "near" ? "#ffcc80" : colors.secondaryFixed;
+  const noteColor = tone === "over" ? "#ffb4ab" : tone === "near" ? "#ffddb0" : colors.primaryFixedDim;
+
+  return (
+    <View style={styles.costCard}>
+      <GradientFill kind="dark" />
+      <View style={styles.budgetHead}>
+        <Icon name="payments" size={22} color={colors.secondaryFixed} />
+        <Text style={[styles.statLabel, { color: colors.primaryFixedDim }]}>{t("budget.thisMonth").toUpperCase()}</Text>
+      </View>
+      <Text style={styles.budgetValue}>
+        {money(estimated)}
+        <Text style={[styles.statUnit, { color: colors.primaryFixedDim }]}> FCFA</Text>
+      </Text>
+      <Text style={[styles.statFoot, { color: colors.primaryFixedDim }]}>
+        {t("budget.projection", { amount: money(projected) })}
+      </Text>
+      {forecast?.low_fcfa != null && forecast.high_fcfa > forecast.low_fcfa && (
+        <Text style={[styles.statFoot, styles.dim]}>
+          {t("budget.range", { low: money(forecast.low_fcfa), high: money(forecast.high_fcfa) })}
+        </Text>
+      )}
+
+      {budget ? (
+        <View style={styles.budgetBlock}>
+          <View style={styles.budgetRow}>
+            <Text style={styles.budgetOf}>{t("budget.of", { amount: money(budget) })}</Text>
+            <TouchableOpacity onPress={onEdit} hitSlop={12} accessibilityRole="button">
+              <Text style={styles.budgetEdit}>{t("budget.edit")}</Text>
+            </TouchableOpacity>
+          </View>
+          <View
+            style={styles.track}
+            accessible
+            accessibilityRole="progressbar"
+            accessibilityLabel={t("budget.of", { amount: money(budget) })}
+            accessibilityValue={{ min: 0, max: budget, now: Math.round(estimated) }}
+          >
+            <View style={[styles.trackFill, { width: `${projectedRatio * 100}%`, backgroundColor: "rgba(255,255,255,0.25)" }]} />
+            <View style={[styles.trackFill, { width: `${ratio * 100}%`, backgroundColor: barColor }]} />
+          </View>
+          <Text style={[styles.statFoot, { color: noteColor }]}>
+            {tone === "over"
+              ? t("budget.over", { amount: money(over) })
+              : t("budget.left", { amount: money(Math.max(budget - estimated, 0)) })}
+          </Text>
+          {forecast?.budget_risk != null && forecast.method !== "linear" && (
+            <Text style={[styles.statFoot, styles.dim]}>
+              {t("budget.risk", { pct: Math.round(forecast.budget_risk * 100) })}
+            </Text>
+          )}
+        </View>
+      ) : (
+        <View style={styles.budgetBlock}>
+          <Text style={[styles.statFoot, { color: colors.primaryFixedDim }]}>{t("budget.none")}</Text>
+          <GhostButton icon="savings" label={t("budget.set")} onPress={onEdit} style={styles.budgetSet} />
+        </View>
+      )}
+    </View>
+  );
+}
+
+function BudgetSheet({ visible, homeId, current, projected, onClose, onSaved }) {
+  const { t, locale } = useLanguage();
+  const [value, setValue] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setValue(current ? String(current) : "");
+      setError("");
+    }
+  }, [visible, current]);
+
+  // Round figures a household is likely to pick, around the projection.
+  const base = Math.max(5000, Math.ceil((projected || 10000) / 5000) * 5000);
+  const suggestions = [base, base + 5000, base + 10000];
+
+  const save = async (amount) => {
+    if (amount !== 0 && (!Number.isFinite(amount) || amount < 0)) {
+      setError(t("budget.errAmount"));
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.put(`/homes/${homeId}/budget?amount=${amount}`);
+      success();
+      onSaved();
+    } catch (err) {
+      setError(err.response?.data?.detail || t("budget.errSave"));
+    }
+    setSaving(false);
+  };
+
+  return (
+    <GlassSheet visible={visible} title={t("budget.title")} onClose={onClose}>
+      <Text style={styles.sheetText}>{t("budget.intro")}</Text>
+      <View style={styles.chipRow}>
+        {suggestions.map((amount) => {
+          const picked = value === String(amount);
+          return (
+            <TouchableOpacity
+              key={amount}
+              onPress={() => setValue(String(amount))}
+              accessibilityRole="button"
+              accessibilityState={{ selected: picked }}
+              style={[styles.pill, picked ? glass.pillActive : glass.pillIdle]}
+            >
+              <Text style={[styles.pillText, { color: picked ? colors.secondary : colors.onSurfaceVariant }]}>
+                {amount.toLocaleString(locale)} FCFA
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <Field
+        label={t("budget.amount")}
+        value={value}
+        onChangeText={(v) => setValue(v.replace(/[^0-9]/g, ""))}
+        keyboardType="number-pad"
+        placeholder="15000"
+      />
+      <ErrorText>{error}</ErrorText>
+      <PrimaryButton
+        label={saving ? t("common.saving") : t("common.save")}
+        onPress={() => save(Math.round(Number(value)))}
+        disabled={saving || !value}
+      />
+      {!!current && <GhostButton label={t("budget.remove")} onPress={() => save(0)} disabled={saving} />}
+    </GlassSheet>
   );
 }
 
@@ -369,7 +584,8 @@ function PowerChart({ hourly, width }) {
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.background },
+  // Transparent: the ambient backdrop behind AppShell shows through.
+  page: { flex: 1, backgroundColor: "transparent" },
   pageContent: { padding: spacing.marginMobile, paddingBottom: spacing.xl, gap: spacing.sm },
 
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" },
@@ -403,12 +619,27 @@ const styles = StyleSheet.create({
   peakValue: { ...type.headlineMd, color: colors.onBackground },
 
   costCard: {
-    backgroundColor: colors.primaryContainer,
-    borderRadius: radius.xl,
+    ...glass.dark,
     padding: spacing.md,
-    gap: spacing.md,
+    gap: 6,
     overflow: "hidden",
   },
+  budgetHead: { flexDirection: "row", alignItems: "center", gap: 8 },
+  budgetValue: { ...type.displayMetrics, fontSize: 40, lineHeight: 48, color: colors.inverseOnSurface },
+  budgetBlock: { marginTop: spacing.sm, gap: 8 },
+  budgetRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" },
+  budgetOf: { ...type.labelSm, color: colors.inverseOnSurface },
+  budgetEdit: { ...type.labelSm, color: colors.secondaryFixed },
+  budgetSet: { alignSelf: "flex-start", backgroundColor: "rgba(255,255,255,0.92)" },
+  track: { height: 12, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.15)", overflow: "hidden" },
+  trackFill: { position: "absolute", left: 0, top: 0, bottom: 0, borderRadius: 6 },
+  allOff: { alignSelf: "flex-start" },
+  dim: { fontSize: 13, color: colors.primaryFixedDim, opacity: 0.85 },
+  sheetText: { ...type.bodyMd, color: colors.onSurfaceVariant },
+  sheetHint: { ...type.bodyMd, fontSize: 14, lineHeight: 20, color: colors.outline },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  pill: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999 },
+  pillText: { ...type.dataLabel, fontSize: 14 },
 
   chartCard: { padding: spacing.md, marginTop: spacing.sm },
   gridLines: { ...StyleSheet.absoluteFillObject, justifyContent: "space-between" },
@@ -429,15 +660,10 @@ const styles = StyleSheet.create({
 
   deviceGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   deviceCard: { height: 128, padding: spacing.sm, justifyContent: "space-between" },
-  deviceCardOff: { opacity: 0.6 },
+  deviceCardOff: { opacity: 0.7 },
+  deviceOrb: { width: 36, height: 36, borderRadius: 18 },
   deviceTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  toggle: { width: 32, height: 16, borderRadius: radius.full, justifyContent: "center" },
-  toggleKnob: {
-    width: 12, height: 12, borderRadius: 6, backgroundColor: "#ffffff",
-    position: "absolute",
-  },
-  toggleKnobOn: { right: 2 },
-  toggleKnobOff: { left: 2 },
+  switchSlot: { marginTop: -8, marginRight: -8 },
   deviceName: { ...type.bodyMd, fontFamily: type.labelSm.fontFamily, fontSize: 16, color: colors.onSurface },
   deviceDraw: { ...type.dataLabel, fontSize: 12, marginTop: 4 },
 });

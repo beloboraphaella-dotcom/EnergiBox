@@ -30,11 +30,13 @@ threshold pricing the reduction that matters is the one that changes
 which rate the whole month is billed at.
 """
 
+import json
 from datetime import datetime
 
-import anthropic
-
+import bilingual
 import energy
+import insights
+import llm
 import tariff
 from config import get_connection as get_db
 
@@ -63,8 +65,9 @@ def _home_ids():
 def month_to_date(home_id):
     """(kWh so far this month, projected kWh for the full month).
 
-    Projection is linear on days elapsed, matching how /stats/overview
-    already projects, so the two screens cannot disagree.
+    The projection comes from insights.forecast_month — the same one
+    /stats/overview shows — so the advice and the dashboard cannot
+    disagree about where the month is heading.
     """
     conn = get_db()
     cursor = conn.cursor()
@@ -76,11 +79,11 @@ def month_to_date(home_id):
         WHERE rm.home_id = %s
         AND MONTH(r.timestamp) = MONTH(NOW()) AND YEAR(r.timestamp) = YEAR(NOW())
     """, (home_id,))
-    kwh = cursor.fetchone()[0] or 0
+    kwh = float(cursor.fetchone()[0] or 0)
     conn.close()
 
-    day = datetime.now().day or 1
-    return float(kwh), float(kwh) / day * 30
+    forecast = insights.forecast_month(home_id, kwh)
+    return kwh, float(forecast["kwh"] or 0)
 
 
 def device_month_kwh(home_id):
@@ -143,27 +146,65 @@ def standby_waste(monitored_point_id):
     return float(wasted), sorted(idle_hours)
 
 
-def generate_ai_phrasing(prompt_body):
-    """Ask Claude to phrase the tip. Returns None on any failure — no API
-    key, no internet, API down — so the caller falls back to the
-    rule-based template and the advisor keeps working offline."""
-    try:
-        client = anthropic.Anthropic()
-        response = client.with_options(timeout=6.0, max_retries=1).messages.create(
-            model="claude-haiku-4-5",
-            max_tokens=200,
-            system=(
-                "You write one short, friendly, plain-language energy-saving tip "
-                "for a Cameroonian household. One to two sentences. No bullet "
-                "points. Use the exact kWh and FCFA figures given and invent no "
-                "others. Electricity there is billed by monthly volume, not by "
-                "time of day, so never suggest shifting usage to cheaper hours."
-            ),
-            messages=[{"role": "user", "content": prompt_body}],
-        )
-        return next((b.text for b in response.content if b.type == "text"), None)
-    except Exception:
-        return None
+ADVISOR_SYSTEM = """You are the energy advisor of EnergiBox, an app that helps households in \
+Cameroon lower their electricity bill. You receive saving tips already computed by the app, \
+each with its facts and a draft in English and French. Rewrite each tip so it reads as \
+personal, warm and concrete advice, in both languages.
+
+Rules:
+- One or two sentences per tip and language. Plain text, no markdown, no emoji.
+- Use exactly the figures in the facts. Never add, change or compute a figure.
+- Electricity is billed by monthly volume: the month's total picks one rate for every kWh. \
+There is no cheaper time of day, so never suggest moving usage to other hours.
+- French: natural French as spoken in Cameroon, addressing the household as "vous".
+- Keep appliance names exactly as given.
+
+Answer with a JSON object: {"items": [{"id": "<id>", "en": "<English tip>", "fr": "<French tip>"}]}"""
+
+
+def _fcfa_fr(value):
+    """9 459 with a no-break space, as French writes thousands."""
+    return f"{value:,.0f}".replace(",", "\u00a0")
+
+
+def _fr(value, digits=1):
+    return f"{value:.{digits}f}".replace(".", ",")
+
+
+def _valid(text, grounding):
+    return (isinstance(text, str) and 20 <= len(text) <= 500
+            and llm.numbers_are_grounded(text, grounding))
+
+
+def phrase_suggestions(suggestions):
+    """Have the language model reword a home's tips, in one request.
+
+    Each tip keeps its template text unless the model returned a version
+    in both languages that quotes only the figures it was given. One call
+    per home per run keeps well inside free quotas; with no provider
+    configured, or none answering, every tip keeps its template."""
+    if not suggestions or not llm.enabled():
+        return suggestions
+    items = [
+        {"id": str(i), "kind": s["kind"], "facts": s["facts"],
+         "draft_en": s["suggestion_text"], "draft_fr": s["suggestion_text_fr"]}
+        for i, s in enumerate(suggestions)
+    ]
+    reply = llm.complete_json(ADVISOR_SYSTEM, json.dumps({"tips": items}, ensure_ascii=False))
+    by_id = {}
+    for item in (reply or {}).get("items", []) if isinstance(reply, dict) else []:
+        if isinstance(item, dict):
+            by_id[str(item.get("id"))] = item
+    for i, suggestion in enumerate(suggestions):
+        item = by_id.get(str(i))
+        if not item:
+            continue
+        grounding = "\n".join([suggestion["facts"], suggestion["suggestion_text"],
+                               suggestion["suggestion_text_fr"]])
+        en, fr = item.get("en"), item.get("fr")
+        if _valid(en, grounding) and _valid(fr, grounding):
+            suggestion.update(suggestion_text=en.strip(), suggestion_text_fr=fr.strip(), ai_written=True)
+    return suggestions
 
 
 def _hours_label(hours):
@@ -212,16 +253,21 @@ def build_suggestions(home_id):
             f"during hours it is usually idle ({window}). Switching it off over "
             f"that window would cut roughly {saving:.0f} FCFA from the bill."
         )
-        text = generate_ai_phrasing(
-            f"Appliance: {device['name']}\n"
-            f"Wasted while normally idle: {projected_waste:.1f} kWh this month\n"
-            f"Idle window: {window}\n"
-            f"Saving if eliminated: {saving:.0f} FCFA"
-        ) or fallback
-
         suggestions.append({
+            "kind": "standby",
             "monitored_point_id": device["id"],
-            "suggestion_text": text,
+            "suggestion_text": fallback,
+            "suggestion_text_fr": (
+                f"{device['name']} a consommé environ {_fr(projected_waste)} kWh ce mois-ci "
+                f"pendant des heures où il est d'habitude à l'arrêt ({window}). L'éteindre "
+                f"sur ce créneau réduirait la facture d'environ {_fcfa_fr(saving)} FCFA."
+            ),
+            "facts": (
+                f"Appliance: {device['name']}\n"
+                f"Wasted while normally idle: {projected_waste:.1f} kWh this month\n"
+                f"Idle window: {window}\n"
+                f"Saving if eliminated: {saving:.0f} FCFA"
+            ),
             "estimated_saving_fcfa": round(saving),
         })
 
@@ -241,15 +287,20 @@ def build_suggestions(home_id):
                     f"consumption. Cutting its use by a tenth would save about "
                     f"{saving:.0f} FCFA — the biggest single lever you have."
                 )
-                text = generate_ai_phrasing(
-                    f"Appliance: {top['name']}\n"
-                    f"Share of household consumption this month: {share * 100:.0f}%\n"
-                    f"Saving if its use drops by 10%: {saving:.0f} FCFA"
-                ) or fallback
-
                 suggestions.append({
+                    "kind": "dominant",
                     "monitored_point_id": top["id"],
-                    "suggestion_text": text,
+                    "suggestion_text": fallback,
+                    "suggestion_text_fr": (
+                        f"{top['name']} représente à lui seul {share * 100:.0f} % de la "
+                        f"consommation du mois. Réduire son usage d'un dixième économiserait "
+                        f"environ {_fcfa_fr(saving)} FCFA : c'est votre levier le plus important."
+                    ),
+                    "facts": (
+                        f"Appliance: {top['name']}\n"
+                        f"Share of household consumption this month: {share * 100:.0f}%\n"
+                        f"Saving if its use drops by 10%: {saving:.0f} FCFA"
+                    ),
                     "estimated_saving_fcfa": round(saving),
                 })
 
@@ -266,21 +317,32 @@ def build_suggestions(home_id):
             f"re-prices the whole month at {drop['target_rate']} FCFA and saves about "
             f"{drop['saving_fcfa']:.0f} FCFA."
         )
-        text = generate_ai_phrasing(
+        facts = (
             f"Projected monthly consumption: {projected:.0f} kWh\n"
             f"Rate it would be billed at: {drop['current_rate']} FCFA per kWh, "
             f"on every kWh of the month\n"
+            f"Consumption to finish at instead: {drop['target_kwh']} kWh\n"
             f"kWh to cut to reach the cheaper band: {drop['kwh_to_cut']:.0f}\n"
             f"Rate the whole month would then be billed at: "
             f"{drop['target_rate']} FCFA per kWh\n"
             f"Saving: {drop['saving_fcfa']:.0f} FCFA"
-        ) or fallback
+        )
+        text_fr = (
+            f"Vous vous dirigez vers {projected:.0f} kWh ce mois-ci, facturés "
+            f"{drop['current_rate']} FCFA chaque kWh. Terminer à {drop['target_kwh']} kWh, "
+            f"soit {drop['kwh_to_cut']:.0f} kWh de moins, ferait facturer tout le mois à "
+            f"{drop['target_rate']} FCFA le kWh et économiserait environ "
+            f"{_fcfa_fr(drop['saving_fcfa'])} FCFA."
+        )
 
         # Pinned to the biggest consumer: ai_suggestions is keyed by
         # device, and that is where acting on it would start.
         suggestions.append({
+            "kind": "band",
             "monitored_point_id": devices[0]["id"],
-            "suggestion_text": text,
+            "suggestion_text": fallback,
+            "suggestion_text_fr": text_fr,
+            "facts": facts,
             "estimated_saving_fcfa": round(drop["saving_fcfa"]),
         })
     elif devices:
@@ -299,61 +361,142 @@ def build_suggestions(home_id):
                 f"{headroom['band_rate']} FCFA — about {crossing:.0f} FCFA more. "
                 f"Staying under it is worth more than anything else this month."
             )
-            text = generate_ai_phrasing(
-                f"Projected monthly consumption: {projected:.0f} kWh\n"
-                f"Limit of the current band: {headroom['band_to_kwh']} kWh\n"
-                f"kWh of margin left: {headroom['kwh_to_next']:.0f}\n"
-                f"Current rate: {headroom['band_rate']} FCFA per kWh\n"
-                f"Rate if the limit is passed, applied to the whole month: "
-                f"{headroom['next_rate']} FCFA per kWh\n"
-                f"Extra cost of passing it: {crossing:.0f} FCFA"
-            ) or fallback
-
             suggestions.append({
+                "kind": "band_warning",
                 "monitored_point_id": devices[0]["id"],
-                "suggestion_text": text,
+                "suggestion_text": fallback,
+                "suggestion_text_fr": (
+                    f"Vous vous dirigez vers {projected:.0f} kWh, à seulement "
+                    f"{headroom['kwh_to_next']:.0f} kWh de la limite de "
+                    f"{headroom['band_to_kwh']} kWh. La dépasser ferait facturer tout le mois "
+                    f"à {headroom['next_rate']} FCFA le kWh au lieu de {headroom['band_rate']} "
+                    f"FCFA, soit environ {_fcfa_fr(crossing)} FCFA de plus. Rester en dessous "
+                    f"compte plus que tout ce mois-ci."
+                ),
+                "facts": (
+                    f"Projected monthly consumption: {projected:.0f} kWh\n"
+                    f"Limit of the current band: {headroom['band_to_kwh']} kWh\n"
+                    f"kWh of margin left: {headroom['kwh_to_next']:.0f}\n"
+                    f"Current rate: {headroom['band_rate']} FCFA per kWh\n"
+                    f"Rate if the limit is passed, applied to the whole month: "
+                    f"{headroom['next_rate']} FCFA per kWh\n"
+                    f"Extra cost of passing it: {crossing:.0f} FCFA"
+                ),
                 "estimated_saving_fcfa": round(crossing),
             })
 
     return suggestions
 
 
+# Set by probe(). None means "never probed", treated as absent.
+_has_kind_column = None
+
+
+def probe(conn):
+    """Look for `ai_suggestions.kind` (migration 004) once, at startup."""
+    global _has_kind_column
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SHOW COLUMNS FROM ai_suggestions LIKE 'kind'")
+        _has_kind_column = cursor.fetchone() is not None
+    except Exception as exc:
+        print(f"ai_advisor: could not probe ai_suggestions.kind ({exc!r}) — "
+              f"keeping one suggestion per device")
+        _has_kind_column = False
+
+    if not _has_kind_column:
+        print("ai_advisor: ai_suggestions.kind is absent — apply "
+              "backend/migrations/004_suggestion_kind.sql so a device can "
+              "hold more than one pending suggestion")
+    return _has_kind_column
+
+
+def uses_kinds():
+    """Whether suggestions are kept per (device, kind). Reported by /health."""
+    return bool(_has_kind_column)
+
+
 def save_suggestion(suggestion):
-    """Store a suggestion, replacing any pending one for the same device."""
+    """Store a suggestion, replacing the pending one it supersedes.
+
+    With migration 004 that is the pending suggestion of the same kind for
+    the same device, so a device can carry its own standby tip, the
+    dominant-device tip and the band tip at once. An untyped row written
+    before the migration is claimed when no typed one matches, so it is
+    replaced rather than left alongside. Without the migration there is
+    one pending suggestion per device, as before.
+    """
     conn = get_db()
     cursor = conn.cursor()
+    now = datetime.now()
 
-    cursor.execute("""
-        SELECT id FROM ai_suggestions
-        WHERE monitored_point_id = %s AND status = 'pending'
-    """, (suggestion["monitored_point_id"],))
+    if uses_kinds():
+        cursor.execute("""
+            SELECT id FROM ai_suggestions
+            WHERE monitored_point_id = %s AND status = 'pending'
+            AND (kind = %s OR kind IS NULL)
+            ORDER BY kind IS NULL
+            LIMIT 1
+        """, (suggestion["monitored_point_id"], suggestion["kind"]))
+    else:
+        cursor.execute("""
+            SELECT id FROM ai_suggestions
+            WHERE monitored_point_id = %s AND status = 'pending'
+        """, (suggestion["monitored_point_id"],))
     existing = cursor.fetchone()
 
-    if existing:
+    text = suggestion["suggestion_text"]
+    saving = suggestion["estimated_saving_fcfa"]
+    if existing and uses_kinds():
+        cursor.execute("""
+            UPDATE ai_suggestions
+            SET suggestion_text = %s, estimated_saving_fcfa = %s,
+                created_at = %s, kind = %s
+            WHERE id = %s
+        """, (text, saving, now, suggestion["kind"], existing[0]))
+    elif existing:
         cursor.execute("""
             UPDATE ai_suggestions
             SET suggestion_text = %s, estimated_saving_fcfa = %s, created_at = %s
             WHERE id = %s
-        """, (
-            suggestion["suggestion_text"],
-            suggestion["estimated_saving_fcfa"],
-            datetime.now(),
-            existing[0],
-        ))
+        """, (text, saving, now, existing[0]))
+    elif uses_kinds():
+        cursor.execute("""
+            INSERT INTO ai_suggestions
+            (monitored_point_id, suggestion_text, estimated_saving_fcfa, status, created_at, kind)
+            VALUES (%s, %s, %s, 'pending', %s, %s)
+        """, (suggestion["monitored_point_id"], text, saving, now, suggestion["kind"]))
     else:
         cursor.execute("""
             INSERT INTO ai_suggestions
             (monitored_point_id, suggestion_text, estimated_saving_fcfa, status, created_at)
             VALUES (%s, %s, %s, 'pending', %s)
-        """, (
-            suggestion["monitored_point_id"],
-            suggestion["suggestion_text"],
-            suggestion["estimated_saving_fcfa"],
-            datetime.now(),
-        ))
+        """, (suggestion["monitored_point_id"], text, saving, now))
+
+    # The French text and who wrote it, with migration 006.
+    row_id = existing[0] if existing else getattr(cursor, "lastrowid", None)
+    if bilingual.enabled() and row_id:
+        cursor.execute("""
+            UPDATE ai_suggestions SET suggestion_text_fr = %s, ai_written = %s
+            WHERE id = %s
+        """, (suggestion.get("suggestion_text_fr"), 1 if suggestion.get("ai_written") else 0, row_id))
 
     conn.commit()
     conn.close()
+
+
+def one_per_device(suggestions):
+    """Without migration 004 a device holds a single pending suggestion,
+    so saving several would let the last one silently replace the rest.
+    Keep the one worth the most instead — a deliberate choice rather than
+    whichever the code happened to build last."""
+    best = {}
+    for suggestion in suggestions:
+        point = suggestion["monitored_point_id"]
+        if (point not in best or suggestion["estimated_saving_fcfa"]
+                > best[point]["estimated_saving_fcfa"]):
+            best[point] = suggestion
+    return list(best.values())
 
 
 def run_ai_advisor():
@@ -361,7 +504,11 @@ def run_ai_advisor():
     print(f"Running AI advisor at {datetime.now().strftime('%H:%M:%S')}")
     total = 0
     for home_id in _home_ids():
-        for suggestion in build_suggestions(home_id):
+        suggestions = build_suggestions(home_id)
+        if not uses_kinds():
+            suggestions = one_per_device(suggestions)
+        suggestions = phrase_suggestions(suggestions)
+        for suggestion in suggestions:
             save_suggestion(suggestion)
             total += 1
     print(f"AI advisor: {total} suggestion(s) saved")

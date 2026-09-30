@@ -26,7 +26,9 @@ export default {
         "surface-container-lowest": "#ffffff",
         "tertiary-container": "#2a1700",
         "outline-variant": "#c6c6cd",
-        "outline": "#76777d",
+        // Darkened from the mockups' #76777d: small grey labels sit on
+        // translucent glass, where #76777d fell just under WCAG AA (4.5:1).
+        "outline": "#626369",
         "surface-tint": "#565e74",
         "surface-container-low": "#eff4ff",
         "tertiary-fixed-dim": "#ffb95f",

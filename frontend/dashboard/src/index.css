@@ -14,6 +14,7 @@
   body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* Behind .app-backdrop; only shows before React mounts. */
     background-color: theme("colors.background");
     color: theme("colors.on-background");
     margin: 0;
@@ -21,36 +22,326 @@
 }
 
 @layer components {
-  /* Dashboard / My Devices / Device detail */
-  .glass-card {
-    background: rgba(255, 255, 255, 0.7);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(198, 198, 205, 0.3);
+  /* ── Glass design system ──────────────────────────────────────────────
+     Glass only reads as glass when there is colour behind it to blur. The
+     mockups put these panels on the flat #f8f9ff background, where a
+     backdrop blur has nothing to act on and the result is a white card.
+     `.app-backdrop` supplies that colour: a fixed wash of the brand's
+     teal, indigo and amber, soft enough that text on glass keeps its
+     contrast.
+
+     Three levels, from most to least opaque:
+       .glass-strong  chrome: sidebar, top bar, tab bar, modals, menus
+       .glass         content: every card and panel
+       .glass-subtle  nested inside a card: rows, stat tiles, chips
+     plus .glass-dark for the one emphasised figure on a screen.
+
+     Every level falls back to a near-opaque fill where backdrop-filter is
+     unsupported or the user asked for reduced transparency, so text never
+     sits on an unblurred, busy background. */
+
+  .app-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(38rem 38rem at 8% 12%, rgba(134, 242, 228, 0.55), transparent 70%),
+      radial-gradient(34rem 34rem at 92% 8%, rgba(190, 198, 224, 0.75), transparent 70%),
+      radial-gradient(40rem 40rem at 85% 88%, rgba(107, 216, 203, 0.40), transparent 70%),
+      radial-gradient(30rem 30rem at 18% 92%, rgba(255, 221, 184, 0.55), transparent 70%),
+      linear-gradient(160deg, #eef4ff 0%, #f3f8ff 45%, #eefaf7 100%);
+  }
+  /* Sign-in, sign-up and onboarding: the same palette, deeper, since
+     those screens carry one card and no data to keep legible. */
+  .app-backdrop-hero {
+    background:
+      radial-gradient(40rem 40rem at 10% 10%, rgba(134, 242, 228, 0.55), transparent 70%),
+      radial-gradient(36rem 36rem at 90% 15%, rgba(190, 198, 224, 0.45), transparent 70%),
+      radial-gradient(42rem 42rem at 80% 95%, rgba(255, 185, 95, 0.35), transparent 70%),
+      linear-gradient(150deg, #0f766e 0%, #0b4f55 50%, #131b2e 100%);
   }
 
-  /* "My Devices" uses a stronger blur and a solid border */
+  .glass,
+  .glass-strong,
+  .glass-subtle,
+  .glass-dark {
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+    border: 1px solid var(--glass-border);
+  }
+  .glass {
+    --glass-blur: 20px;
+    --glass-border: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.58);
+    box-shadow:
+      0 10px 30px -12px rgba(19, 27, 46, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+  .glass-strong {
+    --glass-blur: 24px;
+    --glass-border: rgba(255, 255, 255, 0.75);
+    background: rgba(255, 255, 255, 0.74);
+    box-shadow: 0 12px 40px -16px rgba(19, 27, 46, 0.22);
+  }
+  .glass-subtle {
+    --glass-blur: 12px;
+    --glass-border: rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.42);
+  }
+  .glass-dark {
+    --glass-blur: 20px;
+    --glass-border: rgba(255, 255, 255, 0.12);
+    background: linear-gradient(145deg, rgba(19, 27, 46, 0.88), rgba(11, 79, 85, 0.82));
+    color: #ffffff;
+    box-shadow:
+      0 18px 40px -16px rgba(19, 27, 46, 0.55),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+  /* Glass on the hero backdrop: lighter fill, since the colour behind is
+     dark and saturated. */
+  .glass-hero {
+    --glass-blur: 24px;
+    --glass-border: rgba(255, 255, 255, 0.35);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+    border: 1px solid var(--glass-border);
+    background: rgba(255, 255, 255, 0.16);
+    box-shadow:
+      0 24px 60px -20px rgba(0, 0, 0, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  }
+
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass { background: rgba(255, 255, 255, 0.92); }
+    .glass-strong { background: rgba(255, 255, 255, 0.96); }
+    .glass-subtle { background: rgba(255, 255, 255, 0.8); }
+    .glass-hero { background: rgba(15, 60, 66, 0.92); }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .glass, .glass-strong, .glass-subtle, .glass-dark, .glass-hero {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    .glass { background: rgba(255, 255, 255, 0.95); }
+    .glass-strong { background: #ffffff; }
+    .glass-subtle { background: rgba(255, 255, 255, 0.88); }
+    .glass-dark { background: #131b2e; }
+    .glass-hero { background: rgba(15, 60, 66, 0.96); }
+  }
+  /* The same, chosen by hand in Settings: the OS setting above exists on
+     few systems, and bright sunlight calls for it on any of them. */
+  html.reduce-transparency :is(.glass, .glass-strong, .glass-subtle, .glass-dark, .glass-hero) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  html.reduce-transparency .glass { background: rgba(255, 255, 255, 0.95); }
+  html.reduce-transparency .glass-strong { background: #ffffff; }
+  html.reduce-transparency .glass-subtle { background: rgba(255, 255, 255, 0.88); }
+  html.reduce-transparency .glass-dark { background: #131b2e; }
+  html.reduce-transparency .glass-hero { background: rgba(15, 60, 66, 0.96); }
+  html.reduce-transparency .app-backdrop { filter: saturate(0.35) brightness(1.06); }
+
+  /* Loading placeholders, in the shape of the content to come. */
+  .skeleton {
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0.8) 50%, rgba(255, 255, 255, 0.45) 100%);
+    background-size: 200% 100%;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    border-radius: 1rem;
+    animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  }
+
+  /* Interactive glass: a card you can click lifts slightly. */
+  .glass-hover {
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  }
+  .glass-hover:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 16px 36px -14px rgba(0, 106, 97, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  }
+
+  /* Form fields */
+  .glass-input {
+    width: 100%;
+    border-radius: 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.6);
+    padding: 0.75rem 1rem;
+    color: theme("colors.on-surface");
+    box-shadow: inset 0 1px 2px rgba(19, 27, 46, 0.06);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+  }
+  .glass-input::placeholder { color: theme("colors.outline"); }
+  .glass-input:focus {
+    outline: none;
+    background: rgba(255, 255, 255, 0.85);
+    border-color: theme("colors.secondary");
+    box-shadow: 0 0 0 3px rgba(0, 106, 97, 0.18);
+  }
+  /* On the hero backdrop */
+  .glass-input-hero {
+    width: 100%;
+    border-radius: 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.14);
+    padding: 0.75rem 1rem;
+    color: #ffffff;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+  }
+  .glass-input-hero::placeholder { color: rgba(255, 255, 255, 0.65); }
+  .glass-input-hero:focus {
+    outline: none;
+    background: rgba(255, 255, 255, 0.22);
+    border-color: rgba(134, 242, 228, 0.9);
+    box-shadow: 0 0 0 3px rgba(134, 242, 228, 0.25);
+  }
+
+  /* Buttons */
+  .btn-primary,
+  .btn-glass,
+  .btn-danger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 9999px;
+    padding: 0.625rem 1.25rem;
+    font-family: theme("fontFamily.label-sm");
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease, opacity 0.15s ease;
+  }
+  .btn-primary:active,
+  .btn-glass:active,
+  .btn-danger:active { transform: scale(0.97); }
+  .btn-primary:disabled,
+  .btn-glass:disabled,
+  .btn-danger:disabled { opacity: 0.55; pointer-events: none; }
+  .btn-primary {
+    color: #ffffff;
+    background: linear-gradient(135deg, #00897b 0%, #006a61 100%);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow:
+      0 8px 20px -8px rgba(0, 106, 97, 0.6),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
+  .btn-primary:hover { box-shadow: 0 10px 26px -8px rgba(0, 106, 97, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.3); }
+  .btn-glass {
+    color: theme("colors.on-surface");
+    background: rgba(255, 255, 255, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+  .btn-glass:hover { background: rgba(255, 255, 255, 0.78); }
+  .btn-danger {
+    color: theme("colors.error");
+    background: rgba(255, 218, 214, 0.55);
+    border: 1px solid rgba(186, 26, 26, 0.18);
+  }
+  .btn-danger:hover { background: rgba(255, 218, 214, 0.85); }
+  .btn-danger-solid {
+    color: #ffffff;
+    background: linear-gradient(135deg, #d32f2f 0%, #ba1a1a 100%);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+  /* Round icon-only button */
+  .btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 9999px;
+    color: theme("colors.on-surface-variant");
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+  .btn-icon:hover { background: rgba(255, 255, 255, 0.7); color: theme("colors.on-surface"); }
+
+  /* Segmented control (Day / Week / Month…) */
+  .segmented {
+    display: inline-flex;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+  .segmented > button {
+    border-radius: 9999px;
+    padding: 0.375rem 1rem;
+    font-size: 13px;
+    font-weight: 600;
+    color: theme("colors.on-surface-variant");
+    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .segmented > button[aria-pressed="true"] {
+    background: #ffffff;
+    color: theme("colors.secondary");
+    box-shadow: 0 2px 8px -2px rgba(19, 27, 46, 0.18);
+  }
+
+  /* Status pills */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 9999px;
+    padding: 0.125rem 0.625rem;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.55);
+    color: theme("colors.on-surface-variant");
+  }
+  .chip-teal { background: rgba(134, 242, 228, 0.45); color: #005049; border-color: rgba(0, 106, 97, 0.15); }
+  .chip-red { background: rgba(255, 218, 214, 0.7); color: #93000a; border-color: rgba(186, 26, 26, 0.15); }
+  .chip-amber { background: rgba(255, 221, 184, 0.7); color: #653e00; border-color: rgba(184, 117, 0, 0.18); }
+  .chip-indigo { background: rgba(218, 226, 253, 0.8); color: #3f465c; border-color: rgba(86, 94, 116, 0.15); }
+
+  /* Coloured round icon holder */
+  .icon-orb {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    flex-shrink: 0;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    color: theme("colors.secondary");
+    box-shadow: 0 4px 12px -6px rgba(0, 106, 97, 0.35);
+  }
+
+  /* Modal scrim */
+  .glass-scrim {
+    background: rgba(11, 28, 48, 0.28);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+  }
+
+  /* The four names the mockups used for what is one surface. Kept as
+     aliases so nothing that still carries them loses its styling. */
+  .glass-card,
+  .glass-panel,
+  .glass-panel-light,
   .glass-card-strong {
-    background: rgba(255, 255, 255, 0.7);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid theme("colors.outline-variant");
-  }
-
-  /* Settings */
-  .glass-panel {
-    background: rgba(255, 255, 255, 0.7);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(198, 198, 205, 0.3);
-  }
-
-  /* Remote control */
-  .glass-panel-light {
-    background: rgba(255, 255, 255, 0.7);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.5);
+    --glass-blur: 20px;
+    --glass-border: rgba(255, 255, 255, 0.7);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+    border: 1px solid var(--glass-border);
+    background: rgba(255, 255, 255, 0.58);
+    box-shadow:
+      0 10px 30px -12px rgba(19, 27, 46, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8);
   }
 
   /* Small toggle used on device cards and the detail header */
@@ -112,4 +403,22 @@
     transform: scale(0.95);
     box-shadow: 0 0 0 0 rgba(0, 106, 97, 0);
   }
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* Toasts slide up from the bottom edge. */
+.toast-in {
+  animation: toast-in 0.22s ease-out;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton, .toast-in, .pulse-dot { animation: none; }
 }

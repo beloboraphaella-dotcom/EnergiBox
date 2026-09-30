@@ -1,14 +1,16 @@
 import React, { useState } from "react";
-import {
-  View, Text, TextInput, TouchableOpacity,
-  StyleSheet, ScrollView, KeyboardAvoidingView, Platform
-} from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { api } from "../api";
+import Icon from "../components/Icon";
+import AuthLayout, { HeroButton, HeroError, HeroField } from "../components/AuthLayout";
+import { useLanguage } from "../context/LanguageContext";
+import { colors, spacing, type, fonts } from "../theme";
 import { normalizeMac } from "../utils";
 
-const STEPS = ["Home", "Rooms", "Appliances", "Done"];
+const STEPS = ["home", "rooms", "appliances", "done"];
 
 export default function OnboardingScreen({ onComplete }) {
+  const { t, tn } = useLanguage();
   const [step, setStep] = useState(0);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -25,7 +27,7 @@ export default function OnboardingScreen({ onComplete }) {
 
   const createHome = async () => {
     if (!homeName.trim()) {
-      setError("Give your home a name");
+      setError(t("onb.errHomeName"));
       return;
     }
     setSaving(true);
@@ -43,7 +45,7 @@ export default function OnboardingScreen({ onComplete }) {
       }
       setStep(1);
     } catch (err) {
-      setError("Could not create home. Try again.");
+      setError(t("onb.errCreateHome"));
     }
     setSaving(false);
   };
@@ -57,7 +59,7 @@ export default function OnboardingScreen({ onComplete }) {
     const trimmed = newRoomName.trim();
     if (!trimmed) return;
     if (rooms.some((r) => r.name.toLowerCase() === trimmed.toLowerCase())) {
-      setError(`A room named "${trimmed}" already exists in this home.`);
+      setError(t("onb.errRoomExists", { name: trimmed }));
       return;
     }
     setSaving(true);
@@ -67,7 +69,7 @@ export default function OnboardingScreen({ onComplete }) {
       setRooms((r) => [...r, res.data]);
       setNewRoomName("");
     } catch (err) {
-      setError(err.response?.data?.detail || "Could not add room.");
+      setError(err.response?.data?.detail || t("onb.errAddRoom"));
     }
     setSaving(false);
   };
@@ -75,12 +77,12 @@ export default function OnboardingScreen({ onComplete }) {
   const addDevice = async () => {
     const { room_id, name, type, mac } = newDevice;
     if (!room_id || !name.trim() || !mac.trim()) {
-      setError("Room, name and MAC address are required.");
+      setError(t("onb.errDeviceFields"));
       return;
     }
     const normalizedMac = normalizeMac(mac.trim());
     if (!normalizedMac) {
-      setError("Enter a valid MAC address — 12 hex digits, e.g. AA:BB:CC:DD:EE:FF.");
+      setError(t("onb.errMac"));
       return;
     }
     setSaving(true);
@@ -92,249 +94,258 @@ export default function OnboardingScreen({ onComplete }) {
       setDevices((d) => [...d, res.data]);
       setNewDevice({ room_id: "", name: "", type: "appliance", mac: "" });
     } catch (err) {
-      setError(err.response?.data?.detail || "Could not add device. Check the MAC address.");
+      setError(err.response?.data?.detail || t("onb.errAddDevice"));
     }
     setSaving(false);
   };
 
   return (
-    <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <View style={styles.card}>
-          <View style={styles.header}>
-            <Text style={styles.logo}>⚡</Text>
-            <Text style={styles.brand}>EnergiBox</Text>
-          </View>
-
-          <View style={styles.steps}>
-            {STEPS.map((label, i) => (
-              <View key={label} style={styles.stepItem}>
-                <View style={[styles.stepDot, { backgroundColor: i <= step ? "#3b82f6" : "#e2e8f0" }]}>
-                  <Text style={[styles.stepDotText, { color: i <= step ? "#fff" : "#94a3b8" }]}>
-                    {i < step ? "✓" : i + 1}
+    <AuthLayout>
+      {/* Stepper */}
+      <View style={styles.steps}>
+        {STEPS.map((label, i) => (
+          <React.Fragment key={label}>
+            <View style={styles.stepItem}>
+              <View style={[styles.stepDot, i <= step ? styles.stepDotOn : styles.stepDotOff]}>
+                {i < step ? (
+                  <Icon name="check" size={16} color={colors.onSecondaryFixed} />
+                ) : (
+                  <Text style={[styles.stepDotText, { color: i <= step ? colors.onSecondaryFixed : "rgba(255,255,255,0.6)" }]}>
+                    {i + 1}
                   </Text>
-                </View>
-                <Text style={[styles.stepLabel, { color: i <= step ? "#0f172a" : "#94a3b8" }]}>{label}</Text>
+                )}
               </View>
+              <Text style={[styles.stepLabel, { color: i <= step ? "#ffffff" : "rgba(255,255,255,0.55)" }]}>{t(`onb.step.${label}`)}</Text>
+            </View>
+            {i < STEPS.length - 1 && (
+              <View style={[styles.stepLine, { backgroundColor: i < step ? colors.secondaryFixed : "rgba(255,255,255,0.2)" }]} />
+            )}
+          </React.Fragment>
+        ))}
+      </View>
+
+      {/* STEP 0: Home */}
+      {step === 0 && (
+        <View>
+          <StepTitle title={t("onb.home.title")} hint={t("onb.home.hint")} />
+          <HeroField label={t("onb.homeName")} icon="home" placeholder={t("onb.homeNamePh")} value={homeName} onChangeText={setHomeName} />
+          <HeroField label={t("onb.address")} icon="location_on" placeholder={t("onb.addressPh")} value={homeAddress} onChangeText={setHomeAddress} />
+          <HeroError>{error}</HeroError>
+          <HeroButton label={saving ? t("common.creating") : t("common.continue")} onPress={createHome} disabled={saving} />
+        </View>
+      )}
+
+      {/* STEP 1: Rooms */}
+      {step === 1 && (
+        <View>
+          <StepTitle title={t("onb.rooms.title")} hint={t("onb.rooms.hint")} />
+
+          {rooms.length > 0 && (
+            <View style={styles.chipRow}>
+              {rooms.map((r) => <HeroChip key={r.id} icon="meeting_room">{r.name}</HeroChip>)}
+            </View>
+          )}
+
+          <HeroField label={t("onb.roomName")} icon="meeting_room" placeholder={t("onb.roomNamePh")} value={newRoomName} onChangeText={setNewRoomName} onSubmitEditing={addRoom} />
+          <HeroButton
+            label={t("onb.addRoom")}
+            icon="add"
+            variant="ghost"
+            onPress={addRoom}
+            disabled={saving || !newRoomName.trim()}
+            style={styles.addButton}
+          />
+
+          <HeroError>{error}</HeroError>
+          <StepNav onBack={goBack} label={t("common.back")}>
+            <HeroButton
+              label={t("onb.continueRooms", { rooms: tn("count.room", rooms.length) })}
+              onPress={() => setStep(2)}
+              disabled={rooms.length === 0}
+              style={styles.flex}
+            />
+          </StepNav>
+        </View>
+      )}
+
+      {/* STEP 2: Appliances */}
+      {step === 2 && (
+        <View>
+          <StepTitle title={t("onb.devices.title")} hint={t("onb.devices.hint")} />
+
+          {devices.length > 0 && (
+            <View style={styles.chipRow}>
+              {devices.map((d) => (
+                <HeroChip key={d.id} icon={d.type === "socket" ? "power" : "kitchen"}>{d.name}</HeroChip>
+              ))}
+            </View>
+          )}
+
+          <Text style={styles.label}>{t("onb.room")}</Text>
+          <Text style={styles.helperText}>{t("onb.roomHelper")}</Text>
+          <View style={styles.pickerRow}>
+            {rooms.map((r) => (
+              <Choice key={r.id} picked={newDevice.room_id === r.id} onPress={() => setNewDevice({ ...newDevice, room_id: r.id })}>
+                {r.name}
+              </Choice>
             ))}
           </View>
 
-          {/* STEP 0: Home */}
-          {step === 0 && (
-            <View>
-              <Text style={styles.title}>Set up your home</Text>
-              <Text style={styles.subtitle}>This is the first thing every EnergiBox account needs — you can add more homes later.</Text>
-              <Text style={styles.label}>Home Name</Text>
-              <TextInput style={styles.input} placeholder="e.g. My Home" placeholderTextColor="#aaa" value={homeName} onChangeText={setHomeName} />
-              <Text style={styles.label}>Address (optional)</Text>
-              <TextInput style={styles.input} placeholder="e.g. Yaoundé, Cameroun" placeholderTextColor="#aaa" value={homeAddress} onChangeText={setHomeAddress} />
-              {!!error && <Text style={styles.errorText}>{error}</Text>}
-              <TouchableOpacity style={styles.primaryBtn} onPress={createHome} disabled={saving}>
-                <Text style={styles.primaryBtnText}>{saving ? "Creating..." : "Continue"}</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          <HeroField label={t("onb.deviceName")} icon="label" placeholder={t("onb.deviceNamePh")} value={newDevice.name} onChangeText={(v) => setNewDevice({ ...newDevice, name: v })} />
 
-          {/* STEP 1: Rooms */}
-          {step === 1 && (
-            <View>
-              <Text style={styles.title}>Add your rooms</Text>
-              <Text style={styles.subtitle}>Add every room you want to monitor. You need at least one to continue.</Text>
+          <Text style={styles.label}>{t("onb.type")}</Text>
+          <View style={styles.typeRow}>
+            {["appliance", "socket"].map((type) => (
+              <Choice
+                key={type}
+                icon={type === "socket" ? "power" : "kitchen"}
+                picked={newDevice.type === type}
+                onPress={() => setNewDevice({ ...newDevice, type })}
+                style={styles.flex}
+              >
+                {type === "appliance" ? t("devices.appliance") : t("devices.socket")}
+              </Choice>
+            ))}
+          </View>
 
-              {rooms.length > 0 && (
-                <View style={styles.chipRow}>
-                  {rooms.map((r) => (
-                    <View key={r.id} style={styles.chip}><Text style={styles.chipText}>🏠 {r.name}</Text></View>
-                  ))}
-                </View>
-              )}
+          <HeroField
+            label={t("onb.mac")}
+            icon="router"
+            placeholder="AA:BB:CC:DD:EE:FF"
+            value={newDevice.mac}
+            onChangeText={(v) => setNewDevice({ ...newDevice, mac: v.toUpperCase() })}
+            autoCapitalize="characters"
+            style={styles.mono}
+          />
 
-              <Text style={styles.label}>Room Name</Text>
-              <View style={styles.inlineRow}>
-                <TextInput
-                  style={[styles.input, styles.inlineInput]}
-                  placeholder="e.g. Living Room"
-                  placeholderTextColor="#aaa"
-                  value={newRoomName}
-                  onChangeText={setNewRoomName}
-                />
-                <TouchableOpacity style={styles.addBtn} onPress={addRoom} disabled={saving || !newRoomName.trim()}>
-                  <Text style={styles.addBtnText}>✓ Confirm Room</Text>
-                </TouchableOpacity>
-              </View>
+          <HeroError>{error}</HeroError>
+          <HeroButton label={t("onb.pair")} icon="add_link" variant="ghost" onPress={addDevice} disabled={saving} style={styles.addButton} />
 
-              {!!error && <Text style={styles.errorText}>{error}</Text>}
-              <View style={styles.navRow}>
-                <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-                  <Text style={styles.backBtnText}>‹ Back</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.primaryBtn, styles.navPrimary, rooms.length === 0 && styles.disabledBtn]}
-                  onPress={() => setStep(2)}
-                  disabled={rooms.length === 0}
-                >
-                  <Text style={styles.primaryBtnText}>Continue ({rooms.length} room{rooms.length !== 1 ? "s" : ""})</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          {/* STEP 2: Appliances */}
-          {step === 2 && (
-            <View>
-              <Text style={styles.title}>Add your appliances & sockets</Text>
-              <Text style={styles.subtitle}>Pair each EnergiBox by its MAC address. You need at least one device to finish setup.</Text>
-
-              {devices.length > 0 && (
-                <View style={styles.chipRow}>
-                  {devices.map((d) => (
-                    <View key={d.id} style={styles.chip}>
-                      <Text style={styles.chipText}>{d.type === "socket" ? "🔌" : "📦"} {d.name}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              <Text style={styles.label}>Room</Text>
-              <Text style={styles.helperText}>Tap the room this device is in — required before you can confirm it.</Text>
-              <View style={styles.pickerRow}>
-                {rooms.map((r) => (
-                  <TouchableOpacity
-                    key={r.id}
-                    style={[styles.pickerChoice, newDevice.room_id === r.id && styles.pickerChoiceActive]}
-                    onPress={() => setNewDevice({ ...newDevice, room_id: r.id })}
-                  >
-                    <Text style={[styles.pickerChoiceText, newDevice.room_id === r.id && styles.pickerChoiceTextActive]}>{r.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.label}>Name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Fridge"
-                placeholderTextColor="#aaa"
-                value={newDevice.name}
-                onChangeText={(v) => setNewDevice({ ...newDevice, name: v })}
-              />
-
-              <Text style={styles.label}>Type</Text>
-              <View style={styles.typeRow}>
-                {["appliance", "socket"].map((t) => (
-                  <TouchableOpacity
-                    key={t}
-                    style={[styles.typeChoice, newDevice.type === t && styles.typeChoiceActive]}
-                    onPress={() => setNewDevice({ ...newDevice, type: t })}
-                  >
-                    <Text style={[styles.typeChoiceText, newDevice.type === t && styles.typeChoiceTextActive]}>
-                      {t === "appliance" ? "Appliance" : "Socket"}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.label}>EnergiBox MAC Address</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="AA:BB:CC:DD:EE:FF"
-                placeholderTextColor="#aaa"
-                value={newDevice.mac}
-                onChangeText={(v) => setNewDevice({ ...newDevice, mac: v.toUpperCase() })}
-                autoCapitalize="characters"
-              />
-
-              {!!error && <Text style={styles.errorText}>{error}</Text>}
-              <TouchableOpacity style={[styles.addBtn, styles.fullWidthBtn]} onPress={addDevice} disabled={saving}>
-                <Text style={styles.addBtnText}>✓ Confirm Device</Text>
-              </TouchableOpacity>
-
-              <View style={styles.navRow}>
-                <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-                  <Text style={styles.backBtnText}>‹ Back</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.primaryBtn, styles.navPrimary, devices.length === 0 && styles.disabledBtn]}
-                  onPress={() => setStep(3)}
-                  disabled={devices.length === 0}
-                >
-                  <Text style={styles.primaryBtnText}>Finish ({devices.length} device{devices.length !== 1 ? "s" : ""})</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          {/* STEP 3: Done */}
-          {step === 3 && (
-            <View style={{ alignItems: "center" }}>
-              <Text style={styles.doneEmoji}>🎉</Text>
-              <Text style={styles.title}>You're all set!</Text>
-              <Text style={[styles.subtitle, { textAlign: "center" }]}>
-                {homeName} is ready with {rooms.length} room{rooms.length !== 1 ? "s" : ""} and {devices.length} device{devices.length !== 1 ? "s" : ""}.
-              </Text>
-              <TouchableOpacity style={styles.primaryBtn} onPress={onComplete}>
-                <Text style={styles.primaryBtnText}>Go to Dashboard</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          <StepNav onBack={goBack} label={t("common.back")}>
+            <HeroButton
+              label={t("onb.finish", { devices: tn("count.device", devices.length) })}
+              onPress={() => setStep(3)}
+              disabled={devices.length === 0}
+              style={styles.flex}
+            />
+          </StepNav>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      )}
+
+      {/* STEP 3: Done */}
+      {step === 3 && (
+        <View style={styles.done}>
+          <View style={styles.doneOrb}>
+            <Icon name="celebration" size={32} color={colors.onSecondaryFixed} />
+          </View>
+          <StepTitle
+            center
+            title={t("onb.done.title")}
+            hint={t("onb.done.hint", {
+              home: homeName,
+              rooms: tn("count.room", rooms.length),
+              devices: tn("count.device", devices.length),
+            })}
+          />
+          <HeroButton label={t("onb.goDashboard")} onPress={onComplete} style={styles.fullWidth} />
+        </View>
+      )}
+    </AuthLayout>
+  );
+}
+
+function StepTitle({ title, hint, center }) {
+  return (
+    <View style={styles.stepTitle}>
+      <Text style={[styles.title, center && styles.center]}>{title}</Text>
+      <Text style={[styles.subtitle, center && styles.center]}>{hint}</Text>
+    </View>
+  );
+}
+
+function HeroChip({ icon, children }) {
+  return (
+    <View style={styles.chip}>
+      <Icon name={icon} size={14} color="#ffffff" />
+      <Text style={styles.chipText}>{children}</Text>
+    </View>
+  );
+}
+
+function Choice({ picked, onPress, icon, children, style }) {
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={[styles.choice, picked && styles.choiceOn, style]}>
+      {icon && <Icon name={icon} size={16} color={picked ? colors.secondary : "rgba(255,255,255,0.85)"} />}
+      <Text style={[styles.choiceText, picked && styles.choiceTextOn]}>{children}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function StepNav({ onBack, label, children }) {
+  return (
+    <View style={styles.navRow}>
+      <HeroButton label={label} icon="arrow_back" variant="ghost" onPress={onBack} />
+      {children}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: "#f8fafc" },
-  scrollContent: { flexGrow: 1, justifyContent: "center", alignItems: "center", padding: 20 },
-  card: { backgroundColor: "#fff", borderRadius: 24, padding: 28, width: "100%", maxWidth: 440 },
-  header: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 24 },
-  logo: { fontSize: 22 },
-  brand: { fontSize: 18, fontWeight: "700", color: "#1e40af" },
+  flex: { flex: 1 },
+  center: { textAlign: "center" },
+  fullWidth: { alignSelf: "stretch" },
 
-  steps: { flexDirection: "row", alignItems: "center", marginBottom: 24, justifyContent: "space-between" },
-  stepItem: { alignItems: "center", flex: 1 },
-  stepDot: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center", marginBottom: 4 },
-  stepDotText: { fontSize: 12, fontWeight: "700" },
-  stepLabel: { fontSize: 10, fontWeight: "600" },
-
-  title: { fontSize: 20, fontWeight: "700", color: "#0f172a", marginBottom: 6 },
-  subtitle: { fontSize: 13, color: "#94a3b8", marginBottom: 18, lineHeight: 19 },
-  label: { fontSize: 12, fontWeight: "600", color: "#64748b", marginBottom: 6 },
-  helperText: { fontSize: 12, color: "#94a3b8", marginBottom: 8, marginTop: -2 },
-  input: {
-    width: "100%", padding: 12, borderRadius: 10,
-    borderWidth: 1, borderColor: "#e2e8f0", fontSize: 14, marginBottom: 14, color: "#0f172a",
+  steps: { flexDirection: "row", alignItems: "flex-start", marginBottom: spacing.md },
+  stepItem: { alignItems: "center", gap: 4, width: 64 },
+  stepDot: {
+    width: 30, height: 30, borderRadius: 15,
+    alignItems: "center", justifyContent: "center", borderWidth: 1,
   },
-  errorText: { color: "#ef4444", fontSize: 12, marginBottom: 12 },
-  primaryBtn: { width: "100%", padding: 14, borderRadius: 10, backgroundColor: "#3b82f6", alignItems: "center" },
-  primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  disabledBtn: { opacity: 0.5 },
+  stepDotOn: { backgroundColor: colors.secondaryFixedDim, borderColor: "rgba(255,255,255,0.6)" },
+  stepDotOff: { backgroundColor: "rgba(255,255,255,0.1)", borderColor: "rgba(255,255,255,0.25)" },
+  stepDotText: { fontFamily: fonts.label, fontSize: 13 },
+  stepLabel: { fontFamily: fonts.label, fontSize: 11 },
+  stepLine: { flex: 1, height: 2, borderRadius: 1, marginTop: 14, marginHorizontal: -8 },
 
-  navRow: { flexDirection: "row", gap: 10, marginTop: 4 },
-  backBtn: { paddingVertical: 14, paddingHorizontal: 18, borderRadius: 10, backgroundColor: "#f1f5f9" },
-  backBtnText: { color: "#64748b", fontWeight: "600", fontSize: 14 },
-  navPrimary: { flex: 1 },
+  stepTitle: { marginBottom: spacing.sm },
+  title: { ...type.headlineMd, fontSize: 21, lineHeight: 28, color: "#ffffff" },
+  subtitle: { ...type.bodyMd, fontSize: 15, lineHeight: 22, color: "rgba(255,255,255,0.78)", marginTop: 4 },
 
-  inlineRow: { flexDirection: "row", gap: 8, marginBottom: 14, alignItems: "stretch" },
-  inlineInput: { flex: 1, marginBottom: 0 },
-  addBtn: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, backgroundColor: "#eff6ff", alignItems: "center", justifyContent: "center" },
-  addBtnText: { color: "#3b82f6", fontWeight: "600", fontSize: 13 },
-  fullWidthBtn: { width: "100%", marginBottom: 12 },
+  label: {
+    ...type.labelSm, color: "rgba(255,255,255,0.8)",
+    textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6,
+  },
+  helperText: { ...type.labelSm, fontFamily: fonts.body, color: "rgba(255,255,255,0.65)", marginBottom: 8 },
 
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
-  chip: { backgroundColor: "#f1f5f9", paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20 },
-  chipText: { fontSize: 12, fontWeight: "600", color: "#374151" },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: spacing.sm },
+  chip: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.3)",
+    borderRadius: 9999, paddingHorizontal: 12, paddingVertical: 4,
+  },
+  chipText: { fontFamily: fonts.label, fontSize: 13, color: "#ffffff" },
 
-  pickerRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 },
-  pickerChoice: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10, backgroundColor: "#f1f5f9" },
-  pickerChoiceActive: { backgroundColor: "#3b82f6" },
-  pickerChoiceText: { fontSize: 13, fontWeight: "600", color: "#64748b" },
-  pickerChoiceTextActive: { color: "#fff" },
+  pickerRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: spacing.sm },
+  typeRow: { flexDirection: "row", gap: 8, marginBottom: spacing.sm },
+  choice: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    paddingVertical: 9, paddingHorizontal: 14, borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
+  },
+  choiceOn: { backgroundColor: "rgba(255,255,255,0.92)", borderColor: "#ffffff" },
+  choiceText: { fontFamily: fonts.label, fontSize: 14, color: "rgba(255,255,255,0.85)" },
+  choiceTextOn: { color: colors.secondary },
 
-  typeRow: { flexDirection: "row", gap: 8, marginBottom: 14 },
-  typeChoice: { flex: 1, padding: 10, borderRadius: 10, backgroundColor: "#f1f5f9", alignItems: "center" },
-  typeChoiceActive: { backgroundColor: "#3b82f6" },
-  typeChoiceText: { fontSize: 13, fontWeight: "600", color: "#64748b" },
-  typeChoiceTextActive: { color: "#fff" },
+  mono: { fontFamily: fonts.mono, letterSpacing: 1 },
+  addButton: { marginBottom: spacing.sm },
+  navRow: { flexDirection: "row", gap: 8, marginTop: 4 },
 
-  doneEmoji: { fontSize: 48, marginBottom: 12 },
+  done: { alignItems: "center" },
+  doneOrb: {
+    width: 64, height: 64, borderRadius: 32,
+    alignItems: "center", justifyContent: "center",
+    backgroundColor: colors.secondaryFixedDim, marginBottom: spacing.sm,
+  },
 });

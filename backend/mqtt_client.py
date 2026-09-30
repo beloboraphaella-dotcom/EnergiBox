@@ -4,6 +4,7 @@ import threading
 from datetime import datetime
 
 import energy
+import leader
 from alert_engine import check_spike
 from config import (
     MQTT_BROKER,
@@ -108,13 +109,36 @@ def on_disconnect(client, userdata, rc):
     print(f"Disconnected from broker (code {rc}) — paho will retry")
 
 
+# Telemetry is consumed by one process only — see leader.py. Every
+# process connects, because every process publishes the commands its own
+# requests send; only the elected one subscribes.
+TELEMETRY_TOPIC = "energibox/#"
+
+
+def _follow_leadership(is_leader):
+    """Subscribe on taking the role, unsubscribe on losing it."""
+    client = _mqtt_client
+    if client is None or not _connected:
+        # on_connect subscribes once the connection is up.
+        return
+    if is_leader:
+        client.subscribe(TELEMETRY_TOPIC)
+        print(f"Subscribed to {TELEMETRY_TOPIC}")
+    else:
+        client.unsubscribe(TELEMETRY_TOPIC)
+        print(f"Unsubscribed from {TELEMETRY_TOPIC}")
+
+
 def on_connect(client, userdata, flags, rc):
     global _connected
     _connected = rc == 0
     if rc == 0:
         print("Connected to Mosquitto broker successfully")
-        client.subscribe("energibox/#")
-        print("Subscribed to energibox/# topics")
+        # Subscriptions do not survive a reconnection, so the leader
+        # renews its own here.
+        if leader.is_leader():
+            client.subscribe(TELEMETRY_TOPIC)
+            print(f"Subscribed to {TELEMETRY_TOPIC}")
     else:
         print(f"Failed to connect. Code: {rc}")
 
@@ -123,6 +147,11 @@ def on_message(client, userdata, msg):
     kills message processing, so nothing inside may raise: a malformed
     topic, a non-JSON payload or a database hiccup must all degrade to a
     log line."""
+    if not leader.is_leader():
+        # Arrived while this process was standing down. Another process
+        # may already lead and be storing the stream, so storing this too
+        # risks counting it twice; dropping one sample is the lesser error.
+        return
     try:
         _handle_message(msg)
     except Exception as exc:
@@ -197,8 +226,9 @@ def start_mqtt():
     # broker that is down.
     client.reconnect_delay_set(min_delay=1, max_delay=60)
     client.connect_async(MQTT_BROKER, MQTT_PORT, 60)
-    client.loop_start()
     _mqtt_client = client
+    leader.on_change(_follow_leadership)
+    client.loop_start()
     return client
 
 def send_command(mac, command):

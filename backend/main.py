@@ -6,12 +6,19 @@ from auth import (
 import rate_limit
 from rate_limit import login_limiter, register_limiter
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, Depends, Query, Request
+from fastapi import FastAPI, HTTPException, Depends, Header, Query, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 import energy
+import bilingual
+import insights
+import leader
+import live
+import llm
+import push
+import reports
 import tariff
 from config import CORS_ORIGINS, get_connection as get_raw_db, pooling_enabled
 from database import engine, Base
@@ -20,6 +27,7 @@ from schemas import (
     AdminResetPasswordRequest,
     ChangePasswordRequest,
     LoginRequest,
+    PushTokenRequest,
     RegisterRequest,
     UpdateProfileRequest,
 )
@@ -82,9 +90,63 @@ def _probe_energy_schema():
               f"assuming the fixed cadence")
 
 
+def _probe_advisor_schema():
+    """Decide once whether a device can hold one pending suggestion per
+    kind (migration 004) or a single one."""
+    try:
+        conn = get_raw_db()
+        try:
+            import ai_advisor
+            ai_advisor.probe(conn)
+        finally:
+            conn.close()
+    except Exception as exc:
+        print(f"ai_advisor: database unreachable at startup ({exc!r}) — "
+              f"keeping one suggestion per device")
+
+
+_has_budget_column = False
+
+
+def _probe_home_features():
+    """Decide once whether homes carry a monthly budget and whether
+    phones can be notified (migration 005)."""
+    global _has_budget_column
+    try:
+        conn = get_raw_db()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SHOW COLUMNS FROM homes LIKE 'monthly_budget_fcfa'")
+            _has_budget_column = cursor.fetchone() is not None
+            push.probe(conn)
+            bilingual.probe(conn)
+        finally:
+            conn.close()
+    except Exception as exc:
+        print(f"homes: database unreachable at startup ({exc!r}) — "
+              f"no budgets, no phone notifications")
+    if not _has_budget_column:
+        print("homes: monthly_budget_fcfa is absent — apply "
+              "backend/migrations/005_budget_and_push.sql to let households set a budget")
+
+
+def _home_budget(cursor, home_id):
+    if not _has_budget_column:
+        return None
+    cursor.execute("SELECT monthly_budget_fcfa FROM homes WHERE id = %s", (home_id,))
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
 _probe_energy_schema()
 _probe_rate_limit_schema()
+_probe_advisor_schema()
+_probe_home_features()
 mqtt_client = start_mqtt()
+# Every worker connects to the broker and runs the scheduler loop, but
+# only the one holding the lock consumes telemetry and acts on schedules:
+# with --workers N, each reading used to be stored N times. See leader.py.
+leader.start()
 scheduler_thread = start_scheduler()
 
 app = FastAPI(title="EnergiBox API", version="1.0")
@@ -310,6 +372,11 @@ def root():
         "status": "online"
     }
 
+def _advisor_uses_kinds():
+    import ai_advisor
+    return ai_advisor.uses_kinds()
+
+
 @app.get("/health")
 def health():
     """Actually probe the dependencies. This used to return hardcoded
@@ -343,6 +410,17 @@ def health():
             # Per process means N workers give N times the allowance, so
             # which one is running is worth stating.
             "auth_rate_limit": "shared" if rate_limit.is_shared() else "per_process",
+            # Whether this worker is the one storing readings and running
+            # schedules. Exactly one should say "leader" at any time.
+            "background": "leader" if leader.is_leader() else "standby",
+            "suggestions": "per_kind" if _advisor_uses_kinds() else "per_device",
+            # Migration 005: monthly budgets and phone notifications.
+            "budgets": "enabled" if _has_budget_column else "disabled",
+            "push": "enabled" if push.enabled() else "disabled",
+            # Migration 006, and the language model behind the advice and
+            # the monthly report (llm.py): which providers are configured.
+            "bilingual": "enabled" if bilingual.enabled() else "english_only",
+            "llm": llm.status(),
             "status": "healthy" if healthy else "degraded",
         },
     )
@@ -411,12 +489,19 @@ def estimate_bill(home_id: int, user: dict = Depends(get_scoped_user)):
         "tariff_per_kwh": tariff.rate_for_month(kwh)
     }
 
+def _alert_message_sql():
+    """The alert text column(s): French too once migration 006 is in."""
+    return "a.message, a.message_fr" if bilingual.enabled() else "a.message, NULL"
+
+
 @app.get("/alerts")
-def get_alerts(home_id: int, user: dict = Depends(get_scoped_user)):
+def get_alerts(home_id: int, user: dict = Depends(get_scoped_user),
+               accept_language: str = Header(default="")):
+    language = bilingual.language_of(accept_language)
     conn = get_raw_db()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT mp.name, a.type, a.message, a.read_status, a.created_at
+    cursor.execute(f"""
+        SELECT mp.name, a.type, {_alert_message_sql()}, a.read_status, a.created_at
         FROM alerts a
         JOIN monitored_points mp ON a.monitored_point_id = mp.id
         JOIN rooms r ON mp.room_id = r.id
@@ -430,19 +515,21 @@ def get_alerts(home_id: int, user: dict = Depends(get_scoped_user)):
         {
             "appliance": row[0],
             "type": row[1],
-            "message": row[2],
-            "read": bool(row[3]),
-            "created_at": str(row[4])
+            "message": bilingual.pick(language, row[2], row[3]),
+            "read": bool(row[4]),
+            "created_at": str(row[5])
         }
         for row in rows
     ]
 
 @app.get("/alerts/unread")
-def get_unread_alerts(home_id: int, user: dict = Depends(get_scoped_user)):
+def get_unread_alerts(home_id: int, user: dict = Depends(get_scoped_user),
+                      accept_language: str = Header(default="")):
+    language = bilingual.language_of(accept_language)
     conn = get_raw_db()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT mp.name, a.type, a.message, a.created_at
+    cursor.execute(f"""
+        SELECT mp.name, a.type, {_alert_message_sql()}, a.created_at
         FROM alerts a
         JOIN monitored_points mp ON a.monitored_point_id = mp.id
         JOIN rooms r ON mp.room_id = r.id
@@ -457,8 +544,8 @@ def get_unread_alerts(home_id: int, user: dict = Depends(get_scoped_user)):
             {
                 "appliance": row[0],
                 "type": row[1],
-                "message": row[2],
-                "created_at": str(row[3])
+                "message": bilingual.pick(language, row[2], row[3]),
+                "created_at": str(row[4])
             }
             for row in rows
         ]
@@ -858,7 +945,8 @@ def get_devices(home_id: int, user: dict = Depends(get_scoped_user)):
     ]
 
 @app.get("/devices/{mac}")
-def get_device_detail(mac: str, user: dict = Depends(get_mac_owner)):
+def get_device_detail(mac: str, user: dict = Depends(get_mac_owner),
+                      accept_language: str = Header(default="")):
     """Returns full detail + runtime stats for a single device"""
     conn = get_raw_db()
     cursor = conn.cursor()
@@ -913,8 +1001,9 @@ def get_device_detail(mac: str, user: dict = Depends(get_mac_owner)):
     # The detail screen surfaces this device's own alerts. Filtering the
     # home-wide /alerts by appliance name would mis-attribute them as soon
     # as two devices share a name, so they are keyed by id here.
-    cursor.execute("""
-        SELECT type, message, read_status, created_at FROM alerts
+    message_fr = "message_fr" if bilingual.enabled() else "NULL"
+    cursor.execute(f"""
+        SELECT type, message, read_status, created_at, {message_fr} FROM alerts
         WHERE monitored_point_id = %s
         ORDER BY created_at DESC LIMIT 5
     """, (monitored_point_id,))
@@ -944,7 +1033,7 @@ def get_device_detail(mac: str, user: dict = Depends(get_mac_owner)):
         "recent_alerts": [
             {
                 "type": a[0],
-                "message": a[1],
+                "message": bilingual.pick(bilingual.language_of(accept_language), a[1], a[4]),
                 "read": bool(a[2]),
                 "created_at": str(a[3]),
             }
@@ -1150,16 +1239,19 @@ def get_homes(user: dict = Depends(get_current_user)):
     user_id = user["user_id"]
     conn = get_raw_db()
     cursor = conn.cursor()
-    cursor.execute("""
+    budget = "h.monthly_budget_fcfa" if _has_budget_column else "NULL"
+    cursor.execute(f"""
         SELECT h.id, h.name, h.address,
                (SELECT COUNT(*) FROM rooms WHERE home_id = h.id) as room_count,
-               (SELECT COUNT(*) FROM monitored_points mp JOIN rooms r ON mp.room_id = r.id WHERE r.home_id = h.id) as device_count
+               (SELECT COUNT(*) FROM monitored_points mp JOIN rooms r ON mp.room_id = r.id WHERE r.home_id = h.id) as device_count,
+               {budget}
         FROM homes h WHERE h.user_id = %s ORDER BY h.created_at
     """, (user_id,))
     rows = cursor.fetchall()
     conn.close()
     return [
-        {"id": row[0], "name": row[1], "address": row[2], "room_count": row[3], "device_count": row[4]}
+        {"id": row[0], "name": row[1], "address": row[2], "room_count": row[3], "device_count": row[4],
+         "monthly_budget_fcfa": row[5]}
         for row in rows
     ]
 
@@ -1218,11 +1310,101 @@ def delete_home(home_id: int, user: dict = Depends(get_scoped_user)):
     conn.close()
     return {"message": "Home deleted"}
 
+@app.put("/homes/{home_id}/budget")
+def set_home_budget(home_id: int, amount: int = None, user: dict = Depends(get_scoped_user)):
+    """Set the home's monthly spending target in FCFA; omit amount (or
+    send 0) to clear it."""
+    if not _has_budget_column:
+        raise HTTPException(
+            status_code=409,
+            detail="Budgets need migration 005 (backend/migrations/005_budget_and_push.sql)",
+        )
+    if amount is not None and amount < 0:
+        raise HTTPException(status_code=400, detail="The budget cannot be negative")
+    value = amount or None
+    conn = get_raw_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE homes SET monthly_budget_fcfa = %s WHERE id = %s", (value, home_id))
+    conn.commit()
+    conn.close()
+    return {"id": home_id, "monthly_budget_fcfa": value}
+
+@app.post("/homes/{home_id}/all-off")
+def switch_all_off(home_id: int, room_id: int = None, user: dict = Depends(get_scoped_user)):
+    """Switch off every device of the home (or of one of its rooms) that
+    is on. One request instead of one per device, and one place that
+    decides what "on" means (_derive_is_on)."""
+    if room_id is not None and _room_home_id(room_id) != home_id:
+        raise HTTPException(status_code=404, detail="Room not found")
+    from mqtt_client import send_command, record_command_sent
+    switched, failed = [], []
+    for device in get_devices(home_id, user):
+        if room_id is not None and device["room_id"] != room_id:
+            continue
+        if not device["is_on"]:
+            continue
+        if send_command(device["mac"], "OFF"):
+            record_command_sent(device["mac"], "OFF")
+            switched.append(device["mac"])
+        else:
+            failed.append(device["mac"])
+    if failed and not switched:
+        raise HTTPException(
+            status_code=503,
+            detail="Cannot reach the MQTT broker — no device was switched",
+        )
+    return {"switched": switched, "failed": failed}
+
+@app.post("/push/register")
+def register_push_token(body: PushTokenRequest, user: dict = Depends(get_current_user)):
+    """Remember this phone's Expo push token, to notify it of new alerts."""
+    if not push.enabled():
+        raise HTTPException(
+            status_code=409,
+            detail="Notifications need migration 005 (backend/migrations/005_budget_and_push.sql)",
+        )
+    push.register(user["user_id"], body.token, body.platform, body.language)
+    return {"message": "Registered"}
+
+@app.delete("/push/register")
+def unregister_push_token(token: str, user: dict = Depends(get_current_user)):
+    if push.enabled():
+        push.unregister(user["user_id"], token)
+    return {"message": "Unregistered"}
+
+@app.websocket("/ws/live")
+async def live_updates(websocket: WebSocket):
+    """Tells a client when its home's devices, alerts or suggestions
+    changed, so it refetches instead of polling. See live.py."""
+    await live.serve(websocket)
+
+@app.get("/reports/monthly")
+def get_monthly_report(home_id: int, year: int, month: int,
+                       user: dict = Depends(get_scoped_user),
+                       accept_language: str = Header(default="")):
+    """The month's figures, a summary and three actions, in the reader's
+    language. Written by the language model when one is configured, from
+    a template otherwise; see reports.py."""
+    now = datetime.now()
+    if not (1 <= month <= 12) or (year, month) > (now.year, now.month) or year < 2000:
+        raise HTTPException(status_code=400, detail="Pick a past or current month")
+    report = reports.monthly_report(home_id, year, month, now)
+    language = bilingual.language_of(accept_language)
+    return {
+        "year": year,
+        "month": month,
+        "facts": report["facts"],
+        "summary": report["content"][language]["summary"],
+        "actions": report["content"][language]["actions"],
+        "source": report["source"],
+        "generated_at": report["generated_at"],
+    }
+
 @app.put("/auth/profile")
 def update_profile(body: UpdateProfileRequest, user: dict = Depends(get_current_user)):
     """Update the current user's display name"""
     update_user_name(user["user_id"], body.name)
-    return {"message": "Profile updated", "name": name}
+    return {"message": "Profile updated", "name": body.name}
 
 @app.put("/auth/password")
 def update_password(body: ChangePasswordRequest, user: dict = Depends(get_current_user)):
@@ -1233,15 +1415,20 @@ def update_password(body: ChangePasswordRequest, user: dict = Depends(get_curren
     return {"message": "Password updated successfully"}
 
 @app.get("/suggestions")
-def get_suggestions(home_id: int, user: dict = Depends(get_scoped_user)):
+def get_suggestions(home_id: int, user: dict = Depends(get_scoped_user),
+                    accept_language: str = Header(default="")):
+    language = bilingual.language_of(accept_language)
+    extra = "s.suggestion_text_fr, s.ai_written" if bilingual.enabled() else "NULL, 0"
     conn = get_raw_db()
     cursor = conn.cursor()
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT s.id, mp.name, s.suggestion_text,
-               s.estimated_saving_fcfa, s.status, s.created_at
+               s.estimated_saving_fcfa, s.status, s.created_at,
+               mp.id, e.mac_address, {extra}
         FROM ai_suggestions s
         JOIN monitored_points mp ON s.monitored_point_id = mp.id
         JOIN rooms r ON mp.room_id = r.id
+        JOIN energiboxes e ON mp.energibox_id = e.id
         WHERE r.home_id = %s
         ORDER BY s.created_at DESC
     """, (home_id,))
@@ -1251,10 +1438,15 @@ def get_suggestions(home_id: int, user: dict = Depends(get_scoped_user)):
         {
             "id": row[0],
             "appliance": row[1],
-            "suggestion": row[2],
+            "suggestion": bilingual.pick(language, row[2], row[8]),
+            # Whether a language model wrote it (llm.py) or the template.
+            "ai_written": bool(row[9]),
             "estimated_saving_fcfa": row[3],
             "status": row[4],
-            "created_at": str(row[5])
+            "created_at": str(row[5]),
+            # So an app can offer to schedule the device the advice is about.
+            "monitored_point_id": row[6],
+            "mac": row[7],
         }
         for row in rows
     ]
@@ -1596,6 +1788,8 @@ def get_overview(home_id: int, user: dict = Depends(get_scoped_user)):
     """, (home_id,))
     active_alerts = cursor.fetchone()[0] or 0
 
+    budget = _home_budget(cursor, home_id)
+
     conn.close()
 
     # Calculate changes
@@ -1604,10 +1798,9 @@ def get_overview(home_id: int, user: dict = Depends(get_scoped_user)):
             return 0
         return round((current - previous) / previous * 100, 1)
 
-    # Projected bill (linear projection)
-    day_of_month = datetime.now().day
-    days_in_month = 30
-    projected_kwh = (month_kwh / day_of_month) * days_in_month if day_of_month > 0 else 0
+    # Month-end projection from the household's own weekday profile, with
+    # an 80 % range and the chance of passing the budget (insights.py).
+    forecast = insights.forecast_month(home_id, month_kwh, budget)
 
     return {
         "today": {
@@ -1622,7 +1815,10 @@ def get_overview(home_id: int, user: dict = Depends(get_scoped_user)):
             "kwh": round(month_kwh, 3),
             "change_vs_last_month": pct_change(month_kwh, last_month_kwh),
             "estimated_fcfa": round(tariff.monthly_cost(month_kwh), 0),
-            "projected_fcfa": round(tariff.monthly_cost(projected_kwh), 0)
+            "projected_fcfa": forecast["fcfa"],
+            "forecast": forecast,
+            # None when no budget is set, or before migration 005.
+            "budget_fcfa": budget,
         },
         "devices": {
             "total": total_devices,

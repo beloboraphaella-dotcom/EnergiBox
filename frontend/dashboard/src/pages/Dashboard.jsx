@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import axios from "axios";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, LineChart, Line
+  ResponsiveContainer
 } from "recharts";
 import Settings from "./Settings";
 import Devices from "./Devices";
@@ -11,40 +11,85 @@ import Admin from "./Admin";
 import { useLanguage } from "../context/LanguageContext";
 import AppShell from "../components/AppShell";
 import Icon from "../components/Icon";
+import Modal from "../components/GlassModal";
 import Overview from "./Overview";
+import Skeleton from "../components/Skeleton";
+import ReportCard from "../components/ReportCard";
+import { useLiveRefresh } from "../live/LiveContext";
+import { SCHEDULE_PRESETS } from "../utils/schedulePresets";
 
 const API = "http://localhost:8000";
-const COLORS = ["#6366f1", "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
-const MONTH_NAMES = ["January","February","March","April","May","June",
-  "July","August","September","October","November","December"];
+// Appliance series. Distinct hues that sit with the teal brand on glass;
+// the first is the brand colour itself.
+const COLORS = ["#00897b", "#5b6ee1", "#e0930b", "#0ea5c6", "#d9486b", "#64748b"];
 
-function Modal({ title, onClose, children }) {
+const ALERT_TONES = {
+  spike: { icon: "warning", orb: "bg-error-container/70 text-error", chip: "chip-red" },
+  extended_runtime: { icon: "timer", orb: "bg-tertiary-fixed/70 text-on-tertiary-fixed-variant", chip: "chip-amber" },
+  idle_waste: { icon: "nights_stay", orb: "text-on-primary-fixed-variant", chip: "chip-indigo" },
+  anomaly_high: { icon: "query_stats", orb: "bg-tertiary-fixed/70 text-on-tertiary-fixed-variant", chip: "chip-amber" },
+  anomaly_low: { icon: "trending_down", orb: "text-on-primary-fixed-variant", chip: "chip-indigo" },
+};
+
+function SectionTitle({ icon, children }) {
   return (
-    <div style={s.overlay} onClick={onClose}>
-      <div style={s.modal} onClick={(e) => e.stopPropagation()}>
-        <div style={s.modalHeader}>
-          <h3 style={s.modalTitle}>{title}</h3>
-          <button style={s.modalClose} onClick={onClose}>✕</button>
-        </div>
-        <div style={s.modalBody}>{children}</div>
+    <h2 className="flex items-center gap-2 font-headline-md text-[20px] leading-7 font-semibold text-on-surface">
+      <Icon name={icon} className="text-secondary" />
+      {children}
+    </h2>
+  );
+}
+
+function EmptyCard({ icon, children }) {
+  return (
+    <div className="glass rounded-2xl p-md flex items-center gap-3 text-on-surface-variant">
+      <span className="icon-orb w-10 h-10"><Icon name={icon} style={{ fontSize: "20px" }} /></span>
+      {children}
+    </div>
+  );
+}
+
+function StatTile({ icon, label, value, unit, dark = false, children }) {
+  return (
+    <div className={(dark ? "glass-dark" : "glass") + " rounded-2xl p-md flex flex-col justify-between gap-4 relative overflow-hidden"}>
+      {dark && <div className="absolute -right-6 -top-6 w-24 h-24 bg-secondary-fixed/25 rounded-full blur-2xl" />}
+      <div className="flex items-center justify-between relative">
+        <span className={"font-data-label text-data-label uppercase " + (dark ? "text-primary-fixed-dim" : "text-outline")}>{label}</span>
+        <Icon name={icon} className={dark ? "text-secondary-fixed" : "text-secondary"} />
+      </div>
+      <div className="relative">
+        <p className={"font-headline-lg text-headline-lg " + (dark ? "text-white" : "text-on-surface")}>
+          {value} <span className={"font-body-md text-body-md " + (dark ? "text-primary-fixed-dim" : "text-outline")}>{unit}</span>
+        </p>
+        {children && <p className="text-[13px] mt-1">{children}</p>}
       </div>
     </div>
   );
 }
+// The API labels a year's bars with English month abbreviations; this is
+// their order, so each can be re-rendered in the reader's language.
+const API_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const capitalize = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 
 export default function Dashboard({
   token, user, onLogout, onUpdateUser,
   homes = [], activeHomeId, onSwitchHome, onHomesChanged,
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const locale = language === "fr" ? "fr-FR" : "en-US";
+  // Numbers in the reader's convention: "9 456" and "119,7" in French.
+  const fmt = (value, digits = 1) =>
+    Number(value ?? 0).toLocaleString(locale, { maximumFractionDigits: digits });
   const isAdmin = user?.role === "admin";
   const [activeTab, setTab] = useState(isAdmin ? "admin" : "home");
-  const [dashboard, setDashboard] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
   const [schedules, setSchedules] = useState([]);
-  const [overviewData, setOverviewData] = useState(null);
-  const [roomsData, setRoomsData] = useState([]);
+  const [alertsLoaded, setAlertsLoaded] = useState(false);
+  // A device to open when the Devices tab is next shown (from a card on
+  // the dashboard), so a tap lands on that device and not on the list.
+  const [deviceToOpen, setDeviceToOpen] = useState(null);
   const [showRooms, setShowRooms] = useState(false);
 
   // History state
@@ -65,19 +110,12 @@ export default function Dashboard({
   const authHeaders = { headers: { Authorization: `Bearer ${token}` } };
   const hid = () => `home_id=${activeHomeId}`;
 
-  const fetchDashboard = async () => {
-    if (!activeHomeId) return;
-    try {
-      const res = await axios.get(`${API}/dashboard?${hid()}`, authHeaders);
-      setDashboard(res.data);
-    } catch (err) {}
-  };
-
   const fetchAlerts = async () => {
     if (!activeHomeId) return;
     try {
       const res = await axios.get(`${API}/alerts?${hid()}`, authHeaders);
       setAlerts(res.data);
+      setAlertsLoaded(true);
     } catch (err) {}
   };
 
@@ -86,18 +124,6 @@ export default function Dashboard({
     try {
       const res = await axios.get(`${API}/suggestions?${hid()}`, authHeaders);
       setSuggestions(res.data);
-    } catch (err) {}
-  };
-
-  const fetchOverview = async () => {
-    if (!activeHomeId) return;
-    try {
-      const [overRes, roomRes] = await Promise.all([
-        axios.get(`${API}/stats/overview?${hid()}`, authHeaders),
-        axios.get(`${API}/rooms/consumption?${hid()}`, authHeaders)
-      ]);
-      setOverviewData(overRes.data);
-      setRoomsData(roomRes.data);
     } catch (err) {}
   };
 
@@ -146,14 +172,17 @@ export default function Dashboard({
     fetchSuggestions();
   };
 
-  const deleteSchedule = async (id) => {
-    await axios.delete(`${API}/schedules/${id}`, authHeaders);
+  const deleteSchedule = async (sc) => {
+    if (!window.confirm(t("sched.confirmDelete", { name: sc.appliance }))) return;
+    await axios.delete(`${API}/schedules/${sc.id}`, authHeaders);
     fetchSchedules();
   };
 
-  const openCreateSchedule = async () => {
+  /** `pointId` preselects the device, when the schedule is offered from a
+   * suggestion about it. */
+  const openCreateSchedule = async (pointId = "") => {
     setScheduleError("");
-    setScheduleForm({ monitored_point_id: "", on_time: "22:00", off_time: "05:00" });
+    setScheduleForm({ monitored_point_id: pointId ? String(pointId) : "", on_time: "22:00", off_time: "05:00" });
     try {
       const res = await axios.get(`${API}/devices?${hid()}`, authHeaders);
       setScheduleDevices(res.data);
@@ -170,7 +199,7 @@ export default function Dashboard({
   const submitScheduleForm = async () => {
     const { monitored_point_id, on_time, off_time } = scheduleForm;
     if (scheduleModal === "create" && !monitored_point_id) {
-      setScheduleError("Pick a device.");
+      setScheduleError(t("sched.errDevice"));
       return;
     }
     try {
@@ -188,22 +217,20 @@ export default function Dashboard({
       setScheduleModal(null);
       fetchSchedules();
     } catch (err) {
-      setScheduleError("Could not save schedule.");
+      setScheduleError(t("sched.errSave"));
     }
   };
 
-  const controlDevice = async (mac, command) => {
-    await axios.post(`${API}/control/${mac}?command=${command}`, null, authHeaders);
-    setTimeout(fetchDashboard, 500);
-  };
-
-  useEffect(() => {
-    if (isAdmin) return; // admins never load household consumption data
-    fetchDashboard();
-    fetchOverview();
-    const interval = setInterval(fetchDashboard, 2000);
-    return () => clearInterval(interval);
-  }, [isAdmin, activeHomeId]);
+  // This used to poll /dashboard every two seconds on every tab, for
+  // figures no screen displayed any more. Only the alerts tab refreshes
+  // here now, and only when told something changed.
+  useLiveRefresh(
+    () => {
+      fetchAlerts();
+      fetchSuggestions();
+    },
+    { topics: ["alerts", "suggestions"], interval: 15000, enabled: !isAdmin && activeTab === "alerts" }
+  );
 
   useEffect(() => {
     if (activeTab === "alerts") {
@@ -237,9 +264,14 @@ export default function Dashboard({
   };
 
   const getPeriodLabel = () => {
-    if (historyMode === "Day") return `${MONTH_NAMES[historyMonth-1]} ${historyDay}, ${historyYear}`;
-    if (historyMode === "Week") return `Week ${historyWeek}, ${historyYear}`;
-    if (historyMode === "Month") return `${MONTH_NAMES[historyMonth-1]} ${historyYear}`;
+    const date = new Date(historyYear, historyMonth - 1, historyDay);
+    if (historyMode === "Day") {
+      return date.toLocaleDateString(locale, { day: "numeric", month: "long", year: "numeric" });
+    }
+    if (historyMode === "Week") return t("history.week", { week: historyWeek, year: historyYear });
+    if (historyMode === "Month") {
+      return capitalize(date.toLocaleDateString(locale, { month: "long", year: "numeric" }));
+    }
     return `${historyYear}`;
   };
 
@@ -248,16 +280,6 @@ export default function Dashboard({
     if (historyMode === "Week") return "day";
     return "day";
   };
-
-  const navTabs = isAdmin
-    ? [{ id: "admin", icon: "🛡", label: t("nav.admin") }]
-    : [
-        { id: "home",    icon: "⚡", label: t("nav.home") },
-        { id: "devices", icon: "🔌", label: t("nav.devices") },
-        { id: "history", icon: "📊", label: t("nav.history") },
-        { id: "alerts",  icon: "🔔", label: t("nav.alerts") },
-        { id: "profile", icon: "👤", label: t("nav.profile") },
-      ];
 
   // Sidebar items. The mockups ship four; the app has more screens than
   // that, so the extra ones are added here in the same style rather than
@@ -289,7 +311,14 @@ export default function Dashboard({
       return;
     }
     setShowRooms(false);
+    if (key !== "devices") setDeviceToOpen(null);
     setTab(key);
+  };
+
+  const openDevice = (mac) => {
+    setDeviceToOpen(mac);
+    setShowRooms(false);
+    setTab("devices");
   };
 
   const activeKey = showRooms && activeTab === "home" ? "rooms" : activeTab;
@@ -325,6 +354,7 @@ export default function Dashboard({
               token={token}
               homeId={activeHomeId}
               onOpenDevices={() => handleNavigate("devices")}
+              onOpenDevice={openDevice}
             />
           )}
         {activeTab === "home" && showRooms && (
@@ -332,139 +362,133 @@ export default function Dashboard({
         )}
 
         {/* ── DEVICES TAB ── */}
-        {activeTab === "devices" && <Devices token={token} homeId={activeHomeId} />}
+        {activeTab === "devices" && (
+          <Devices token={token} homeId={activeHomeId} initialMac={deviceToOpen} key={deviceToOpen || "list"} />
+        )}
 
         {/* ── HISTORY TAB ── */}
         {activeTab === "history" && (
-          <div>
-            <div style={s.pageHeader}>
+          <div className="max-w-7xl mx-auto py-lg space-y-md">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
               <div>
-                <h1 style={s.pageTitle}>Consumption History</h1>
-                <p style={s.pageSub}>Track your energy usage over time</p>
+                <h1 className="font-headline-lg text-headline-lg text-on-surface">{t("history.title")}</h1>
+                <p className="text-on-surface-variant mt-1">{t("history.subtitle")}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="segmented">
+                  {["Day", "Week", "Month", "Year"].map((m) => (
+                    <button key={m} type="button" aria-pressed={historyMode === m} onClick={() => setHistoryMode(m)}>
+                      {t(`history.mode.${m}`)}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1 glass-subtle rounded-full p-1">
+                  <button type="button" className="btn-icon w-8 h-8" onClick={() => navigatePeriod(-1)} aria-label={t("history.prev")}>
+                    <Icon name="chevron_left" />
+                  </button>
+                  <span className="font-label-sm text-label-sm text-on-surface min-w-[9rem] text-center">{getPeriodLabel()}</span>
+                  <button type="button" className="btn-icon w-8 h-8" onClick={() => navigatePeriod(1)} aria-label={t("history.next")}>
+                    <Icon name="chevron_right" />
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Mode selector */}
-            <div style={s.modeSelector}>
-              {["Day", "Week", "Month", "Year"].map(m => (
-                <button key={m} style={{
-                  ...s.modeBtn,
-                  background: historyMode === m ? "#3b82f6" : "transparent",
-                  color: historyMode === m ? "#fff" : "#666",
-                }} onClick={() => setHistoryMode(m)}>
-                  {m}
-                </button>
-              ))}
-            </div>
+            {!historyData && (
+              <div role="status" aria-label={t("common.loading")} className="space-y-md">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-sm">
+                  {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-28" />)}
+                </div>
+                <Skeleton className="h-80" />
+              </div>
+            )}
 
-            {/* Period navigator */}
-            <div style={s.periodNav}>
-              <button style={s.navArrow} onClick={() => navigatePeriod(-1)}>‹</button>
-              <span style={s.periodLabel}>{getPeriodLabel()}</span>
-              <button style={s.navArrow} onClick={() => navigatePeriod(1)}>›</button>
-            </div>
+            {historyMode === "Month" && (
+              <ReportCard token={token} homeId={activeHomeId} year={historyYear} month={historyMonth} />
+            )}
 
             {historyData && (
               <>
-                {/* Stats */}
-                <div style={s.statsRow}>
-                  <div style={s.statCard}>
-                    <div style={s.statIcon}>⚡</div>
-                    <div>
-                      <p style={s.statLabel}>Total Consumption</p>
-                      <p style={s.statValue}>{historyData.total_kwh} kWh</p>
-                      {historyData.change_vs_prev !== undefined && (
-                        <p style={{
-                          ...s.statChange,
-                          color: historyData.change_vs_prev >= 0 ? "#ef4444" : "#16a34a"
-                        }}>
-                          {historyData.change_vs_prev >= 0 ? "▲" : "▼"} {Math.abs(historyData.change_vs_prev)}% vs prev
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <div style={s.statCard}>
-                    <div style={{...s.statIcon, background:"#eff6ff", color:"#3b82f6"}}>📊</div>
-                    <div>
-                      <p style={s.statLabel}>
-                        {historyMode === "Year" ? "Average per Month" : "Average per Day"}
-                      </p>
-                      <p style={s.statValue}>{historyData.avg_per_day_kwh} kWh</p>
-                    </div>
-                  </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-sm">
+                  <StatTile icon="bolt" label={t("history.total")} value={fmt(historyData.total_kwh)} unit="kWh">
+                    {historyData.change_vs_prev !== undefined && (
+                      <span className={"inline-flex items-center gap-1 " + (historyData.change_vs_prev >= 0 ? "text-error" : "text-secondary")}>
+                        <Icon name={historyData.change_vs_prev >= 0 ? "trending_up" : "trending_down"} style={{ fontSize: "16px" }} />
+                        {t("history.vsPrev", { pct: Math.abs(historyData.change_vs_prev) })}
+                      </span>
+                    )}
+                  </StatTile>
+                  <StatTile
+                    icon="avg_pace"
+                    label={historyMode === "Year" ? t("history.avgMonth") : t("history.avgDay")}
+                    value={fmt(historyData.avg_per_day_kwh)}
+                    unit="kWh"
+                  />
+                  <StatTile icon="payments" label={t("history.estCost")} value={fmt(historyData.estimated_fcfa, 0)} unit="FCFA" dark />
+                  <StatTile icon="calendar_today" label={t("history.costDay")} value={historyData.avg_fcfa_per_day == null ? "—" : fmt(historyData.avg_fcfa_per_day, 0)} unit="FCFA" />
                 </div>
 
-                {/* Bar chart */}
-                <div style={s.chartCard}>
-                  <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={historyData.bars} margin={{top:10, right:10, left:0, bottom:0}}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f4ff" vertical={false}/>
-                      <XAxis
-                        dataKey={getBarKey()}
-                        tick={{fill:"#aaa", fontSize:11}}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <YAxis
-                        tick={{fill:"#aaa", fontSize:11}}
-                        axisLine={false}
-                        tickLine={false}
-                        unit=" kWh"
-                      />
+                <div className="glass rounded-2xl p-md">
+                  <h3 className="font-headline-md text-[20px] leading-7 font-semibold text-on-surface mb-4">{t("history.chart")}</h3>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart
+                      data={
+                        historyMode === "Year"
+                          ? historyData.bars.map((bar) => ({
+                              ...bar,
+                              month: capitalize(
+                                new Date(2000, API_MONTHS.indexOf(bar.month), 1)
+                                  .toLocaleDateString(locale, { month: "short" })
+                                  .replace(".", "")
+                              ),
+                            }))
+                          : historyData.bars
+                      } margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(118,119,125,0.18)" vertical={false} />
+                      <XAxis dataKey={getBarKey()} tick={{ fill: "#626369", fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: "#626369", fontSize: 11 }} axisLine={false} tickLine={false} unit=" kWh" width={64} />
                       <Tooltip
-                        contentStyle={{borderRadius:"12px", border:"none", boxShadow:"0 4px 20px rgba(0,0,0,0.1)"}}
-                        formatter={(v) => [`${v} kWh`, "Consumption"]}
+                        cursor={{ fill: "rgba(255,255,255,0.45)" }}
+                        contentStyle={{
+                          borderRadius: "14px",
+                          border: "1px solid rgba(255,255,255,0.8)",
+                          background: "rgba(255,255,255,0.85)",
+                          backdropFilter: "blur(12px)",
+                          boxShadow: "0 10px 30px -12px rgba(19,27,46,0.25)",
+                        }}
+                        formatter={(v) => [`${fmt(v)} kWh`, t("history.chart")]}
                       />
                       <defs>
-                        <linearGradient id="blueGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#3b82f6"/>
-                          <stop offset="100%" stopColor="#93c5fd"/>
+                        <linearGradient id="tealGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#00897b" />
+                          <stop offset="100%" stopColor="#6bd8cb" stopOpacity={0.85} />
                         </linearGradient>
                       </defs>
-                      <Bar dataKey="kwh" radius={[6,6,0,0]} fill="url(#blueGrad)"/>
+                      <Bar dataKey="kwh" radius={[8, 8, 0, 0]} fill="url(#tealGrad)" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
 
-                {/* Consumption by appliance */}
                 {applianceData.length > 0 && (
-                  <div style={s.chartCard}>
-                    <h3 style={s.chartTitle}>Consumption by Appliance</h3>
-                    {applianceData.map((a, i) => (
-                      <div key={i} style={s.applianceRow}>
-                        <div style={{...s.applianceDot, background:COLORS[i % COLORS.length]}}/>
-                        <span style={s.applianceName}>{a.name}</span>
-                        <div style={s.progressWrap}>
-                          <div style={{
-                            ...s.progressBar,
-                            width:`${a.percentage}%`,
-                            background:COLORS[i % COLORS.length],
-                          }}/>
-                        </div>
-                        <span style={s.applianceKwh}>{a.kwh} kWh</span>
-                        <span style={s.appliancePct}>{a.percentage}%</span>
-                      </div>
-                    ))}
+                  <div className="glass rounded-2xl p-md">
+                    <h3 className="font-headline-md text-[20px] leading-7 font-semibold text-on-surface mb-4">{t("history.byAppliance")}</h3>
+                    <ul className="space-y-4">
+                      {applianceData.map((a, i) => (
+                        <li key={i} className="space-y-1.5">
+                          <div className="flex items-center gap-3">
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
+                            <span className="text-on-surface truncate flex-1 min-w-0">{a.name}</span>
+                            <span className="font-data-label text-data-label text-on-surface whitespace-nowrap">{fmt(a.kwh)} kWh</span>
+                            <span className="font-label-sm text-label-sm text-outline text-right w-12 shrink-0">{fmt(a.percentage, 1)}%</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-white/60 overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${a.percentage}%`, background: COLORS[i % COLORS.length] }} />
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
-
-                {/* Cost overview */}
-                <div style={s.costCard}>
-                  <div style={s.costHeader}>
-                    <h3 style={s.chartTitle}>Cost Overview</h3>
-                    <span style={s.fcfaBadge}>FCFA</span>
-                  </div>
-                  <div style={s.costRow}>
-                    <div>
-                      <p style={s.costLabel}>Estimated Cost</p>
-                      <p style={s.costValue}>{historyData.estimated_fcfa?.toLocaleString()} FCFA</p>
-                    </div>
-                    <div>
-                      <p style={s.costLabel}>Average per Day</p>
-                      <p style={s.costValue}>{historyData.avg_fcfa_per_day?.toLocaleString() || "—"} FCFA</p>
-                    </div>
-                  </div>
-                </div>
               </>
             )}
           </div>
@@ -472,112 +496,183 @@ export default function Dashboard({
 
         {/* ── ALERTS TAB ── */}
         {activeTab === "alerts" && (
-          <div>
-            <div style={s.pageHeader}>
-              <h1 style={s.pageTitle}>Alerts & Schedules</h1>
-            </div>
+          <div className="max-w-5xl mx-auto py-lg space-y-lg">
+            <h1 className="font-headline-lg text-headline-lg text-on-surface">{t("alerts.title")}</h1>
 
-            <h2 style={s.sectionTitle}>🔔 Active Alerts</h2>
-            {alerts.length === 0 ? (
-              <div style={s.emptyCard}><p style={{color:"#aaa"}}>✅ No alerts — everything is normal</p></div>
-            ) : alerts.map((a, i) => (
-              <div key={i} style={{...s.alertCard, borderLeftColor:
-                a.type==="spike" ? "#ef4444" : a.type==="extended_runtime" ? "#f59e0b" : "#3b82f6"
-              }}>
-                <div style={s.alertTop}>
-                  <span style={s.alertAppliance}>{a.appliance}</span>
-                  <span style={{...s.alertBadge,
-                    background: a.type==="spike" ? "#fef2f2" : a.type==="extended_runtime" ? "#fffbeb" : "#eff6ff",
-                    color: a.type==="spike" ? "#ef4444" : a.type==="extended_runtime" ? "#f59e0b" : "#3b82f6",
-                  }}>{a.type.replace("_"," ")}</span>
+            <section className="space-y-sm">
+              <SectionTitle icon="notifications">{t("alerts.active")}</SectionTitle>
+              {!alertsLoaded ? (
+                <div role="status" aria-label={t("common.loading")} className="space-y-sm">
+                  <Skeleton className="h-24" />
+                  <Skeleton className="h-24" />
                 </div>
-                <p style={s.alertMsg}>{a.message}</p>
-                <p style={s.alertTime}>{a.created_at}</p>
-              </div>
-            ))}
-
-            <h2 style={{...s.sectionTitle, marginTop:"28px"}}>💡 AI Suggestions</h2>
-            {suggestions.length === 0 ? (
-              <div style={s.emptyCard}><p style={{color:"#aaa"}}>No suggestions yet</p></div>
-            ) : suggestions.map((s2, i) => (
-              <div key={i} style={s.suggCard}>
-                <div style={s.suggTop}>
-                  <span style={s.suggAppliance}>{s2.appliance}</span>
-                  <span style={{...s.statusPill,
-                    background: s2.status==="accepted" ? "#dcfce7" : s2.status==="ignored" ? "#f3f4f6" : "#fffbeb",
-                    color: s2.status==="accepted" ? "#16a34a" : s2.status==="ignored" ? "#9ca3af" : "#f59e0b",
-                  }}>{s2.status}</span>
-                </div>
-                <p style={s.suggText}>{s2.suggestion}</p>
-                <p style={s.suggSaving}>💰 Save {s2.estimated_saving_fcfa} FCFA/month</p>
-                {s2.status === "pending" && (
-                  <div style={s.suggBtns}>
-                    <button style={s.acceptBtn} onClick={() => acceptSuggestion(s2.id)}>✅ Accept</button>
-                    <button style={s.ignoreBtn} onClick={() => ignoreSuggestion(s2.id)}>Ignore</button>
+              ) : alerts.length === 0 ? (
+                <EmptyCard icon="check_circle">{t("alerts.none")}</EmptyCard>
+              ) : alerts.map((a, i) => {
+                const tone = ALERT_TONES[a.type] || ALERT_TONES.idle_waste;
+                return (
+                  <div key={i} className="glass rounded-2xl p-4 flex items-start gap-4">
+                    <span className={"icon-orb " + tone.orb}><Icon name={tone.icon} /></span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                        <p className="font-body-md text-body-md font-semibold text-on-surface">{a.appliance}</p>
+                        <span className={"chip " + tone.chip}>{t(`detail.alert.${a.type}`)}</span>
+                      </div>
+                      <p className="text-[14px] leading-5 text-on-surface-variant mt-1">{a.message}</p>
+                      <p className="font-data-label text-[12px] text-outline mt-2">{a.created_at}</p>
+                    </div>
                   </div>
-                )}
-              </div>
-            ))}
+                );
+              })}
+            </section>
 
-            <div style={{...s.sectionHeader, marginTop:"28px"}}>
-              <h2 style={s.sectionTitle}>🕐 Active Schedules</h2>
-              <button style={s.viewAllBtn} onClick={openCreateSchedule}>+ Create Schedule</button>
-            </div>
-            {schedules.length === 0 ? (
-              <div style={s.emptyCard}><p style={{color:"#aaa"}}>No schedules yet</p></div>
-            ) : schedules.map((sc, i) => (
-              <div key={i} style={s.scheduleCard}>
-                <div style={s.scheduleLeft}>
-                  <p style={s.scheduleAppliance}>{sc.appliance}</p>
-                  <p style={s.scheduleTimes}>ON {sc.on_time} → OFF {sc.off_time}</p>
-                  <span style={{...s.statusPill,
-                    background: sc.source==="ai" ? "#eff6ff" : "#f3f4f6",
-                    color: sc.source==="ai" ? "#3b82f6" : "#666",
-                    fontSize:"11px"
-                  }}>{sc.source}</span>
+            <section className="space-y-sm">
+              <SectionTitle icon="lightbulb">{t("sugg.title")}</SectionTitle>
+              {suggestions.length === 0 ? (
+                <EmptyCard icon="lightbulb">{t("sugg.none")}</EmptyCard>
+              ) : suggestions.map((s2, i) => (
+                <div key={i} className={"glass rounded-2xl p-4 " + (s2.status === "ignored" ? "opacity-70" : "")}>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-body-md text-body-md font-semibold text-on-surface">{s2.appliance}</p>
+                    <span className="flex items-center gap-2">
+                      {s2.ai_written && (
+                        <span className="chip chip-indigo" title={t("report.byAI")}>
+                          <Icon name="auto_awesome" style={{ fontSize: "14px" }} /> {t("sugg.aiWritten")}
+                        </span>
+                      )}
+                      <span className={"chip " + (s2.status === "accepted" ? "chip-teal" : s2.status === "ignored" ? "" : "chip-amber")}>
+                        {t(`sugg.status.${s2.status}`)}
+                      </span>
+                    </span>
+                  </div>
+                  <p className="text-[14px] leading-6 text-on-surface-variant mt-2">{s2.suggestion}</p>
+                  <div className="flex flex-wrap items-center justify-between gap-3 mt-3">
+                    <span className="chip chip-teal text-[13px]">
+                      <Icon name="savings" style={{ fontSize: "16px" }} />
+                      {t("sugg.save", { amount: Number(s2.estimated_saving_fcfa).toLocaleString(locale) })}
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {s2.status !== "ignored" && s2.monitored_point_id && (
+                        <button type="button" className="btn-glass py-2" onClick={() => openCreateSchedule(s2.monitored_point_id)}>
+                          <Icon name="schedule" style={{ fontSize: "18px" }} /> {t("sugg.schedule")}
+                        </button>
+                      )}
+                      {s2.status === "pending" && (
+                        <>
+                          <button type="button" className="btn-glass py-2" onClick={() => ignoreSuggestion(s2.id)}>{t("sugg.ignore")}</button>
+                          <button type="button" className="btn-primary py-2" onClick={() => acceptSuggestion(s2.id)}>
+                            <Icon name="check" style={{ fontSize: "18px" }} /> {t("sugg.accept")}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div style={{display:"flex", gap:"8px"}}>
-                  <button style={s.editScheduleBtn} onClick={() => openEditSchedule(sc)}>✎</button>
-                  <button style={s.deleteBtn} onClick={() => deleteSchedule(sc.id)}>🗑</button>
-                </div>
+              ))}
+            </section>
+
+            <section className="space-y-sm">
+              <div className="flex items-center justify-between">
+                <SectionTitle icon="schedule">{t("sched.title")}</SectionTitle>
+                <button type="button" className="btn-primary py-2" onClick={() => openCreateSchedule()}>
+                  <Icon name="add" style={{ fontSize: "18px" }} /> {t("sched.create")}
+                </button>
               </div>
-            ))}
+              {schedules.length === 0 ? (
+                <EmptyCard icon="schedule">{t("sched.none")}</EmptyCard>
+              ) : schedules.map((sc, i) => (
+                <div key={i} className={"glass rounded-2xl p-4 flex items-center gap-4 " + (sc.active ? "" : "opacity-70")}>
+                  <span className="icon-orb"><Icon name="schedule" /></span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-body-md text-body-md font-semibold text-on-surface">{sc.appliance}</p>
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      <span className="chip chip-teal font-data-label">
+                        <Icon name="power_settings_new" style={{ fontSize: "14px" }} /> {sc.on_time?.slice(0, 5)}
+                      </span>
+                      <Icon name="arrow_forward" className="text-outline" style={{ fontSize: "16px" }} />
+                      <span className="chip font-data-label">
+                        <Icon name="power_off" style={{ fontSize: "14px" }} /> {sc.off_time?.slice(0, 5)}
+                      </span>
+                      <span className={"chip " + (sc.source === "ai" ? "chip-indigo" : "")}>{t(`sched.source.${sc.source}`)}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-1">
+                    <button type="button" className="btn-icon" onClick={() => openEditSchedule(sc)} aria-label={t("sched.edit")} title={t("sched.edit")}>
+                      <Icon name="edit" style={{ fontSize: "20px" }} />
+                    </button>
+                    <button type="button" className="btn-icon hover:text-error" onClick={() => deleteSchedule(sc)} aria-label={t("sched.delete")} title={t("sched.delete")}>
+                      <Icon name="delete" style={{ fontSize: "20px" }} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </section>
 
             {scheduleModal && (
-              <Modal title={scheduleModal === "create" ? "Create Schedule" : "Edit Schedule"} onClose={() => setScheduleModal(null)}>
-                {scheduleModal === "create" && (
-                  <>
-                    <label style={s.modalLabel}>Device</label>
-                    <select
-                      style={s.modalInput}
-                      value={scheduleForm.monitored_point_id}
-                      onChange={(e) => setScheduleForm({ ...scheduleForm, monitored_point_id: e.target.value })}
-                    >
-                      <option value="">Select a device...</option>
-                      {scheduleDevices.map((d) => (
-                        <option key={d.id} value={d.id}>{d.name} — {d.room}</option>
-                      ))}
-                    </select>
-                  </>
-                )}
-                <label style={s.modalLabel}>Turn ON at</label>
-                <input
-                  type="time"
-                  style={s.modalInput}
-                  value={scheduleForm.on_time}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, on_time: e.target.value })}
-                />
-                <label style={s.modalLabel}>Turn OFF at</label>
-                <input
-                  type="time"
-                  style={s.modalInput}
-                  value={scheduleForm.off_time}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, off_time: e.target.value })}
-                />
-                {scheduleError && <p style={{color:"#ef4444", fontSize:"12px", margin:"-8px 0 12px"}}>{scheduleError}</p>}
-                <button style={s.modalSaveBtn} onClick={submitScheduleForm}>
-                  {scheduleModal === "create" ? "Create" : "Save Changes"}
-                </button>
+              <Modal title={scheduleModal === "create" ? t("sched.create") : t("sched.edit")} onClose={() => setScheduleModal(null)}>
+                <div className="space-y-4">
+                  {scheduleModal === "create" && (
+                    <label className="block">
+                      <span className="block mb-1.5 font-label-sm text-label-sm text-on-surface-variant">{t("sched.device")}</span>
+                      <select
+                        className="glass-input"
+                        value={scheduleForm.monitored_point_id}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, monitored_point_id: e.target.value })}
+                      >
+                        <option value="">{t("sched.selectDevice")}</option>
+                        {scheduleDevices.map((d) => (
+                          <option key={d.id} value={d.id}>{d.name} — {d.room}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  <div>
+                    <span className="block mb-1.5 font-label-sm text-label-sm text-on-surface-variant">{t("sched.presets")}</span>
+                    <div className="flex flex-wrap gap-2">
+                      {SCHEDULE_PRESETS.map((preset) => {
+                        const selected = scheduleForm.on_time === preset.on && scheduleForm.off_time === preset.off;
+                        return (
+                          <button
+                            key={preset.key}
+                            type="button"
+                            aria-pressed={selected}
+                            onClick={() => setScheduleForm({ ...scheduleForm, on_time: preset.on, off_time: preset.off })}
+                            className={
+                              "px-3 py-2 rounded-full font-label-sm text-label-sm transition-colors " +
+                              (selected ? "bg-white/90 text-secondary ring-1 ring-secondary/40" : "glass-subtle text-on-surface-variant hover:bg-white/70")
+                            }
+                          >
+                            {t(`sched.preset.${preset.key}`)} <span className="font-data-label text-[12px] opacity-80">{preset.on}–{preset.off}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block">
+                      <span className="block mb-1.5 font-label-sm text-label-sm text-on-surface-variant">{t("sched.onAt")}</span>
+                      <input
+                        type="time"
+                        className="glass-input font-data-label"
+                        value={scheduleForm.on_time}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, on_time: e.target.value })}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="block mb-1.5 font-label-sm text-label-sm text-on-surface-variant">{t("sched.offAt")}</span>
+                      <input
+                        type="time"
+                        className="glass-input font-data-label"
+                        value={scheduleForm.off_time}
+                        onChange={(e) => setScheduleForm({ ...scheduleForm, off_time: e.target.value })}
+                      />
+                    </label>
+                  </div>
+                  {scheduleError && <p className="text-error text-[14px]">{scheduleError}</p>}
+                  <button type="button" className="btn-primary w-full py-3" onClick={submitScheduleForm}>
+                    {scheduleModal === "create" ? t("common.create") : t("common.saveChanges")}
+                  </button>
+                </div>
               </Modal>
             )}
           </div>
@@ -628,7 +723,7 @@ function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHomesChanged, token
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-container border border-outline-variant/50 text-on-surface hover:bg-surface-container-high transition-colors active:scale-95 duration-150 max-w-[180px]"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-full glass-subtle text-on-surface hover:bg-white/70 transition-colors active:scale-95 duration-150 max-w-[180px]"
       >
         <Icon name="home" className="text-secondary" style={{ fontSize: "18px" }} />
         <span className="font-label-sm text-label-sm truncate">
@@ -650,7 +745,7 @@ function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHomesChanged, token
               setAdding(false);
             }}
           />
-          <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-xl bg-surface-container-lowest border border-outline-variant/30 shadow-lg overflow-hidden">
+          <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-2xl glass-strong overflow-hidden">
             <p className="font-label-sm text-label-sm text-outline uppercase tracking-wider px-4 pt-4 pb-2">
               {t("shell.yourHomes")}
             </p>
@@ -667,7 +762,7 @@ function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHomesChanged, token
                   "w-full flex items-center gap-3 px-4 py-3 text-left transition-colors " +
                   (h.id === activeHomeId
                     ? "bg-secondary-container text-on-secondary-container"
-                    : "text-on-surface hover:bg-surface-container-high")
+                    : "text-on-surface hover:bg-white/70")
                 }
               >
                 <Icon name="home" fill={h.id === activeHomeId} />
@@ -683,17 +778,17 @@ function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHomesChanged, token
               </button>
             ))}
 
-            <div className="border-t border-outline-variant/30 p-4">
+            <div className="border-t border-white/70 p-4">
               {adding ? (
                 <div className="space-y-2">
                   <input
-                    className="w-full px-3 py-2 bg-surface-container-low border border-outline-variant/50 rounded-lg font-body-md text-body-md text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors"
+                    className="glass-input py-2 px-3 font-body-md text-body-md"
                     placeholder={t("shell.homeName")}
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                   />
                   <input
-                    className="w-full px-3 py-2 bg-surface-container-low border border-outline-variant/50 rounded-lg font-body-md text-body-md text-on-surface focus:border-secondary focus:ring-1 focus:ring-secondary transition-colors"
+                    className="glass-input py-2 px-3 font-body-md text-body-md"
                     placeholder={t("shell.homeAddress")}
                     value={newAddress}
                     onChange={(e) => setNewAddress(e.target.value)}
@@ -704,7 +799,7 @@ function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHomesChanged, token
                   <button
                     type="button"
                     onClick={createHome}
-                    className="w-full bg-secondary text-on-secondary font-label-sm text-label-sm py-2.5 rounded-lg hover:bg-on-secondary-container transition-colors"
+                    className="btn-primary w-full py-2.5"
                   >
                     {t("shell.createHome")}
                   </button>
@@ -727,182 +822,3 @@ function HomeSwitcher({ homes, activeHomeId, onSwitchHome, onHomesChanged, token
   );
 }
 
-const s = {
-  page: { display:"flex", minHeight:"100vh", background:"var(--app-page-bg)", fontFamily:"'Segoe UI', sans-serif" },
-  sidebar: { width:"220px", background:"var(--app-surface-bg)", borderRight:"1px solid var(--app-border-strong)", display:"flex", flexDirection:"column", flexShrink:0, boxShadow:"2px 0 8px rgba(0,0,0,0.04)" },
-  sidebarHeader: { display:"flex", alignItems:"center", gap:"10px", padding:"24px 20px", borderBottom:"1px solid var(--app-border)" },
-  sidebarLogo: { fontSize:"22px" },
-  sidebarBrand: { fontSize:"18px", fontWeight:"700", color:"#1e40af" },
-
-  switcherWrap: { borderBottom:"1px solid var(--app-border)", position:"relative" },
-  switcherTrigger: { width:"100%", display:"flex", alignItems:"center", gap:"10px", padding:"20px", border:"none", background:"transparent", cursor:"pointer" },
-  switcherHomeName: { fontSize:"15px", fontWeight:"700", color:"var(--app-text-primary)", margin:0, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" },
-  switcherHint: { fontSize:"11px", color:"var(--app-text-muted)", margin:0 },
-  switcherOverlay: { position:"fixed", inset:0, background:"rgba(15,23,42,0.35)", zIndex:1000, display:"flex", alignItems:"flex-start", justifyContent:"flex-start" },
-  switcherSheet: { background:"var(--app-surface-bg)", borderRadius:"16px", margin:"14px", width:"280px", boxShadow:"0 20px 50px rgba(0,0,0,0.25)", padding:"14px", maxHeight:"80vh", overflowY:"auto" },
-  switcherTitle: { fontSize:"11px", fontWeight:"700", color:"var(--app-text-muted)", textTransform:"uppercase", letterSpacing:"0.5px", margin:"4px 0 10px" },
-  switcherRow: { width:"100%", display:"flex", alignItems:"center", gap:"10px", padding:"10px", border:"none", borderRadius:"10px", background:"transparent", cursor:"pointer", marginBottom:"2px" },
-  switcherRowIcon: { fontSize:"18px" },
-  switcherRowName: { fontSize:"13px", fontWeight:"700", color:"var(--app-text-primary)", margin:0 },
-  switcherRowSub: { fontSize:"11px", color:"var(--app-text-muted)", margin:0 },
-  switcherCheck: { color:"#3b82f6", fontWeight:"700" },
-  switcherAddBtn: { width:"100%", padding:"10px", borderRadius:"10px", border:"1px dashed var(--app-border-strong)", background:"transparent", color:"#3b82f6", cursor:"pointer", fontWeight:"600", fontSize:"13px", marginTop:"6px" },
-  switcherAddForm: { marginTop:"8px", padding:"10px", background:"var(--app-page-bg)", borderRadius:"10px" },
-  switcherInput: { width:"100%", boxSizing:"border-box", padding:"9px 12px", borderRadius:"8px", border:"1px solid var(--app-border-strong)", fontSize:"13px", marginBottom:"8px", outline:"none", background:"var(--app-surface-bg)", color:"var(--app-text-primary)" },
-  switcherCreateBtn: { width:"100%", padding:"9px", borderRadius:"8px", background:"#3b82f6", color:"#fff", border:"none", cursor:"pointer", fontWeight:"600", fontSize:"13px" },
-  nav: { flex:1, padding:"12px 0", display:"flex", flexDirection:"column", gap:"2px" },
-  navBtn: { display:"flex", alignItems:"center", gap:"12px", padding:"11px 20px", border:"none", cursor:"pointer", fontSize:"14px", textAlign:"left", transition:"all .15s", borderRadius:"0" },
-  navIcon: { fontSize:"18px", flexShrink:0 },
-  logoutBtn: { padding:"16px 20px", border:"none", borderTop:"1px solid var(--app-border)", background:"transparent", cursor:"pointer", color:"#ef4444", fontSize:"14px", fontWeight:"500", textAlign:"left" },
-  main: { flex:1, padding:"32px", overflowY:"auto" },
-  pageHeader: { display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"24px" },
-  pageTitle: { fontSize:"26px", fontWeight:"700", color:"var(--app-text-primary)", margin:"0 0 4px" },
-  pageSub: { fontSize:"14px", color:"var(--app-text-muted)", margin:0 },
-  alertPill: { background:"#fef3c7", color:"#d97706", padding:"8px 16px", borderRadius:"20px", fontSize:"13px", fontWeight:"600", border:"1px solid #fde68a" },
-  billCard: { background:"linear-gradient(135deg, #3b82f6, #1d4ed8)", borderRadius:"20px", padding:"28px 32px", marginBottom:"24px", display:"flex", justifyContent:"space-between", alignItems:"center", boxShadow:"0 8px 32px rgba(59,130,246,0.3)" },
-  billLabel: { color:"rgba(255,255,255,0.8)", fontSize:"13px", margin:"0 0 8px" },
-  billAmt: { color:"#fff", fontSize:"40px", fontWeight:"700", margin:"0 0 4px" },
-  billSub: { color:"rgba(255,255,255,0.7)", fontSize:"13px", margin:0 },
-  sectionTitle: { fontSize:"17px", fontWeight:"600", color:"var(--app-text-primary)", marginBottom:"14px" },
-  grid: { display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(220px, 1fr))", gap:"16px", marginBottom:"24px" },
-  appCard: { background:"var(--app-surface-bg)", borderRadius:"16px", padding:"20px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid var(--app-border)" },
-  appTop: { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"12px" },
-  appIconBox: { fontSize:"24px", width:"44px", height:"44px", background:"#eff6ff", borderRadius:"12px", display:"flex", alignItems:"center", justifyContent:"center" },
-  statusPill: { padding:"4px 10px", borderRadius:"20px", fontSize:"11px", fontWeight:"700" },
-  appName: { fontSize:"13px", color:"var(--app-text-secondary)", margin:"0 0 4px", fontWeight:"500" },
-  appWatts: { fontSize:"24px", fontWeight:"700", color:"var(--app-text-primary)", margin:"0 0 2px" },
-  appTime: { fontSize:"11px", color:"var(--app-text-muted)", margin:"0 0 14px" },
-  toggleRow: { display:"flex", gap:"8px" },
-  onBtn: { flex:1, padding:"8px", borderRadius:"8px", background:"#dcfce7", color:"#16a34a", border:"none", cursor:"pointer", fontWeight:"700", fontSize:"13px" },
-  offBtn: { flex:1, padding:"8px", borderRadius:"8px", background:"#fee2e2", color:"#ef4444", border:"none", cursor:"pointer", fontWeight:"700", fontSize:"13px" },
-  modeSelector: { display:"flex", background:"var(--app-surface-bg)", borderRadius:"12px", padding:"4px", marginBottom:"20px", width:"fit-content", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid var(--app-border)" },
-  modeBtn: { padding:"8px 20px", border:"none", borderRadius:"10px", cursor:"pointer", fontSize:"14px", fontWeight:"500", transition:"all .15s" },
-  periodNav: { display:"flex", alignItems:"center", gap:"16px", marginBottom:"20px" },
-  navArrow: { width:"36px", height:"36px", borderRadius:"8px", border:"1px solid var(--app-border-strong)", background:"var(--app-surface-bg)", cursor:"pointer", fontSize:"18px", display:"flex", alignItems:"center", justifyContent:"center" },
-  periodLabel: { fontSize:"16px", fontWeight:"600", color:"var(--app-text-primary)", minWidth:"200px", textAlign:"center" },
-  statsRow: { display:"grid", gridTemplateColumns:"1fr 1fr", gap:"16px", marginBottom:"20px" },
-  statCard: { background:"var(--app-surface-bg)", borderRadius:"16px", padding:"20px", display:"flex", alignItems:"center", gap:"14px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid var(--app-border)" },
-  statIcon: { width:"44px", height:"44px", borderRadius:"12px", background:"#fef3c7", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"20px", flexShrink:0 },
-  statLabel: { fontSize:"12px", color:"var(--app-text-muted)", margin:"0 0 4px", fontWeight:"500" },
-  statValue: { fontSize:"20px", fontWeight:"700", color:"var(--app-text-primary)", margin:"0 0 2px" },
-  statChange: { fontSize:"12px", margin:0, fontWeight:"500" },
-  chartCard: { background:"var(--app-surface-bg)", borderRadius:"16px", padding:"20px", marginBottom:"20px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid var(--app-border)" },
-  chartTitle: { fontSize:"15px", fontWeight:"600", color:"var(--app-text-primary)", margin:"0 0 16px" },
-  applianceRow: { display:"flex", alignItems:"center", gap:"12px", marginBottom:"14px" },
-  applianceDot: { width:"10px", height:"10px", borderRadius:"50%", flexShrink:0 },
-  applianceName: { fontSize:"13px", color:"var(--app-text-primary)", fontWeight:"500", width:"120px", flexShrink:0 },
-  progressWrap: { flex:1, height:"8px", background:"var(--app-border)", borderRadius:"4px", overflow:"hidden" },
-  progressBar: { height:"100%", borderRadius:"4px", transition:"width .5s" },
-  applianceKwh: { fontSize:"13px", color:"var(--app-text-primary)", fontWeight:"600", width:"70px", textAlign:"right", flexShrink:0 },
-  appliancePct: { fontSize:"12px", color:"var(--app-text-muted)", width:"40px", textAlign:"right", flexShrink:0 },
-  costCard: { background:"var(--app-surface-bg)", borderRadius:"16px", padding:"20px", marginBottom:"20px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid var(--app-border)" },
-  costHeader: { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px" },
-  fcfaBadge: { background:"#eff6ff", color:"#3b82f6", padding:"4px 10px", borderRadius:"8px", fontSize:"12px", fontWeight:"700" },
-  costRow: { display:"grid", gridTemplateColumns:"1fr 1fr", gap:"16px" },
-  costLabel: { fontSize:"12px", color:"var(--app-text-muted)", margin:"0 0 6px" },
-  costValue: { fontSize:"22px", fontWeight:"700", color:"var(--app-text-primary)", margin:0 },
-  alertCard: { background:"var(--app-surface-bg)", borderRadius:"14px", padding:"16px 20px", marginBottom:"12px", borderLeft:"4px solid #ef4444", boxShadow:"0 2px 8px rgba(0,0,0,0.05)" },
-  alertTop: { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"8px" },
-  alertAppliance: { fontSize:"14px", fontWeight:"700", color:"var(--app-text-primary)" },
-  alertBadge: { padding:"3px 10px", borderRadius:"20px", fontSize:"11px", fontWeight:"600", textTransform:"capitalize" },
-  alertMsg: { fontSize:"13px", color:"var(--app-text-secondary)", margin:"0 0 6px" },
-  alertTime: { fontSize:"11px", color:"var(--app-text-muted)", margin:0 },
-  suggCard: { background:"var(--app-surface-bg)", borderRadius:"14px", padding:"16px 20px", marginBottom:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.05)", border:"1px solid var(--app-border)" },
-  suggTop: { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"8px" },
-  suggAppliance: { fontSize:"14px", fontWeight:"700", color:"var(--app-text-primary)" },
-  suggText: { fontSize:"13px", color:"var(--app-text-secondary)", margin:"0 0 8px", lineHeight:"1.5" },
-  suggSaving: { fontSize:"13px", fontWeight:"600", color:"var(--app-text-primary)", margin:"0 0 12px" },
-  suggBtns: { display:"flex", gap:"8px" },
-  acceptBtn: { padding:"8px 16px", borderRadius:"8px", background:"#3b82f6", color:"#fff", border:"none", cursor:"pointer", fontSize:"13px", fontWeight:"600" },
-  ignoreBtn: { padding:"8px 16px", borderRadius:"8px", background:"var(--app-border)", color:"var(--app-text-secondary)", border:"1px solid var(--app-border-strong)", cursor:"pointer", fontSize:"13px", fontWeight:"600" },
-  scheduleCard: { background:"var(--app-surface-bg)", borderRadius:"14px", padding:"16px 20px", marginBottom:"12px", display:"flex", alignItems:"center", justifyContent:"space-between", boxShadow:"0 2px 8px rgba(0,0,0,0.05)", border:"1px solid var(--app-border)" },
-  scheduleLeft: { display:"flex", flexDirection:"column", gap:"4px" },
-  scheduleAppliance: { fontSize:"14px", fontWeight:"700", color:"var(--app-text-primary)", margin:0 },
-  scheduleTimes: { fontSize:"13px", color:"var(--app-text-secondary)", margin:0 },
-  deleteBtn: { background:"#fee2e2", border:"none", borderRadius:"8px", padding:"8px 12px", cursor:"pointer", fontSize:"16px" },
-  editScheduleBtn: { background:"#eff6ff", color:"#3b82f6", border:"none", borderRadius:"8px", padding:"8px 12px", cursor:"pointer", fontSize:"14px" },
-
-  overlay: { position:"fixed", inset:0, background:"rgba(15,23,42,0.45)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:"20px" },
-  modal: { background:"var(--app-surface-bg)", borderRadius:"18px", width:"380px", maxWidth:"100%", maxHeight:"85vh", overflowY:"auto", boxShadow:"0 20px 60px rgba(0,0,0,0.25)" },
-  modalHeader: { display:"flex", justifyContent:"space-between", alignItems:"center", padding:"18px 20px", borderBottom:"1px solid var(--app-border)" },
-  modalTitle: { fontSize:"16px", fontWeight:"700", color:"var(--app-text-primary)", margin:0 },
-  modalClose: { border:"none", background:"var(--app-border)", borderRadius:"8px", width:"28px", height:"28px", cursor:"pointer", color:"var(--app-text-secondary)" },
-  modalBody: { padding:"20px" },
-  modalLabel: { display:"block", fontSize:"12px", fontWeight:"600", color:"var(--app-text-secondary)", margin:"0 0 6px" },
-  modalInput: { width:"100%", boxSizing:"border-box", padding:"10px 14px", borderRadius:"10px", border:"1px solid var(--app-border-strong)", fontSize:"14px", marginBottom:"16px", outline:"none", background:"var(--app-surface-bg)", color:"var(--app-text-primary)" },
-  modalSaveBtn: { width:"100%", padding:"12px", borderRadius:"10px", background:"#3b82f6", color:"#fff", border:"none", cursor:"pointer", fontWeight:"700", fontSize:"14px" },
-  emptyCard: { background:"var(--app-surface-bg)", borderRadius:"16px", padding:"48px 24px", textAlign:"center", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid var(--app-border)" },
-  addBtn: { padding:"10px 20px", background:"#3b82f6", color:"#fff", border:"none", borderRadius:"10px", cursor:"pointer", fontWeight:"600", fontSize:"14px" },
-  addBtnSmall: { padding:"10px 18px", borderRadius:"10px", background:"#3b82f6", color:"#fff", border:"none", cursor:"pointer", fontWeight:"600", fontSize:"13px" },
-  chartCardHeader: { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px" },
-  // Home header
-homeHeader: { display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"24px" },
-greeting: { fontSize:"14px", color:"var(--app-text-muted)", margin:"0 0 2px" },
-greetingName: { fontSize:"28px", fontWeight:"700", color:"var(--app-text-primary)", margin:"0 0 2px" },
-greetingSubtitle: { fontSize:"13px", color:"var(--app-text-muted)", margin:0 },
-headerRight: { display:"flex", alignItems:"center", gap:"12px" },
-bellWrap: { position:"relative", cursor:"pointer" },
-bellIcon: { fontSize:"24px" },
-bellBadge: { position:"absolute", top:"-4px", right:"-4px", background:"#ef4444", color:"#fff", fontSize:"10px", fontWeight:"700", width:"16px", height:"16px", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center" },
-weatherCard: { display:"flex", alignItems:"center", gap:"8px", background:"var(--app-surface-bg)", padding:"8px 14px", borderRadius:"12px", boxShadow:"0 2px 8px rgba(0,0,0,0.06)", border:"1px solid var(--app-border)" },
-weatherTemp: { fontSize:"14px", fontWeight:"700", color:"var(--app-text-primary)", margin:0 },
-weatherCity: { fontSize:"11px", color:"var(--app-text-muted)", margin:0 },
-
-// Hero card
-heroCard: { background:"linear-gradient(135deg, #1d4ed8, #3b82f6)", borderRadius:"20px", padding:"24px", marginBottom:"20px", display:"flex", gap:"24px", boxShadow:"0 8px 32px rgba(59,130,246,0.3)", color:"#fff" },
-heroLeft: { flex:1 },
-heroTopRow: { display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:"8px" },
-heroLabel: { fontSize:"12px", color:"rgba(255,255,255,0.7)", margin:"0 0 6px" },
-heroWatts: { fontSize:"36px", fontWeight:"700", color:"#fff", margin:"0 0 2px" },
-heroPower: { fontSize:"12px", color:"rgba(255,255,255,0.7)", margin:0 },
-liveBadge: { background:"rgba(255,255,255,0.2)", color:"#fff", padding:"4px 12px", borderRadius:"20px", fontSize:"12px", fontWeight:"600", flexShrink:0 },
-miniChartWrap: { marginTop:"8px" },
-heroDivider: { width:"1px", background:"rgba(255,255,255,0.2)" },
-heroRight: { flex:1, paddingLeft:"24px" },
-heroBill: { fontSize:"28px", fontWeight:"700", color:"#fff", margin:"0 0 2px" },
-heroMonth: { fontSize:"12px", color:"rgba(255,255,255,0.7)", margin:"0 0 12px" },
-projectedBadge: { background:"rgba(255,255,255,0.15)", color:"#fff", padding:"6px 12px", borderRadius:"10px", fontSize:"12px" },
-
-// 4 stat cards
-statsGrid: { display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:"12px", marginBottom:"24px" },
-statMiniCard: { background:"var(--app-surface-bg)", borderRadius:"14px", padding:"16px", boxShadow:"0 2px 8px rgba(0,0,0,0.05)", border:"1px solid var(--app-border)", textAlign:"center" },
-statMiniIcon: { fontSize:"22px", marginBottom:"8px" },
-statMiniLabel: { fontSize:"11px", color:"var(--app-text-muted)", margin:"0 0 4px", fontWeight:"500" },
-statMiniValue: { fontSize:"16px", fontWeight:"700", color:"var(--app-text-primary)", margin:"0 0 4px" },
-statMiniChange: { fontSize:"11px", margin:0, fontWeight:"500" },
-
-// Rooms
-section: { marginBottom:"24px" },
-sectionHeader: { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"14px" },
-viewAllBtn: { background:"none", border:"none", color:"#3b82f6", cursor:"pointer", fontSize:"13px", fontWeight:"600" },
-roomsRow: { display:"flex", gap:"14px", overflowX:"auto", paddingBottom:"8px" },
-roomCard: { background:"var(--app-surface-bg)", borderRadius:"14px", padding:"16px", minWidth:"150px", boxShadow:"0 2px 8px rgba(0,0,0,0.05)", border:"1px solid var(--app-border)", flexShrink:0 },
-roomTop: { display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"12px" },
-roomIcon: { fontSize:"22px" },
-roomToggle: { background:"var(--app-border)", border:"none", borderRadius:"8px", padding:"4px 8px", cursor:"pointer", fontSize:"14px" },
-roomName: { fontSize:"14px", fontWeight:"700", margin:"0 0 4px" },
-roomKw: { fontSize:"18px", fontWeight:"700", color:"var(--app-text-primary)", margin:"0 0 2px" },
-roomDevices: { fontSize:"11px", color:"var(--app-text-muted)", margin:0 },
-
-// AI Banner
-aiBanner: { background:"linear-gradient(135deg, #eff6ff, #dbeafe)", borderRadius:"16px", padding:"20px 24px", marginBottom:"24px", display:"flex", justifyContent:"space-between", alignItems:"center", border:"1px solid #bfdbfe" },
-aiBannerLeft: { display:"flex", alignItems:"center", gap:"16px" },
-aiBannerTitle: { fontSize:"13px", color:"#1d4ed8", fontWeight:"600", margin:"0 0 4px" },
-aiBannerText: { fontSize:"14px", color:"#1e40af", margin:0 },
-aiBannerBtn: { background:"#3b82f6", color:"#fff", border:"none", borderRadius:"10px", padding:"10px 18px", cursor:"pointer", fontSize:"13px", fontWeight:"600", whiteSpace:"nowrap" },
-
-// Recent alerts
-recentAlertCard: { background:"var(--app-surface-bg)", borderRadius:"12px", padding:"14px 16px", marginBottom:"10px", display:"flex", alignItems:"center", gap:"14px", boxShadow:"0 2px 8px rgba(0,0,0,0.05)", border:"1px solid var(--app-border)" },
-recentAlertIcon: { width:"40px", height:"40px", borderRadius:"10px", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"18px", flexShrink:0 },
-recentAlertText: { flex:1 },
-recentAlertTitle: { fontSize:"13px", fontWeight:"600", color:"var(--app-text-primary)", margin:"0 0 3px" },
-recentAlertTime: { fontSize:"11px", color:"var(--app-text-muted)", margin:0 },
-
-// Bottom bar
-bottomBar: { background:"var(--app-surface-bg)", borderRadius:"16px", padding:"16px", display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:"8px", boxShadow:"0 2px 8px rgba(0,0,0,0.05)", border:"1px solid var(--app-border)", marginBottom:"24px" },
-bottomBarItem: { textAlign:"center", padding:"8px" },
-bottomBarIcon: { fontSize:"24px" },
-bottomBarValue: { fontSize:"18px", fontWeight:"700", color:"var(--app-text-primary)", margin:"4px 0 2px" },
-bottomBarLabel: { fontSize:"11px", color:"var(--app-text-muted)", margin:"0 0 2px" },
-bottomBarSub: { fontSize:"11px", fontWeight:"600", margin:0 },
-};

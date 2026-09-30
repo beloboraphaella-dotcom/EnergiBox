@@ -25,6 +25,5 @@ python-jose[cryptography]>=3.3
 # Devices
 paho-mqtt>=1.6,<2.0
 
-# Optional: only used by ai_advisor.py to phrase suggestions. Without it
-# (or without ANTHROPIC_API_KEY) the advisor falls back to its template.
-anthropic>=0.40
+# The language model (llm.py) is reached over plain HTTPS with the
+# standard library: Groq, Gemini and Ollama need no SDK.

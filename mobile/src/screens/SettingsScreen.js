@@ -5,8 +5,12 @@ import {
 } from "react-native";
 import { api } from "../api";
 import Icon from "../components/Icon";
-import { colors, spacing, radius, type, glassCard } from "../theme";
+import GradientFill from "../components/GradientFill";
+import { colors, spacing, radius, type, glassCard, glass } from "../theme";
 import { useLanguage } from "../context/LanguageContext";
+import { usePreferences } from "../context/PreferencesContext";
+import Switch from "../components/Switch";
+import { disablePush, enablePush, pushEnabled, pushSupported } from "../push";
 
 /** Settings, from the "Settings & Configuration" mockup.
  *
@@ -50,7 +54,7 @@ function NotCollected({ children }) {
 }
 
 export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser }) {
-  const { t, language, setLanguage } = useLanguage();
+  const { t, language, setLanguage, locale } = useLanguage();
   const [devices, setDevices] = useState([]);
   const [tariffs, setTariffs] = useState(null);
 
@@ -152,7 +156,7 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
                   <Text style={styles.boxMac}>{d.mac}</Text>
                   {d.last_seen ? (
                     <Text style={styles.boxSeen}>
-                      {new Date(d.last_seen.replace(" ", "T")).toLocaleString()}
+                      {new Date(d.last_seen.replace(" ", "T")).toLocaleString(locale)}
                     </Text>
                   ) : null}
                 </View>
@@ -265,6 +269,7 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
           activeOpacity={0.8}
           style={[styles.primaryButton, profileSaving && { opacity: 0.6 }]}
         >
+          <GradientFill />
           {profileSaving ? (
             <ActivityIndicator color={colors.onSecondary} />
           ) : (
@@ -338,6 +343,8 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
                 key={opt.id}
                 onPress={() => setLanguage(opt.id)}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
                 style={[styles.langChip, selected && styles.langChipOn]}
               >
                 <Text style={[styles.langLabel, selected && styles.langLabelOn]}>
@@ -348,7 +355,10 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
           })}
         </View>
 
-        <TouchableOpacity onPress={onLogout} activeOpacity={0.7} style={styles.logoutRow}>
+        {/* Admins own no home, so they get no alerts to be notified of. */}
+        <DisplayPreferences showPush={!!homeId} />
+
+        <TouchableOpacity onPress={onLogout} activeOpacity={0.7} style={styles.logoutRow} accessibilityRole="button">
           <Icon name="logout" size={18} color={colors.error} />
           <Text style={styles.logoutLabel}>{t("shell.logout")}</Text>
         </TouchableOpacity>
@@ -359,8 +369,81 @@ export default function SettingsScreen({ user, homeId, onLogout, onUpdateUser })
   );
 }
 
+/** Alert notifications on this phone, and the opaque display for bright
+ * light. */
+function DisplayPreferences({ showPush }) {
+  const { t, language } = useLanguage();
+  const { reduceTransparency, setReduceTransparency } = usePreferences();
+  const [push, setPush] = useState(false);
+  const [pushNote, setPushNote] = useState(null); // null | "denied" | "unavailable"
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    pushEnabled().then(setPush);
+  }, []);
+
+  const togglePush = async (on) => {
+    setBusy(true);
+    if (on) {
+      const result = await enablePush(language);
+      setPush(result === "granted");
+      setPushNote(result === "granted" ? null : result);
+    } else {
+      await disablePush();
+      setPush(false);
+      setPushNote(null);
+    }
+    setBusy(false);
+  };
+
+  const Row = ({ title, hint, value, onChange, disabled }) => (
+    <View style={styles.prefRow}>
+      <View style={styles.prefText}>
+        <Text style={styles.prefTitle}>{title}</Text>
+        <Text style={styles.prefHint}>{hint}</Text>
+      </View>
+      <Switch value={value} onValueChange={onChange} label={title} disabled={disabled} />
+    </View>
+  );
+
+  return (
+    <View style={styles.prefs}>
+      <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>{t("settings.display").toUpperCase()}</Text>
+      {showPush && (
+        <Row
+          title={t("settings.notify")}
+          hint={
+            !pushSupported()
+              ? t("settings.pushUnavailable")
+              : pushNote === "denied"
+                ? t("settings.pushDenied")
+                : pushNote === "unavailable"
+                  ? t("settings.pushUnavailable")
+                  : t("settings.pushHint")
+          }
+          value={push}
+          onChange={togglePush}
+          disabled={busy || !pushSupported()}
+        />
+      )}
+      <Row
+        title={t("settings.opaque")}
+        hint={t("settings.opaqueHint")}
+        value={reduceTransparency}
+        onChange={setReduceTransparency}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.background },
+  prefs: { gap: spacing.sm },
+  prefRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  prefText: { flex: 1 },
+  prefTitle: { ...type.bodyMd, color: colors.onSurface },
+  prefHint: { ...type.bodyMd, fontSize: 13, lineHeight: 18, color: colors.onSurfaceVariant },
+  // Transparent: the ambient backdrop behind AppShell shows through.
+  page: { flex: 1, backgroundColor: "transparent" },
   pageContent: { padding: spacing.marginMobile, paddingBottom: spacing.xl, gap: spacing.md },
 
   title: { ...type.headlineLg, color: colors.onSurface },
@@ -370,24 +453,19 @@ const styles = StyleSheet.create({
   panel: { padding: spacing.md, gap: spacing.sm },
   panelHead: {
     flexDirection: "row", alignItems: "center", gap: spacing.xs,
-    borderBottomWidth: 1, borderBottomColor: "rgba(198, 198, 205, 0.2)",
+    borderBottomWidth: 1, borderBottomColor: glass.divider,
     paddingBottom: spacing.sm, marginBottom: spacing.xs,
   },
   panelTitle: { ...type.headlineMd, fontSize: 20, lineHeight: 28, color: colors.onSurface },
 
   note: {
+    ...glass.subtle,
     flexDirection: "row", alignItems: "flex-start", gap: spacing.xs,
-    backgroundColor: colors.surfaceContainerLow,
-    borderWidth: 1, borderColor: "rgba(198, 198, 205, 0.2)",
-    borderRadius: radius.lg, padding: 12,
+    padding: 12,
   },
   noteText: { ...type.labelSm, color: colors.onSurfaceVariant, flex: 1, lineHeight: 18 },
 
-  boxRow: {
-    backgroundColor: colors.surfaceContainerLow,
-    borderWidth: 1, borderColor: "rgba(198, 198, 205, 0.2)",
-    borderRadius: radius.lg, padding: 12,
-  },
+  boxRow: { ...glass.subtle, padding: 12 },
   boxRowTop: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
   boxName: { ...type.bodyMd, color: colors.onSurface, flex: 1 },
   boxStatus: { ...type.labelSm },
@@ -398,17 +476,13 @@ const styles = StyleSheet.create({
   boxMac: { ...type.dataLabel, fontSize: 12, color: colors.onSurfaceVariant },
   boxSeen: { ...type.labelSm, fontSize: 12, color: colors.outline },
 
-  bandTable: {
-    borderWidth: 1, borderColor: "rgba(198, 198, 205, 0.3)",
-    borderRadius: radius.lg, overflow: "hidden",
-  },
+  bandTable: { ...glass.subtle, overflow: "hidden" },
   bandRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: 12, paddingVertical: 10,
-    backgroundColor: colors.surfaceContainerLow,
   },
-  bandRowDivider: { borderTopWidth: 1, borderTopColor: "rgba(198, 198, 205, 0.2)" },
-  bandRowApplied: { backgroundColor: colors.secondaryContainer },
+  bandRowDivider: { borderTopWidth: 1, borderTopColor: glass.divider },
+  bandRowApplied: { backgroundColor: "rgba(134, 242, 228, 0.35)" },
   bandRange: { ...type.bodyMd, color: colors.onSurfaceVariant },
   bandRight: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
   bandApplied: { ...type.labelSm, fontSize: 11, color: colors.onSecondaryContainer },
@@ -426,50 +500,35 @@ const styles = StyleSheet.create({
   langRow: { flexDirection: "row", gap: spacing.xs, marginTop: 6 },
   langChip: {
     paddingHorizontal: 16, paddingVertical: 7, borderRadius: radius.full,
-    backgroundColor: colors.surface,
-    borderWidth: 1, borderColor: colors.outlineVariant,
+    borderWidth: 1,
+    ...glass.pillIdle,
   },
-  langChipOn: { backgroundColor: colors.secondaryContainer, borderColor: "transparent" },
+  langChipOn: glass.pillActive,
   langLabel: { ...type.labelSm, color: colors.onSurface },
   langLabelOn: { color: colors.onSecondaryContainer },
 
   ruleRow: { flexDirection: "row", gap: spacing.xs + 4, alignItems: "flex-start" },
-  ruleIcon: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: colors.surfaceContainerLow,
-    alignItems: "center", justifyContent: "center",
-  },
+  ruleIcon: { ...glass.orb, width: 40, height: 40, borderRadius: 20 },
   ruleBody: { flex: 1 },
   ruleTitle: { ...type.bodyMd, color: colors.onSurface },
   ruleText: { ...type.labelSm, color: colors.onSurfaceVariant, marginTop: 4, lineHeight: 18 },
 
   sectionLabel: { ...type.labelSm, color: colors.onSurface, letterSpacing: 1 },
   fieldLabel: { ...type.labelSm, color: colors.onSurfaceVariant, marginTop: spacing.xs },
-  input: {
-    ...type.bodyMd, color: colors.onSurface,
-    backgroundColor: colors.surfaceContainerLow,
-    borderWidth: 1, borderColor: "rgba(198, 198, 205, 0.5)",
-    borderRadius: radius.lg, paddingHorizontal: spacing.sm, paddingVertical: 12,
-  },
+  input: { ...type.bodyMd, ...glass.input },
   inputDisabled: { opacity: 0.6 },
   hint: { ...type.labelSm, color: colors.outline },
 
-  primaryButton: {
-    backgroundColor: colors.secondary, borderRadius: radius.lg,
-    paddingVertical: 14, alignItems: "center", marginTop: spacing.xs,
-  },
-  primaryLabel: { ...type.labelSm, color: colors.onSecondary },
-  outlineButton: {
-    borderWidth: 1, borderColor: colors.secondary, borderRadius: radius.lg,
-    paddingVertical: 12, alignItems: "center", marginTop: spacing.xs,
-  },
-  outlineLabel: { ...type.labelSm, color: colors.secondary },
+  primaryButton: { ...glass.primaryButton, marginTop: spacing.xs },
+  primaryLabel: glass.primaryButtonText,
+  outlineButton: { ...glass.ghostButton, marginTop: spacing.xs },
+  outlineLabel: { ...glass.ghostButtonText, color: colors.secondary },
   msg: { ...type.labelSm, marginTop: 4 },
 
   logoutRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "flex-end",
     gap: spacing.xs, marginTop: spacing.md,
-    paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: "rgba(198, 198, 205, 0.2)",
+    paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: glass.divider,
   },
   logoutLabel: { ...type.labelSm, color: colors.error },
 
